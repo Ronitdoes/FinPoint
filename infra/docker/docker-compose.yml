@@ -2,7 +2,7 @@
 # AI Revenue Recovery — Local Infrastructure (step s-02)
 #
 # Brings up the full local dependency stack:
-#   postgres / redis / temporal / temporal-ui / redpanda / redpanda-console
+#   postgres / redis / temporal / temporal-ui / redpanda / redpanda-console / frontend
 #
 # IMPORTANT — DEV-ONLY DEFAULTS:
 #   Credentials in this file (postgres/postgres, no auth on Redis) exist purely
@@ -165,7 +165,27 @@ services:
       retries: 18
       start_period: 10s
 
+  frontend:
+    build:
+      context: ../..
+      dockerfile: apps/frontend/Dockerfile
+    container_name: arr-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+
 volumes:
   postgres-data:
   redis-data:
   redpanda-data:
+

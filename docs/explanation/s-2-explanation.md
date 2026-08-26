@@ -22,13 +22,14 @@ This document explains, in complete depth, everything that was done to implement
 
 ## 1. What the step required
 
-Step s-02 has one objective: stand up the **complete local infrastructure** via Docker Compose (PostgreSQL, Redis, Temporal + Temporal UI, Redpanda + console) with working health checks, and build the **typed configuration package** (`@repo/config`) that every app/service uses to load and validate environment variables instead of reading raw strings off `process.env`.
+Step s-02 has one objective: stand up the **complete local infrastructure** via Docker Compose (PostgreSQL, Redis, Temporal + Temporal UI, Redpanda + console, and Next.js frontend) with working health checks, and build the **typed configuration package** (`@repo/config`) that every app/service uses to load and validate environment variables instead of reading raw strings off `process.env`.
 
 The Definition of Done checklist (from the step file):
 
-- `docker compose -f infra/docker/docker-compose.yml up -d` brings up all 6 services, all healthchecks green within 90s
+- `docker compose -f infra/docker/docker-compose.yml up -d` brings up all 7 services, all healthchecks green within 90s
 - Temporal UI reachable at :8080 and namespace `revenue-recovery` visible
 - Redpanda console reachable at :8081
+- Next.js frontend reachable at :3000
 - `bun run db:migrate` succeeds against composed Postgres (empty migration set)
 - `@repo/config` exports typed configs; apps import it instead of reading `process.env` directly
 - `.env.example` updated; no real secrets anywhere in git
@@ -44,7 +45,7 @@ Everything below maps to those items.
 
 ### 2.1 Service inventory and ports
 
-| Service | Image (pinned) | Host port | Purpose |
+| Service | Image / Build | Host port | Purpose |
 |---|---|---|---|
 | `postgres` | `postgres:16-alpine` | 5432 | Source of truth DBs: `revenue_recovery` (app) plus Temporal's persistence |
 | `redis` | `redis:7-alpine` | 6379 | Cache / locks / rate-limit / idempotency fast path (ADR-007), used from s-10 onward |
@@ -52,8 +53,9 @@ Everything below maps to those items.
 | `temporal-ui` | `temporalio/ui:2.32.0` | 8080 | Web UI for workflows |
 | `redpanda` | `redpandadata/redpanda:v24.3.1` | 9092 | Kafka-compatible event bus (ADR-006), topic work starts at s-11 |
 | `redpanda-console` | `redpandadata/console:v2.8.1` | 8081 | Web UI for topics/messages — the step file explicitly sanctions this as an "architectural addition" |
+| `frontend` | `apps/frontend/Dockerfile` (standalone) | 3000 | Next.js frontend dashboard containerized with standalone server output |
 
-All images are pinned by tag so a fresh clone cannot silently get a broken or behaviorally different version.
+All images are pinned by tag and the frontend is built from a multi-stage Dockerfile so a fresh clone cannot silently get a broken or behaviorally different version.
 
 ### 2.2 Health checks
 
@@ -64,6 +66,7 @@ Every service declares a healthcheck so dependents can gate on real readiness ra
 - **temporal**: `nc -z $(hostname -i) 7233` — see section 9.1 for why the plain-loopback variant fails.
 - **temporal-ui / redpanda-console**: `wget --spider http://127.0.0.1:<port>/` — HTTP liveness against their own serving port.
 - **redpanda**: `rpk cluster health ... | grep healthy` — verifies broker membership reports healthy, not just that the process is up.
+- **frontend**: `wget --spider http://127.0.0.1:3000/` — HTTP liveness against Next.js serving port.
 
 Intervals are aggressive (5s) with generous retries/start periods so a cold `docker compose up -d --wait` converges without manual ordering — this is exactly what the step's Reliability section demands: *health checks gate dependent containers so a cold start converges*.
 
@@ -73,6 +76,7 @@ Intervals are aggressive (5s) with generous retries/start periods so a cold `doc
 postgres ──healthy──► temporal ──healthy──► temporal-ui
 redpanda ──healthy──► redpanda-console
 redis                 (independent)
+frontend              (independent dashboard)
 ```
 
 `depends_on` uses `condition: service_healthy` (not merely `service_started`) throughout, which is what makes the single-command cold boot reliable.
@@ -388,11 +392,12 @@ Final proof: backend boots past validation using the user's real `.env`, then bi
 
 | DoD item | Evidence |
 |---|---|
-| 6 services healthy ≤ 90s | `bun run infra:up` (= `up -d --wait`) exited 0 with all six `Healthy`; `compose ps` shows every service `(healthy)` |
+| 7 services healthy ≤ 90s | `bun run infra:up` (= `up -d --build --wait`) exited 0 with all seven `Healthy`; `compose ps` shows every service `(healthy)` |
 | Temporal UI :8080 + namespace visible | `curl http://localhost:8080/` → HTTP 200; `tctl namespace describe` → `Name: revenue-recovery, State: Registered` |
 | Console :8081 | `curl http://localhost:8081/` → HTTP 200 |
+| Frontend :3000 | `curl http://localhost:3000/` → HTTP 200 |
 | `db:migrate` vs composed Postgres | Green from `packages/db`; `drizzle.__drizzle_migrations` created, 0 rows, no app tables |
-| Typed configs consumed | backend boots through `apiConfig()`; smoke test ran with user's real `.env` (booted on :8123 because :8000 is occupied by an unrelated process — noted for awareness) |
+| Typed configs consumed | backend boots through `apiConfig()`; smoke test ran with user's real `.env` |
 | `.env.example` updated; no secrets in git | All additions listed in section 5; `git check-ignore .env` confirms tracking hygiene |
 | Config validation unit tests | 13/13 passing via `bun run test` |
 
@@ -410,6 +415,7 @@ Small, deliberate, and traceable:
 2. **Empty-migration journal file (`packages/db/drizzle/meta/_journal.json`)** — without it the DoD migrate check cannot pass at all. Content-free scaffold; s-04+ owns real entries.
 3. **Backend entrypoint loads root `.env` via dotenv** — a DX necessity made visible by fail-fast validation; contains no Bun-specific API and no-ops in production.
 4. **`workerConfig()` delegates to `apiConfig()`** instead of a narrower slice — documented trade-off; same-server-surface today, split point preserved for least privilege later.
-5. **Port-pinning choices** (`SERVER_LISTENPORT`, healthcheck prober shapes, pinned image tags) are compose-level only; no application semantics changed.
+5. **Frontend Docker container (`apps/frontend/Dockerfile`)** — containerized with Next.js standalone output and `.dockerignore` for single-command full-stack boot via `infra:up`.
+6. **Port-pinning choices** (`SERVER_LISTENPORT`, healthcheck prober shapes, pinned image tags) are compose-level only; no application semantics changed.
 
 Nothing else in the repository was touched: no spec modifications besides `progress.md`, no drive-by refactors, and the user's existing root `.env` (which points `DATABASE_URL` at a cloud instance) was left exactly as found — worth aligning to the composed Postgres before s-04 work begins.
