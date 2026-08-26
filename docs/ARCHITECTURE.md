@@ -167,7 +167,76 @@ Reviewed at s-01. Every gap has an owning step; nothing is left unassigned.
 | `infra/grafana/` | missing | s-08 (provisioning), s-34 (dashboards/runbooks) |
 | `docs/` ADRs, conventions, traceability | created (this step) | updated by each later step |
 
-## 6. Related documents
+## 6. Appendix: Entity-Relationship Diagram (ERD)
+
+Complete relational schema implemented across `s-04` (Financial Core) and `s-05` (Recovery Domain).
+
+```mermaid
+erDiagram
+    tenants ||--o{ users : "has"
+    tenants ||--o{ api_keys : "issues"
+    tenants ||--o{ customers : "owns"
+    tenants ||--o{ subscriptions : "manages"
+    tenants ||--o{ payments : "records"
+    tenants ||--o{ checkouts : "hosts"
+    tenants ||--o{ invoices : "bills"
+    tenants ||--o{ events : "receives"
+    tenants ||--o{ revenue_risks : "evaluates"
+    tenants ||--o{ recovery_cases : "tracks"
+    tenants ||--o{ ai_decisions : "generates"
+    tenants ||--o{ recovery_actions : "executes"
+    tenants ||--o{ workflows : "runs"
+    tenants ||--o{ messages : "sends"
+    tenants ||--o{ customer_responses : "receives"
+    tenants ||--o{ promises_to_pay : "holds"
+    tenants ||--o{ human_tasks : "assigns"
+    tenants ||--o{ policy_rules : "defines"
+    tenants ||--o{ policy_evaluations : "audits"
+    tenants ||--o{ audit_logs : "stores"
+    tenants ||--o{ case_events : "publishes"
+    tenants ||--o{ recovery_outcomes : "finalizes"
+    tenants ||--o{ recovery_cost_entries : "incurs"
+
+    customers ||--o{ payments : "makes"
+    customers ||--o{ subscriptions : "subscribes"
+    customers ||--o{ checkouts : "initiates"
+    customers ||--o{ invoices : "owes"
+    customers ||--o{ revenue_risks : "assessed_for"
+    customers ||--o{ recovery_cases : "targeted_in"
+    customers ||--o{ messages : "contacted_via"
+    customers ||--o{ customer_responses : "replies_with"
+
+    payments ||--o{ payment_attempts : "attempts"
+    payments ||--o{ recovery_outcomes : "credited_in"
+    payments ||--o{ promises_to_pay : "honored_by"
+
+    checkouts ||--o{ checkout_events : "emits"
+    invoices ||--o{ invoice_events : "emits"
+
+    revenue_risks ||--o{ recovery_cases : "triggers"
+
+    recovery_cases ||--o{ ai_decisions : "evaluated_by"
+    recovery_cases ||--o{ recovery_actions : "intervenes_with"
+    recovery_cases ||--o| workflows : "orchestrated_by"
+    recovery_cases ||--o{ messages : "communicates_through"
+    recovery_cases ||--o{ customer_responses : "receives_for"
+    recovery_cases ||--o{ promises_to_pay : "secures"
+    recovery_cases ||--o{ human_tasks : "escalates_to"
+    recovery_cases ||--o{ policy_evaluations : "governed_by"
+    recovery_cases ||--o{ audit_logs : "audited_in"
+    recovery_cases ||--o{ case_events : "chronicles"
+    recovery_cases ||--o| recovery_outcomes : "concludes_with"
+    recovery_cases ||--o{ recovery_cost_entries : "accumulates_costs"
+
+    ai_decisions ||--o{ recovery_actions : "recommends"
+    ai_decisions ||--o{ policy_evaluations : "checked_in"
+
+    workflows ||--o{ workflow_events : "records"
+    messages ||--o{ message_delivery_events : "tracks_receipts"
+    policy_rules ||--o{ policy_versions : "versions"
+```
+
+## 7. Related documents
 
 - Decision records: [`adr/ADR-001-runtime.md`](./adr/ADR-001-runtime.md) … [`adr/ADR-013-test-runner.md`](./adr/ADR-013-test-runner.md)
 - Conventions: [`CONVENTIONS.md`](./CONVENTIONS.md)

@@ -111,9 +111,12 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Architectural contract (AI/Policy/Temporal/PG/bus/adapters/dashboard) | spec 02 §1 | all steps; recorded in ARCHITECTURE.md |
 | Core loop Detection→Decision→Policy→Execution→Outcome→Learning | spec 00 §1 | s-10…s-27 chain |
 | Bounded autonomy principle | spec 00 §1, §8 | s-14/s-15/s-16 enforcement; CONVENTIONS.md §10 |
-| Event envelope standardization | spec 01 §6 | s-03 (envelope in domain), s-11 |
-| Idempotency key formula | spec 01 §21 | s-18/s-19 adapters; verified s-31 |
-| Tenant isolation on business tables | spec 02 §15 | s-04…s-06 schema; s-09 request context; s-30 verification |
+| Event envelope standardization | spec 01 §6 | s-03 (envelope in domain) ✅ confirmed; s-11 (bus transport/replay) |
+| Domain vocabulary package `@repo/domain`: entities, enums, canonical state machine + transition table, closed action catalog with zod parameter schemas, policy-limit constants, money helpers (integer minor units), AI-decidable per-surface subsets, case-timeline vocabulary | spec 01 §1, §10, §12, §17; spec 02 §4, §5, §6; spec 03 §5, §6 | s-03 ✅; s-04 ✅ (pgEnum parity confirmed) |
+| Idempotency key formula | spec 01 §21 | s-04 ✅ (payment_attempts constraint); s-05 ✅ (actions/messages unique keys); s-18/s-19 adapters; verified s-31 |
+| Tenant isolation on business tables | spec 02 §15 | s-04 ✅ (financial core schema FK + indexes); s-05 ✅ (recovery schema FK + indexes); s-06 repositories; s-09 request context; s-30 verification |
+| Financial core schema, constraints & indexes (tenants, users, api_keys, customers, payments, payment_attempts, subscriptions, checkouts, invoices) | spec 01 §5; spec 02 §1; spec 03 §4 | s-04 ✅ (migration 0000 applied, constraints tested) |
+| Recovery domain schema, constraints, partial indexes & anti-duplication anchors (events, revenue_risks, recovery_cases, ai_decisions, recovery_actions, workflows, messages, promises_to_pay, human_tasks, policy_rules, policy_evaluations, audit_logs, case_events, recovery_outcomes, recovery_cost_entries, idempotency_keys) | spec 01 §5, §17, §18, §19, §21, §25; spec 02 §3, §4, §8, §9; spec 03 §4 | s-05 ✅ (migration 0001 applied, 5 anti-duplication anchors tested, generated column verified) |
 | Security acceptance criteria | spec 03 §11 | s-09/s-10 build; s-30 verifies each line |
 | Performance targets | spec 03 §10 | measured s-31 (benchmarks), reported s-34 |
 | Observability core traces (event/case/workflow/decision/action ids) | spec 01 §20 | s-08 propagation format; used everywhere after |

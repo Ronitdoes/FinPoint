@@ -17,6 +17,7 @@
       "dependencies": {
         "@repo/config": "workspace:*",
         "@repo/db": "workspace:*",
+        "@repo/domain": "workspace:*",
         "dotenv": "^16.4.7",
       },
       "devDependencies": {
@@ -59,6 +60,7 @@
       "name": "@repo/db",
       "version": "0.1.0",
       "dependencies": {
+        "@repo/domain": "workspace:*",
         "dotenv": "^16.4.7",
         "drizzle-orm": "^0.38.4",
         "postgres": "^3.4.5",
@@ -67,6 +69,18 @@
         "@repo/typescript-config": "workspace:*",
         "@types/node": "^20",
         "drizzle-kit": "^0.30.2",
+        "typescript": "^5",
+      },
+    },
+    "packages/domain": {
+      "name": "@repo/domain",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^3.25.76",
+      },
+      "devDependencies": {
+        "@repo/typescript-config": "workspace:*",
+        "@types/node": "^20",
         "typescript": "^5",
       },
     },
@@ -332,6 +346,8 @@
     "@repo/config": ["@repo/config@workspace:packages/config"],
 
     "@repo/db": ["@repo/db@workspace:packages/db"],
+
+    "@repo/domain": ["@repo/domain@workspace:packages/domain"],
 
     "@repo/eslint-config": ["@repo/eslint-config@workspace:packages/eslint-config"],
 

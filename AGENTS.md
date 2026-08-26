@@ -10,6 +10,7 @@ Monorepo building an AI revenue-recovery platform. Work is executed as a sequenc
 4. Finish by updating:
    - `specs/steps/progress.md` — status row, "Current position", completion log (rules are at its top)
    - `docs/TRACEABILITY.md` — confirm/append rows your step implements
+   - `docs/explanation/s-XX-explanation.md` (or `s-X-explanation.md`) — **MANDATORY**: write a comprehensive explanation file for the completed step (following the structure in `docs/explanation/s-2-explanation.md` and `docs/explanation/s-3-explanation.md`)
 
 ## Which docs to read when
 
@@ -40,6 +41,7 @@ ADR read triggers:
 - All state machines live in `packages/domain`; DB writes use guarded conditional updates (see CONVENTIONS §9).
 - Secrets never enter code, logs, or git (CONVENTIONS §12).
 - Commit messages use the step prefix, e.g. `s-07: ...`; branches `feat/<step-id>-<slug>`.
+- An explanation document in `docs/explanation/s-XX-explanation.md` (or `s-X-explanation.md`) is mandatory for every step before marking it DONE.
 
 ## Verification commands (repo root)
 

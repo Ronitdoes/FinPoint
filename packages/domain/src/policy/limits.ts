@@ -1,0 +1,5 @@
+export const MAX_PAYMENT_RETRIES = 3;
+export const MAX_WHATSAPP_PER_7_DAYS = 2;
+export const MAX_EMAIL_PER_14_DAYS = 3;
+export const MAX_AUTO_DISCOUNT_MINOR = 500_000;
+export const HIGH_VALUE_APPROVAL_MINOR = 10_000_000;

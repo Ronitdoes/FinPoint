@@ -22,10 +22,10 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 ## Current position
 
 ```text
-Last updated : 2026-08-25   (update on every change)
-Current step : s-03 Shared Domain Package (`@repo/domain`)
-Next up      : s-03 — not started
-Overall      : 2 / 35 steps complete
+Last updated : 2026-08-27   (update on every change)
+Current step : s-06 Migration Pipeline & Repository Layer
+Next up      : s-06 — not started
+Overall      : 5 / 35 steps complete
 ```
 
 ---
@@ -34,8 +34,8 @@ Overall      : 2 / 35 steps complete
 
 | Phase | Steps | Done | Status |
 |---|---|---|---|
-| Foundation (architecture, infra, domain) | s-01–s-03 | 2 / 3 | IN PROGRESS |
-| Data layer (schemas, repositories) | s-04–s-06 | 0 / 3 | NOT STARTED |
+| Foundation (architecture, infra, domain) | s-01–s-03 | 3 / 3 | DONE |
+| Data layer (schemas, repositories) | s-04–s-06 | 2 / 3 | IN PROGRESS |
 | Platform (API skeleton, observability, auth) | s-07–s-09 | 0 / 3 | NOT STARTED |
 | Ingestion (gateway, bus, risk, context) | s-10–s-13 | 0 / 4 | NOT STARTED |
 | Intelligence (AI decision, governance, policy) | s-14–s-16 | 0 / 3 | NOT STARTED |
@@ -52,9 +52,9 @@ Overall      : 2 / 35 steps complete
 |---|---|---|---|---|---|
 | s-01 | Architecture Baseline & Implementation Contract | DONE | 2026-08-25 | 2026-08-25 | `docs/adr/ADR-001..013` accepted; ARCHITECTURE.md / CONVENTIONS.md / TRACEABILITY.md created; naming mapping recorded; layout gap review assigned to steps; `packages/testing` skeleton + root vitest workspace config added; docs link check green |
 | s-02 | Local Infrastructure & Configuration Platform | DONE | 2026-08-25 | 2026-08-25 | `infra/docker/docker-compose.yml` (7 services incl. Next.js frontend, healthchecks green via `up -d --build --wait`), `infra/temporal/dynamicconfig.yaml`, namespace `revenue-recovery` auto-created (tctl verified), Temporal UI :8080, Redpanda console :8081, frontend :3000 reachable; `packages/config` zod-validated presets (`apiConfig`/`workerConfig`/`webConfig`) + 13 unit tests; `.env.example` extended; root `infra:up`/`infra:down`; `db:migrate` green vs composed Postgres; backend stub reads `@repo/config` |
-| s-03 | Shared Domain Package (`@repo/domain`) | NOT STARTED | | | |
-| s-04 | Database Schema: Financial Core Entities | NOT STARTED | | | |
-| s-05 | Database Schema: Recovery Domain Entities | NOT STARTED | | | |
+| s-03 | Shared Domain Package (`@repo/domain`) | DONE | 2026-08-27 | 2026-08-27 | `packages/domain` pure TS + zod only: branded ids, money helpers (integer minor units, truncation parse/format), 12 enum modules (case/risk/payment/checkout/invoice/action/event/channel/actor/stop-condition/case-event), domain event envelope (strict zod incl. traceparent), recovery-case state machine (transition table + `assertTransition` + `IllegalTransitionError` + terminal set), closed action catalog (zod params per action, unknown-type rejection at runtime via `tryValidateCatalogAction` and schema level, `AI_DECIDABLE_ACTIONS` per surface), policy-limit constants, all 16 entity types; 202 unit tests (exhaustive 10×10 transition matrix, envelope accept/reject, catalog validation incl. incentive cap vs `MAX_AUTO_DISCOUNT_MINOR`, spec-parity snapshots) |
+| s-04 | Database Schema: Financial Core Entities | DONE | 2026-08-27 | 2026-08-27 | Drizzle schema for 11 tables (tenants, users, api_keys, customers, payments, payment_attempts, subscriptions, checkouts, checkout_events, invoices, invoice_events); citext extension; pgEnum mirroring @repo/domain; forward-only migration 0000 generated & applied; 22 tests (11 enum parity + 11 live Postgres DB constraints/indexes); DoD green |
+| s-05 | Database Schema: Recovery Domain Entities | DONE | 2026-08-27 | 2026-08-27 | Drizzle schema for 18 recovery tables across 13 schema files (events, risks, cases, decisions, actions, workflows, workflow_events, messages, message_delivery_events, customer_responses, promises_to_pay, human_tasks, policy_rules, policy_versions, policy_evaluations, audit_logs, case_events, recovery_outcomes, recovery_cost_entries, idempotency_keys); 5 anti-duplication anchors proven; generated column net_recovered verified; pgEnum parity tested; migration 0001 generated & applied; ERD diagram added to ARCHITECTURE.md; 269 tests passing across workspace |
 | s-06 | Migration Pipeline & Repository Layer | NOT STARTED | | | |
 | s-07 | Backend Application Skeleton (Fastify) | NOT STARTED | | | |
 | s-08 | Observability Foundation | NOT STARTED | | | |
@@ -128,4 +128,7 @@ One line per completed step or notable event. Format: `- YYYY-MM-DD | s-XX | sho
 ```text
 2026-08-25 | s-01 | Architecture baseline complete: 13 ADRs, ARCHITECTURE/CONVENTIONS/TRACEABILITY docs, naming mapping, layout gap review, packages/testing skeleton + vitest workspace config | bun run check-types green (4/4 pkgs); bun run test exits clean (no runtime tests yet); bun run check-docs green (19 links OK)
 2026-08-25 | s-02 | Local infra + config platform: compose stack (7 services incl. frontend, all healthy), temporal dynamicconfig + namespace auto-create, @repo/config (zod, fail-fast, frozen), env hygiene (.gitignore .env* except example), infra:up/down scripts, empty-migration scaffold for db:migrate | docker compose up -d --build --wait all green; UI :8080 / console :8081 / frontend :3000 / tctl namespace OK; bun run db:migrate green; bun run check-types 5/5; bun run test 13/13; bun run lint green; check-docs 19 links OK
+2026-08-27 | s-03 | Shared domain package complete: packages/domain (`@repo/domain`) with ids/money/enums/envelope/state-machine/action-catalog/policy-limits/entities per spec 01 §1/§6/§12/§17, spec 02 §4–§6, spec 03 §6; zero runtime deps except zod; `@repo/domain` workspace dep declared in `@repo/db` + backend (cross-workspace import verified); DoD checklist all satisfied | bun run check-types green (6/6 pkgs); bun run test green (202 tests incl. exhaustive transition matrix, envelope accept/reject, catalog validation, enum↔spec parity); bun run lint green
+2026-08-27 | s-04 | Database schema financial core complete: packages/db schema with 11 tables (tenants, users, api_keys, customers, payments, payment_attempts, subscriptions, checkouts, checkout_events, invoices, invoice_events), pgEnum bindings, citext extension, check/unique constraints, spec-mandated indexes, migration 0000 applied cleanly to PostgreSQL | bun run check-types green (6/6 pkgs); bun run test green (225 tests incl. 11 enum parity + 11 live DB constraints/indexes); bun run lint green; check-docs green
+2026-08-27 | s-05 | Database schema recovery domain complete: packages/db schema with 18 tables across 13 modules, 5 anti-duplication anchors, generated column net_recovered, migration 0001 applied cleanly & idempotently, ERD added to ARCHITECTURE.md | bun run check-types green (6/6 pkgs); bun run test green (269 tests incl. 36 enum parity + 18 recovery DB constraints/indexes); bun run lint green; check-docs green
 ```
