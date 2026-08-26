@@ -1,8 +1,8 @@
 # ==============================================================================
-# AI Revenue Recovery — Local Infrastructure (step s-02)
+# AI Revenue Recovery — Local Infrastructure (step s-02 / s-07)
 #
 # Brings up the full local dependency stack:
-#   postgres / redis / temporal / temporal-ui / redpanda / redpanda-console / frontend
+#   postgres / redis / temporal / temporal-ui / redpanda / redpanda-console / backend / frontend
 #
 # IMPORTANT — DEV-ONLY DEFAULTS:
 #   Credentials in this file (postgres/postgres, no auth on Redis) exist purely
@@ -165,6 +165,37 @@ services:
       retries: 18
       start_period: 10s
 
+  backend:
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    container_name: arr-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/revenue_recovery
+      DIRECT_URL: postgres://postgres:postgres@postgres:5432/revenue_recovery
+      REDIS_URL: redis://redis:6379
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: revenue-recovery
+      EVENT_BUS_DRIVER: inprocess
+      MOCK_PROVIDERS: "true"
+      LOG_LEVEL: info
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:4000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+
   frontend:
     build:
       context: ../..
@@ -174,7 +205,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
     ports:
       - "3000:3000"
     healthcheck:
@@ -188,4 +219,3 @@ volumes:
   postgres-data:
   redis-data:
   redpanda-data:
-
