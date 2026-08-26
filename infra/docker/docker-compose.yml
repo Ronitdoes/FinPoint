@@ -1,0 +1,171 @@
+# ==============================================================================
+# AI Revenue Recovery — Local Infrastructure (step s-02)
+#
+# Brings up the full local dependency stack:
+#   postgres / redis / temporal / temporal-ui / redpanda / redpanda-console
+#
+# IMPORTANT — DEV-ONLY DEFAULTS:
+#   Credentials in this file (postgres/postgres, no auth on Redis) exist purely
+#   for local development. PRODUCTION MUST SOURCE ALL CREDENTIALS FROM A SECRET
+#   MANAGER; never reuse these values outside your machine.
+#
+# All services use `restart: unless-stopped` so the stack survives Docker
+# Desktop restarts during development (`infra:down` removes it explicitly).
+#
+# Usage:
+#   bun run infra:up     # docker compose -f infra/docker/docker-compose.yml up -d
+#   bun run infra:down   # ... down
+#
+# Temporal notes:
+#   - `temporalio/auto-setup` creates its own schemas in dedicated databases
+#     (`temporal`, `temporal_visibility`) inside the composed Postgres, keeping
+#     application data (`revenue_recovery`) separate from workflow persistence.
+#   - Namespace `revenue-recovery` is auto-created at boot via
+#     ENABLE_NAMESPACE_CREATE + DEFAULT_NAMESPACE (see temporal service env).
+#   - Dynamic config mounted from infra/temporal/dynamicconfig.yaml.
+#
+# Redpanda notes:
+#   - Dual listeners: `internal://redpanda:29092` for containers (console),
+#     `external://localhost:9092` for host processes (apps/services).
+#   - redpanda-console is NOT in spec 01 §4; added in s-02 purely for developer
+#     visibility into topics/DLQ (s-11/s-31 testing). Cheap, local-only,
+#     removable without affecting the platform.
+# ==============================================================================
+
+name: ai-revenue-recovery
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: arr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres # dev-only; production uses a secret manager
+      POSTGRES_DB: revenue_recovery
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d revenue_recovery"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: arr-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 5s
+
+  temporal:
+    image: temporalio/auto-setup:1.28.0
+    container_name: arr-temporal
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: postgres # dev-only; production uses a secret manager
+      # Dedicated workflow-persistence databases, created by auto-setup itself:
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      # Auto-create the application namespace on first boot:
+      ENABLE_NAMESPACE_CREATE: "true"
+      DEFAULT_NAMESPACE: revenue-recovery
+    ports:
+      - "7233:7233"
+    volumes:
+      - ../temporal/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro
+    healthcheck:
+      # The Temporal server binds its container IP (not loopback); probe that.
+      test: ["CMD-SHELL", "nc -z $$(hostname -i) 7233"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  temporal-ui:
+    image: temporalio/ui:2.32.0
+    container_name: arr-temporal-ui
+    restart: unless-stopped
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8080:8080"
+    healthcheck:
+      # temporalio/ui ships as a static binary image; probe the HTTP endpoint
+      # with whatever shell tooling the base image provides (verified in s-02).
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+
+  redpanda:
+    image: redpandadata/redpanda:v24.3.1
+    container_name: arr-redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --mode dev-container
+      - --smp 1
+      - --memory 1G
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr internal://redpanda:29092,external://localhost:9092
+    ports:
+      - "9092:9092"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health -X brokers=127.0.0.1:9092 | grep -Eiq 'healthy[^:]*:?\\s*true'"]
+      interval: 5s
+      timeout: 10s
+      retries: 18
+      start_period: 15s
+
+  redpanda-console:
+    image: redpandadata/console:v2.8.1
+    container_name: arr-redpanda-console
+    restart: unless-stopped
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: redpanda:29092
+      # Serve on 8081 inside the container so it matches the published port.
+      SERVER_LISTENPORT: "8081"
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8081/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+
+volumes:
+  postgres-data:
+  redis-data:
+  redpanda-data:

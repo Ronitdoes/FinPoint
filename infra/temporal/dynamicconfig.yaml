@@ -1,0 +1,21 @@
+# ==============================================================================
+# Temporal Server dynamic configuration — LOCAL DEVELOPMENT ONLY (step s-02)
+#
+# Mounted into the `temporal` compose service at:
+#   /etc/temporal/config/dynamicconfig/docker.yaml
+#
+# Namespace creation (`revenue-recovery`) is handled by the container env vars
+# ENABLE_NAMESPACE_CREATE=true + DEFAULT_NAMESPACE=revenue-recovery in
+# infra/docker/docker-compose.yml; nothing namespace-related belongs here.
+# ==============================================================================
+
+# Allow reasonably long workflow/actor IDs (tenant-scoped composite IDs).
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+
+# Local-dev convenience: refresh search-attribute cache on read instead of
+# waiting for periodic propagation, so attribute changes show up immediately.
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}
