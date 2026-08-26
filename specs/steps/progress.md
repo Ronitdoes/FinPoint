@@ -23,9 +23,9 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 
 ```text
 Last updated : 2026-08-27   (update on every change)
-Current step : s-06 Migration Pipeline & Repository Layer
-Next up      : s-06 — not started
-Overall      : 5 / 35 steps complete
+Current step : s-07 Backend Application Skeleton (Fastify)
+Next up      : s-07 — not started
+Overall      : 6 / 35 steps complete
 ```
 
 ---
@@ -35,7 +35,7 @@ Overall      : 5 / 35 steps complete
 | Phase | Steps | Done | Status |
 |---|---|---|---|
 | Foundation (architecture, infra, domain) | s-01–s-03 | 3 / 3 | DONE |
-| Data layer (schemas, repositories) | s-04–s-06 | 2 / 3 | IN PROGRESS |
+| Data layer (schemas, repositories) | s-04–s-06 | 3 / 3 | DONE |
 | Platform (API skeleton, observability, auth) | s-07–s-09 | 0 / 3 | NOT STARTED |
 | Ingestion (gateway, bus, risk, context) | s-10–s-13 | 0 / 4 | NOT STARTED |
 | Intelligence (AI decision, governance, policy) | s-14–s-16 | 0 / 3 | NOT STARTED |
@@ -55,7 +55,7 @@ Overall      : 5 / 35 steps complete
 | s-03 | Shared Domain Package (`@repo/domain`) | DONE | 2026-08-27 | 2026-08-27 | `packages/domain` pure TS + zod only: branded ids, money helpers (integer minor units, truncation parse/format), 12 enum modules (case/risk/payment/checkout/invoice/action/event/channel/actor/stop-condition/case-event), domain event envelope (strict zod incl. traceparent), recovery-case state machine (transition table + `assertTransition` + `IllegalTransitionError` + terminal set), closed action catalog (zod params per action, unknown-type rejection at runtime via `tryValidateCatalogAction` and schema level, `AI_DECIDABLE_ACTIONS` per surface), policy-limit constants, all 16 entity types; 202 unit tests (exhaustive 10×10 transition matrix, envelope accept/reject, catalog validation incl. incentive cap vs `MAX_AUTO_DISCOUNT_MINOR`, spec-parity snapshots) |
 | s-04 | Database Schema: Financial Core Entities | DONE | 2026-08-27 | 2026-08-27 | Drizzle schema for 11 tables (tenants, users, api_keys, customers, payments, payment_attempts, subscriptions, checkouts, checkout_events, invoices, invoice_events); citext extension; pgEnum mirroring @repo/domain; forward-only migration 0000 generated & applied; 22 tests (11 enum parity + 11 live Postgres DB constraints/indexes); DoD green |
 | s-05 | Database Schema: Recovery Domain Entities | DONE | 2026-08-27 | 2026-08-27 | Drizzle schema for 18 recovery tables across 13 schema files (events, risks, cases, decisions, actions, workflows, workflow_events, messages, message_delivery_events, customer_responses, promises_to_pay, human_tasks, policy_rules, policy_versions, policy_evaluations, audit_logs, case_events, recovery_outcomes, recovery_cost_entries, idempotency_keys); 5 anti-duplication anchors proven; generated column net_recovered verified; pgEnum parity tested; migration 0001 generated & applied; ERD diagram added to ARCHITECTURE.md; 269 tests passing across workspace |
-| s-06 | Migration Pipeline & Repository Layer | NOT STARTED | | | |
+| s-06 | Migration Pipeline & Repository Layer | DONE | 2026-08-27 | 2026-08-27 | Hardened migration runner with advisory lock (724193), transient retry, and `db:migrate:check` CI script; implemented 23 aggregate repositories with strict tenant-scoping by signature, withTransaction context wrapper, guarded state transitions, monotonic per-tenant case numbering (`pg_advisory_xact_lock`), compile-time/runtime append-only guarantees, packages/db/README.md transaction boundary table; 287 tests passing across workspace |
 | s-07 | Backend Application Skeleton (Fastify) | NOT STARTED | | | |
 | s-08 | Observability Foundation | NOT STARTED | | | |
 | s-09 | Authentication, Authorization & Tenant Context | NOT STARTED | | | |
@@ -92,7 +92,7 @@ Overall      : 5 / 35 steps complete
 
 Tick when the gate becomes verifiable (these are the moments the system changes shape):
 
-- [ ] **G1 — Data layer standing** (after s-06): migrations apply from empty DB; repositories race-tested
+- [x] **G1 — Data layer standing** (after s-06): migrations apply from empty DB; repositories race-tested
 - [ ] **G2 — Events flow** (after s-11): signed webhook → dedupe → bus → consumer, proven under both bus drivers
 - [ ] **G3 — Loop closed headlessly** (after s-17): event produces an IN_PROGRESS case via risk→AI→policy without human touch
 - [ ] **G4 — Durable execution live** (after s-24): all three workflows pass their harness suites incl. approval paths
@@ -131,4 +131,5 @@ One line per completed step or notable event. Format: `- YYYY-MM-DD | s-XX | sho
 2026-08-27 | s-03 | Shared domain package complete: packages/domain (`@repo/domain`) with ids/money/enums/envelope/state-machine/action-catalog/policy-limits/entities per spec 01 §1/§6/§12/§17, spec 02 §4–§6, spec 03 §6; zero runtime deps except zod; `@repo/domain` workspace dep declared in `@repo/db` + backend (cross-workspace import verified); DoD checklist all satisfied | bun run check-types green (6/6 pkgs); bun run test green (202 tests incl. exhaustive transition matrix, envelope accept/reject, catalog validation, enum↔spec parity); bun run lint green
 2026-08-27 | s-04 | Database schema financial core complete: packages/db schema with 11 tables (tenants, users, api_keys, customers, payments, payment_attempts, subscriptions, checkouts, checkout_events, invoices, invoice_events), pgEnum bindings, citext extension, check/unique constraints, spec-mandated indexes, migration 0000 applied cleanly to PostgreSQL | bun run check-types green (6/6 pkgs); bun run test green (225 tests incl. 11 enum parity + 11 live DB constraints/indexes); bun run lint green; check-docs green
 2026-08-27 | s-05 | Database schema recovery domain complete: packages/db schema with 18 tables across 13 modules, 5 anti-duplication anchors, generated column net_recovered, migration 0001 applied cleanly & idempotently, ERD added to ARCHITECTURE.md | bun run check-types green (6/6 pkgs); bun run test green (269 tests incl. 36 enum parity + 18 recovery DB constraints/indexes); bun run lint green; check-docs green
+2026-08-27 | s-06 | Migration pipeline hardening & repository layer complete: advisory lock (724193) + transient retry in migrate.ts, checkPendingMigrations + db:migrate:check CI script; 23 aggregate repositories with strict tenant-scoping by signature; withTransaction wrapper + Tx type; guarded conditional state transitions; atomic per-tenant sequencing (pg_advisory_xact_lock); append-only compile/runtime enforcement; packages/db/README.md transaction boundary table; milestone G1 unlocked | bun run check-types green (6/6 pkgs); bun run test green (287 tests incl. parallel obligation race x10, action claim race x2, guarded transitions, idempotency lease lifecycle); bun run db:migrate:check green (2/2 applied); bun run lint green; check-docs green (19 links OK)
 ```
