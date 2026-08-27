@@ -1,0 +1,24 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 5s
+    editable: false
+
+  - name: OpenTelemetry (Tempo)
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToMetrics:
+        datasourceUid: 'prometheus'
+        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+        queries:
+          - name: 'HTTP Latency (p99)'
+            query: 'histogram_quantile(0.99, sum(rate(http_request_duration_ms_bucket[1m])) by (le))'
+    editable: false

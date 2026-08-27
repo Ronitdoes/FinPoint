@@ -165,6 +165,24 @@ services:
       retries: 18
       start_period: 10s
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    container_name: arr-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
+      - "8888:8888" # Collector internal metrics
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "components"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 5s
+
   backend:
     build:
       context: ../..
@@ -187,6 +205,7 @@ services:
       EVENT_BUS_DRIVER: inprocess
       MOCK_PROVIDERS: "true"
       LOG_LEVEL: info
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     ports:
       - "4000:4000"
     healthcheck:

@@ -120,8 +120,7 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Repository layer, explicit transactions & guarded state transitions (23 aggregate repos, withTransaction, guarded updates, advisory-locked migrations, db:migrate:check) | spec 01 §21, §26; spec 02 §15, §16 | s-06 ✅ (repositories implemented, guarded transitions tested, migration lock & CI check green) |
 | Backend Fastify application skeleton, plugin pipeline, canonical error envelope across 400/404/413/422/429/500, Redis rate limiting, graceful shutdown, meta endpoints (/health, /ready, /version) | spec 01 §3, §7; spec 02 §13; ADR-002 | s-07 ✅ (Fastify 5 app factory, plugins, routes, lifecycle & 27 unit/integration tests) |
 | Security acceptance criteria | spec 03 §11 | s-09/s-10 build; s-30 verifies each line |
-| Performance targets | spec 03 §10 | measured s-31 (benchmarks), reported s-34 |
-| Observability core traces (event/case/workflow/decision/action ids) | spec 01 §20 | s-08 propagation format; used everywhere after |
+| Observability foundation: OpenTelemetry distributed tracing, Prometheus metrics registry (@repo/observability), /metrics endpoint, structured logging with secret redaction, 5 core trace keys propagation | spec 01 §20; spec 02 §1; spec 03 §10; ADR-014 | s-08 ✅ (@repo/observability, Fastify otel plugin, /metrics, compose otel-collector) |
 | Attribution definition documented | spec 01 §25, spec 02 §9 | s-26 |
 | Local infrastructure stack (postgres, redis, temporal, temporal-ui, redpanda, redpanda-console) with healthchecks + named volumes | spec 01 §4 | s-02 |
 | `.env.example` + typed/validated config (`@repo/config`, fail-fast, frozen) consumed by apps/services instead of raw `process.env` | spec 01 §3, §4; CONVENTIONS §1, §12 | s-02 |

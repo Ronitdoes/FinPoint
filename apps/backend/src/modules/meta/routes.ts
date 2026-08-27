@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { MetaService } from "./meta.service";
+import { getMetricsText, getMetricsContentType } from "@repo/observability";
 
 export interface MetaRoutesOptions {
   metaService?: MetaService;
@@ -38,6 +39,13 @@ export const metaRoutes: FastifyPluginAsync<MetaRoutesOptions> = async (
     return reply.status(200).send(metaService.getVersion());
   });
 
+  // GET /metrics — Prometheus exposition endpoint (Spec 01 §20, ADR-014)
+  fastify.get("/metrics", async (_req, reply) => {
+    const metrics = await getMetricsText();
+    reply.header("Content-Type", getMetricsContentType());
+    return reply.status(200).send(metrics);
+  });
+
   // GET / & GET /api — Service root & discovery
   const rootHandler = async (_req: unknown, reply: any) => {
     const version = metaService.getVersion();
@@ -50,6 +58,7 @@ export const metaRoutes: FastifyPluginAsync<MetaRoutesOptions> = async (
         apiHealth: "/api/health",
         ready: "/ready",
         version: "/version",
+        metrics: "/metrics",
       },
     });
   };

@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: 'ai-revenue-recovery'
+    orgId: 1
+    folder: 'Revenue Recovery'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

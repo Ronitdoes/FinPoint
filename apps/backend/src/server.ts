@@ -43,6 +43,11 @@ export async function startServer() {
         app.log.info("Redis connection closed");
       }
 
+      // 5. Flush and shutdown OpenTelemetry tracing
+      const { shutdownTracing } = await import("@repo/observability");
+      await shutdownTracing();
+      app.log.info("OpenTelemetry tracing provider flushed and closed");
+
       clearTimeout(shutdownTimer);
       app.log.info("Graceful shutdown completed successfully");
       process.exit(0);

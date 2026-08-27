@@ -1,32 +1,18 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import type { LoggerOptions } from "pino";
+import {
+  createLoggerConfig as createBaseLoggerConfig,
+  REDACT_PATHS,
+} from "@repo/observability";
 
-/**
- * Secret redaction paths per CONVENTIONS §7 & §12.
- */
-export const REDACT_PATHS = [
-  "req.headers.authorization",
-  'req.headers["stripe-signature"]',
-  'req.headers["x-razorpay-signature"]',
-  "req.headers.cookie",
-  "*.password",
-  "*.apiKey",
-  "*.stripeSecretKey",
-  "*.razorpayKeySecret",
-  "*.token",
-  "*.secret",
-];
+export { REDACT_PATHS };
 
 export function createLoggerConfig(logLevel: string = "info"): LoggerOptions {
-  const isDev = process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test";
+  const baseConfig = createBaseLoggerConfig({ level: logLevel });
 
   return {
-    level: logLevel,
-    redact: {
-      paths: REDACT_PATHS,
-      censor: "[REDACTED]",
-    },
+    ...baseConfig,
     serializers: {
       req(req) {
         return {
@@ -36,23 +22,13 @@ export function createLoggerConfig(logLevel: string = "info"): LoggerOptions {
           parameters: req.params,
           headers: {
             ...req.headers,
-            authorization: req.headers.authorization ? "[REDACTED]" : undefined,
-            "stripe-signature": req.headers["stripe-signature"] ? "[REDACTED]" : undefined,
-            "x-razorpay-signature": req.headers["x-razorpay-signature"] ? "[REDACTED]" : undefined,
+            authorization: req.headers?.authorization ? "[REDACTED]" : undefined,
+            "stripe-signature": req.headers?.["stripe-signature"] ? "[REDACTED]" : undefined,
+            "x-razorpay-signature": req.headers?.["x-razorpay-signature"] ? "[REDACTED]" : undefined,
           },
         };
       },
     },
-    transport: isDev
-      ? {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            ignore: "pid,hostname",
-            translateTime: "SYS:HH:MM:ss.l",
-          },
-        }
-      : undefined,
   };
 }
 
@@ -74,7 +50,6 @@ const loggerPluginCallback: FastifyPluginAsync<LoggerPluginOptions> = async (
     const startTime = (req as any)._startTime as number | undefined;
     const durationMs = startTime ? Math.round((performance.now() - startTime) * 100) / 100 : 0;
 
-    // Record metric hook (s-08 will wire Prometheus / OTEL here)
     if (opts.onDurationRecorded) {
       opts.onDurationRecorded("http_request_duration_ms", durationMs, {
         method: req.method,

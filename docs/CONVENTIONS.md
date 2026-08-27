@@ -101,7 +101,9 @@ Inherited by every step that touches LLM output:
 
 - Propagation format: W3C Trace Context headers (`traceparent`) plus internal `x-correlation-id` (echoed on responses). Inbound webhooks generate a correlation ID if none arrives.
 - Five core trace keys appear on spans/logs end-to-end (spec 01 §20): `event_id`, `case_id`, `workflow_id`, `decision_id`, `action_id`.
-- Metrics baseline: HTTP latency, workflow latency, LLM latency/tokens, provider latency/failures, policy rejection rate, recovery success rate (spec 01 §20).
+- Standard span attributes convention (ADR-014, `@repo/observability`):
+  `recovery.event_id`, `recovery.case_id`, `recovery.workflow_id`, `recovery.decision_id`, `recovery.action_id`, `tenant.id`, `llm.model`, `provider.name`, `provider.operation`.
+- Metrics baseline: HTTP latency, workflow latency, LLM latency/tokens, provider latency/failures, policy rejection rate, recovery success rate (spec 01 §20), exposed at `GET /metrics`.
 
 ## 12. Security & secrets
 

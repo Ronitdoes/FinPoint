@@ -484,4 +484,37 @@ describe("Step 07 — Backend Application Skeleton (Fastify)", () => {
       await rateLimitedApp.close();
     });
   });
+
+  describe("8. Observability & OpenTelemetry Metrics (s-08)", () => {
+    it("GET /metrics returns 200 with Prometheus text format", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/metrics",
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/plain");
+      const text = res.body;
+      expect(text).toContain("http_requests_total");
+      expect(text).toContain("http_request_duration_ms");
+      expect(text).toContain("db_query_duration_ms");
+      expect(text).toContain("events_ingested_total");
+    });
+
+    it("records route and status labels on /metrics after requests", async () => {
+      // Hit /health twice
+      await app.inject({ method: "GET", url: "/health" });
+      await app.inject({ method: "GET", url: "/health" });
+
+      const res = await app.inject({ method: "GET", url: "/metrics" });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('http_requests_total{route="/health",method="GET",status="200"}');
+    });
+
+    it("exposes tracer on fastify instance", () => {
+      expect(app.tracer).toBeDefined();
+      expect(typeof app.tracer.startSpan).toBe("function");
+      expect(app.isOtelActive).toBe(true);
+    });
+  });
 });

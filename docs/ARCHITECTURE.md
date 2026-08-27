@@ -238,7 +238,7 @@ erDiagram
 
 ## 7. Related documents
 
-- Decision records: [`adr/ADR-001-runtime.md`](./adr/ADR-001-runtime.md) … [`adr/ADR-013-test-runner.md`](./adr/ADR-013-test-runner.md)
+- Decision records: [`adr/ADR-001-runtime.md`](./adr/ADR-001-runtime.md) … [`adr/ADR-014-observability-stack.md`](./adr/ADR-014-observability-stack.md)
 - Conventions: [`CONVENTIONS.md`](./CONVENTIONS.md)
 - Traceability: [`TRACEABILITY.md`](./TRACEABILITY.md)
 - Roadmap: [`../specs/steps/README.md`](../specs/steps/README.md) and progress tracker [`../specs/steps/progress.md`](../specs/steps/progress.md)
