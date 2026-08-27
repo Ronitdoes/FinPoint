@@ -5,6 +5,7 @@ import { adminUsersRoutes } from "../modules/admin/users.routes";
 import { adminApiKeysRoutes } from "../modules/admin/api-keys.routes";
 import { webhooksRoutes } from "../modules/webhooks/routes";
 import { eventsRoutes } from "../modules/events/routes";
+import { riskRoutes } from "../modules/risk/routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -40,6 +41,10 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/events",
     plugin: eventsRoutes,
+  },
+  {
+    prefix: "/risks",
+    plugin: riskRoutes,
   },
 ];
 

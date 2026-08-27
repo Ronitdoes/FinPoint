@@ -48,7 +48,7 @@ MVP scenario items mapped across s-10…s-32. "Verified in" names the step whose
 | 2 | Event is authenticated | s-10 (signature verification; authn plugins s-09) | s-10 ✅, s-30 |
 | 3 | Duplicate event is ignored | s-10 idempotency (+ Redis fast path ADR-007) | s-10 ✅, s-31 concurrency tests, s-32 |
 | 4 | Internal event is created | s-11 | s-11 ✅, s-32 |
-| 5 | Risk is calculated | s-12 | s-12 unit suite |
+| 5 | Risk is calculated | s-12 | s-12 ✅ (unit + integration suite), s-32 |
 | 6 | Recovery case is created | s-17 | s-17, s-32 |
 | 7 | Context is assembled | s-13 | s-13, s-32 |
 | 8 | AI returns schema-valid decision | s-14 (schema enforcement, eval harness s-15) | s-15 |

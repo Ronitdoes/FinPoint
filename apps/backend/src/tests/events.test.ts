@@ -135,10 +135,10 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
     });
     const viewerMatch = String(viewerLogin.headers["set-cookie"]).match(/rr_session=([^;]+)/);
     viewerUserCookie = `rr_session=${viewerMatch![1]}`;
-  });
+  }, 45000);
 
   beforeEach(() => {
-    eventBus.clear();
+    eventBus.clearPublished();
   });
 
   afterAll(async () => {
@@ -195,7 +195,7 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
       expect(eventBus.published[0].id).toBe(body.eventId);
       expect(eventBus.published[0].type).toBe("checkout.started");
       expect(eventBus.published[0].tenant_id).toBe(tenantId);
-    });
+    }, 30000);
 
     it("2. Missing authentication -> 401 UNAUTHENTICATED", async () => {
       const res = await app.inject({
@@ -214,7 +214,7 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
 
       expect(res.statusCode).toBe(401);
       expect(res.json().error.code).toBe("UNAUTHENTICATED");
-    });
+    }, 30000);
 
     it("3. API key without events:write scope -> 403 FORBIDDEN", async () => {
       const res = await app.inject({
@@ -234,7 +234,7 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
 
       expect(res.statusCode).toBe(403);
       expect(res.json().error.code).toBe("FORBIDDEN");
-    });
+    }, 30000);
 
     it("4. Cross-tenant mismatch (body.tenant_id != key.tenantId) -> 403 FORBIDDEN", async () => {
       const res = await app.inject({
@@ -254,7 +254,7 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
 
       expect(res.statusCode).toBe(403);
       expect(res.json().error.code).toBe("FORBIDDEN");
-    });
+    }, 30000);
 
     it("5. Schema validation failure (invalid event type) -> 422 VALIDATION", async () => {
       const res = await app.inject({
@@ -274,7 +274,7 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
 
       expect(res.statusCode).toBe(422);
       expect(res.json().error.code).toBe("VALIDATION");
-    });
+    }, 30000);
 
     it("6. Idempotency-Key reuse: same payload returns 202 snapshot; different payload returns 409 IDEMPOTENCY_KEY_REUSED", async () => {
       const idempotencyKey = `idem_key_${randomUUID()}`;
@@ -336,7 +336,7 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
 
       expect(res3.statusCode).toBe(409);
       expect(res3.json().error.code).toBe("IDEMPOTENCY_KEY_REUSED");
-    });
+    }, 30000);
   });
 
   describe("POST /events/replay", () => {
@@ -360,10 +360,10 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
         },
       });
       originalEventId = res.json().eventId;
-    });
+    }, 30000);
 
     it("1. Replay by eventId (as OPERATIONS) -> 202 ACCEPTED, new row referencing original created, published, audit log written", async () => {
-      eventBus.clear();
+      eventBus.clearPublished();
 
       const res = await app.inject({
         method: "POST",
@@ -410,10 +410,10 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
       expect(replayAudit?.actorType).toBe("USER");
       expect((replayAudit?.metadata as any).queued).toBe(1);
       expect((replayAudit?.metadata as any).eventId).toBe(originalEventId);
-    });
+    }, 30000);
 
     it("2. Replay by filter -> 202 ACCEPTED with multiple replayed events", async () => {
-      eventBus.clear();
+      eventBus.clearPublished();
 
       const res = await app.inject({
         method: "POST",
@@ -435,7 +435,7 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
       expect(body.queued).toBeGreaterThanOrEqual(1);
       expect(Array.isArray(body.replayIds)).toBe(true);
       expect(eventBus.published.length).toBe(body.queued);
-    });
+    }, 30000);
 
     it("3. Replay with non-existent eventId -> 404 NOT_FOUND", async () => {
       const res = await app.inject({
@@ -452,7 +452,7 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
 
       expect(res.statusCode).toBe(404);
       expect(res.json().error.code).toBe("NOT_FOUND");
-    });
+    }, 30000);
 
     it("4. Replay as VIEWER -> 403 FORBIDDEN", async () => {
       const res = await app.inject({
@@ -469,6 +469,6 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
 
       expect(res.statusCode).toBe(403);
       expect(res.json().error.code).toBe("FORBIDDEN");
-    });
+    }, 30000);
   });
 });

@@ -155,6 +155,10 @@ export class NullBus implements EventBus {
     return this._published;
   }
 
+  clearPublished(): void {
+    this._published.length = 0;
+  }
+
   clear(): void {
     this._published.length = 0;
     this._handlers.clear();

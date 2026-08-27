@@ -14,6 +14,7 @@ import { shutdownPlugin } from "./plugins/shutdown";
 import { authPlugin } from "./plugins/auth";
 import { rbacPlugin } from "./plugins/rbac";
 import { registerRouteModules } from "./lib/routes";
+import { registerRiskConsumer } from "./modules/risk/consumer";
 import type { Database } from "@repo/db";
 import { createEventBus, NullBus, type EventBus } from "@repo/integrations";
 
@@ -177,6 +178,9 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
 
   // 11. Register feature route modules
   await registerRouteModules(app);
+
+  // 12. Register risk engine event consumer (s-12)
+  registerRiskConsumer(app);
 
   return app;
 }

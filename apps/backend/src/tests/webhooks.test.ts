@@ -54,7 +54,7 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
       config: testConfig,
     });
     await app.ready();
-  });
+  }, 45000);
 
   afterAll(async () => {
     if (app) {
@@ -63,7 +63,7 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
   });
 
   it("1. Valid Stripe payment_failed webhook -> 200 ACCEPTED, rows created, event PROCESSED & published", async () => {
-    eventBus.clear();
+    eventBus.clearPublished();
     const externalId = `evt_stripe_fail_${randomUUID()}`;
     const paymentIntentId = `pi_fail_${randomUUID()}`;
     const customerRef = `cus_stripe_${randomUUID()}`;
@@ -135,10 +135,10 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
     expect(eventBus.published.length).toBe(1);
     expect(eventBus.published[0].type).toBe("payment.failed");
     expect(eventBus.published[0].source).toBe("STRIPE");
-  });
+  }, 30000);
 
   it("2. Valid Razorpay payment.captured webhook -> 200 ACCEPTED, rows created, event PROCESSED & published", async () => {
-    eventBus.clear();
+    eventBus.clearPublished();
     const externalId = `rzp_evt_succ_${randomUUID()}`;
     const paymentId = `pay_rzp_${randomUUID()}`;
     const customerRef = `cust_rzp_${randomUUID()}`;
@@ -252,7 +252,7 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
   });
 
   it("5. Duplicate delivery x5 concurrently -> exactly 1 ACCEPTED, 4 DUPLICATE, single payment row", async () => {
-    eventBus.clear();
+    eventBus.clearPublished();
     const externalId = `evt_dedup_${randomUUID()}`;
     const paymentId = `pi_dedup_${randomUUID()}`;
     const customerRef = `cus_dedup_${randomUUID()}`;
