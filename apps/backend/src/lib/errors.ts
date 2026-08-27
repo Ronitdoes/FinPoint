@@ -15,11 +15,13 @@
 export const DomainErrorCodes = {
   VALIDATION: "VALIDATION",
   UNAUTHENTICATED: "UNAUTHENTICATED",
+  INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
   FORBIDDEN: "FORBIDDEN",
   NOT_FOUND: "NOT_FOUND",
   CONFLICT: "CONFLICT",
   IDEMPOTENCY_IN_FLIGHT: "IDEMPOTENCY_IN_FLIGHT",
   RATE_LIMITED: "RATE_LIMITED",
+  TENANT_CONTEXT_MISSING: "TENANT_CONTEXT_MISSING",
   INTERNAL: "INTERNAL",
 } as const;
 
@@ -66,6 +68,18 @@ export class ValidationError extends DomainError {
 export class UnauthenticatedError extends DomainError {
   constructor(message: string = "Authentication required", details: unknown = {}) {
     super(message, DomainErrorCodes.UNAUTHENTICATED, 401, details);
+  }
+}
+
+export class InvalidCredentialsError extends DomainError {
+  constructor(message: string = "Invalid email or password", details: unknown = {}) {
+    super(message, DomainErrorCodes.INVALID_CREDENTIALS, 401, details);
+  }
+}
+
+export class TenantContextMissingError extends DomainError {
+  constructor(message: string = "Tenant context is mandatory for this request", details: unknown = {}) {
+    super(message, DomainErrorCodes.TENANT_CONTEXT_MISSING, 400, details);
   }
 }
 

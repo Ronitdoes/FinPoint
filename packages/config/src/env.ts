@@ -86,6 +86,17 @@ export const otelSchema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
 });
 
+export const authSchema = z.object({
+  SESSION_SECRET: z
+    .string()
+    .min(16)
+    .default("arr-session-secret-key-development-32chars"),
+  BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
+  BOOTSTRAP_ADMIN_PASSWORD: z.string().min(8).optional(),
+  BOOTSTRAP_ADMIN_NAME: z.string().min(1).optional(),
+  BOOTSTRAP_TENANT_NAME: z.string().min(1).optional(),
+});
+
 export const webPublicSchema = z.object({
   NEXT_PUBLIC_API_URL: z.string().url().default("http://localhost:8000"),
 });
@@ -116,7 +127,8 @@ const serverSchemaBase = appSchema
   .merge(paymentsSchema)
   .merge(messagingSchema)
   .merge(demoSchema)
-  .merge(otelSchema);
+  .merge(otelSchema)
+  .merge(authSchema);
 
 export const serverEnvSchema = serverSchemaBase.superRefine((value, ctx) => {
   const mockProviders = value.MOCK_PROVIDERS ?? value.NODE_ENV !== "production";

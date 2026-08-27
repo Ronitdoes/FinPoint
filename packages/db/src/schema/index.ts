@@ -2,6 +2,7 @@ export * from "./_shared";
 export * from "./enums";
 export * from "./tenants";
 export * from "./users";
+export * from "./sessions";
 export * from "./customers";
 export * from "./subscriptions";
 export * from "./payments";

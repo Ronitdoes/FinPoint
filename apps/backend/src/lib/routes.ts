@@ -1,5 +1,8 @@
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { metaRoutes } from "../modules/meta/routes";
+import { authRoutes } from "../modules/auth/routes";
+import { adminUsersRoutes } from "../modules/admin/users.routes";
+import { adminApiKeysRoutes } from "../modules/admin/api-keys.routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -15,6 +18,18 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "",
     plugin: metaRoutes,
+  },
+  {
+    prefix: "/auth",
+    plugin: authRoutes,
+  },
+  {
+    prefix: "/admin",
+    plugin: adminUsersRoutes,
+  },
+  {
+    prefix: "/admin",
+    plugin: adminApiKeysRoutes,
   },
 ];
 

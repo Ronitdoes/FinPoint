@@ -23,6 +23,7 @@ export function createLoggerConfig(logLevel: string = "info"): LoggerOptions {
           headers: {
             ...req.headers,
             authorization: req.headers?.authorization ? "[REDACTED]" : undefined,
+            cookie: req.headers?.cookie ? "[REDACTED]" : undefined,
             "stripe-signature": req.headers?.["stripe-signature"] ? "[REDACTED]" : undefined,
             "x-razorpay-signature": req.headers?.["x-razorpay-signature"] ? "[REDACTED]" : undefined,
           },

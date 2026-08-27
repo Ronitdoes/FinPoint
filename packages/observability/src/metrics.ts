@@ -140,6 +140,21 @@ export const workflowOutcomeTotal = new Counter({
   registers: [metricsRegistry],
 });
 
+// 9. Auth & Security Metrics (Step 09)
+export const authLoginsTotal = new Counter({
+  name: "auth_logins_total",
+  help: "Total number of login attempts partitioned by result",
+  labelNames: ["result"] as const,
+  registers: [metricsRegistry],
+});
+
+export const authFailuresTotal = new Counter({
+  name: "auth_failures_total",
+  help: "Total number of authentication failures partitioned by reason",
+  labelNames: ["reason"] as const,
+  registers: [metricsRegistry],
+});
+
 /* ==============================================================================
  * Typed Helper Functions for Safe Metric Recording
  * ============================================================================== */
@@ -219,6 +234,14 @@ export function recordWorkflowStarted(type: string): void {
 
 export function recordWorkflowOutcome(type: string, result: string): void {
   workflowOutcomeTotal.inc({ type, result });
+}
+
+export function recordAuthLogin(result: "success" | "failure" | string): void {
+  authLoginsTotal.inc({ result });
+}
+
+export function recordAuthFailure(reason: string): void {
+  authFailuresTotal.inc({ reason });
 }
 
 /**

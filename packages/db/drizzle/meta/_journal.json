@@ -15,6 +15,13 @@
       "when": 1787781383961,
       "tag": "0001_glamorous_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787826389954,
+      "tag": "0002_uneven_hammerhead",
+      "breakpoints": true
     }
   ]
 }

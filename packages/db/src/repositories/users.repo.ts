@@ -66,6 +66,32 @@ export async function findUserByEmail(
   return user ?? null;
 }
 
+export async function findUserByEmailGlobal(
+  ctx: RepoContext,
+  { email }: { email: string },
+): Promise<User | null> {
+  const executor = getExecutor(ctx);
+  const [user] = await executor
+    .select()
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+  return user ?? null;
+}
+
+export async function findUserByIdGlobal(
+  ctx: RepoContext,
+  { userId }: { userId: string },
+): Promise<User | null> {
+  const executor = getExecutor(ctx);
+  const [user] = await executor
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return user ?? null;
+}
+
 export async function updateUser(
   ctx: RepoContext,
   input: UpdateUserInput,

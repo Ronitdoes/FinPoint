@@ -3,6 +3,7 @@ export * from "./tx";
 export * from "./errors";
 export * from "./tenants.repo";
 export * from "./users.repo";
+export * from "./sessions.repo";
 export * from "./api-keys.repo";
 export * from "./customers.repo";
 export * from "./payments.repo";

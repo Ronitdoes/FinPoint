@@ -23,9 +23,9 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 
 ```text
 Last updated : 2026-08-27   (update on every change)
-Current step : s-09 Authentication, Authorization & Tenant Context
-Next up      : s-09 — not started
-Overall      : 8 / 35 steps complete
+Current step : s-10 Event Gateway & Webhook Ingestion
+Next up      : s-10 — not started
+Overall      : 9 / 35 steps complete
 ```
 
 ---
@@ -36,7 +36,7 @@ Overall      : 8 / 35 steps complete
 |---|---|---|---|
 | Foundation (architecture, infra, domain) | s-01–s-03 | 3 / 3 | DONE |
 | Data layer (schemas, repositories) | s-04–s-06 | 3 / 3 | DONE |
-| Platform (API skeleton, observability, auth) | s-07–s-09 | 2 / 3 | IN PROGRESS |
+| Platform (API skeleton, observability, auth) | s-07–s-09 | 3 / 3 | DONE |
 | Ingestion (gateway, bus, risk, context) | s-10–s-13 | 0 / 4 | NOT STARTED |
 | Intelligence (AI decision, governance, policy) | s-14–s-16 | 0 / 3 | NOT STARTED |
 | Execution (orchestration, adapters, Temporal, approvals) | s-17–s-21 | 0 / 5 | NOT STARTED |
@@ -58,7 +58,7 @@ Overall      : 8 / 35 steps complete
 | s-06 | Migration Pipeline & Repository Layer | DONE | 2026-08-27 | 2026-08-27 | Hardened migration runner with advisory lock (724193), transient retry, and `db:migrate:check` CI script; implemented 23 aggregate repositories with strict tenant-scoping by signature, withTransaction context wrapper, guarded state transitions, monotonic per-tenant case numbering (`pg_advisory_xact_lock`), compile-time/runtime append-only guarantees, packages/db/README.md transaction boundary table; 287 tests passing across workspace |
 | s-07 | Backend Application Skeleton (Fastify) | DONE | 2026-08-27 | 2026-08-27 | Fastify 5 app factory (`buildApp`), server entrypoint with signal-aware graceful shutdown (20s in-flight drain), request context + W3C traceparent correlation, structured Pino logging with secret redaction, canonical error envelope across 400/404/413/422/429/500, Redis rate limiting with graceful fallback, CORS allowlist, db/repos decoration, route registry, /health, /api/health, /ready (5s cache), /version; 314 tests passing across workspace |
 | s-08 | Observability Foundation | DONE | 2026-08-27 | 2026-08-27 | `@repo/observability` package with idempotent OpenTelemetry tracing provider, Bun-compatible choke-point spans (`withSpan`), standard span attributes, Prometheus metrics registry (`prom-client`) with all 15 Spec 01 §20 metric families, `GET /metrics` exposition endpoint on backend, Fastify request tracing/metrics hooks, structured Pino logger with secret redaction & trace mixing, Docker `otel-collector` service with OTLP receivers (:4317/:4318), Grafana provisioning stubs, ADR-014 accepted; 329 tests passing across workspace |
-| s-09 | Authentication, Authorization & Tenant Context | NOT STARTED | | | |
+| s-09 | Authentication, Authorization & Tenant Context | DONE | 2026-08-27 | 2026-08-27 | `user_sessions` PostgreSQL table & repository with Redis 60s hot-path caching + 12h sliding renewal, machine API keys lifecycle (creation, SHA-256 verification, async lastUsed touch, revocation), Fastify authn plugin with `request.auth` decorator, RBAC plugin with 5 spec roles (`ADMIN`, `FINANCE`, `OPERATIONS`, `SUPPORT`, `VIEWER`), `getTenantScope` mandatory tenant context guard, login rate-limiting (5/min per IP+email with lockout backoff), argon2id password hashing, bootstrap admin seed script (`seed-admin.ts`), exhaustive permission matrix tests + 17 integration tests; 386 monorepo tests passing |
 | s-10 | Event Gateway & Webhook Ingestion | NOT STARTED | | | |
 | s-11 | Internal Event Bus & Replay | NOT STARTED | | | |
 | s-12 | Risk Engine v1 | NOT STARTED | | | |
@@ -134,4 +134,5 @@ One line per completed step or notable event. Format: `- YYYY-MM-DD | s-XX | sho
 2026-08-27 | s-06 | Migration pipeline hardening & repository layer complete: advisory lock (724193) + transient retry in migrate.ts, checkPendingMigrations + db:migrate:check CI script; 23 aggregate repositories with strict tenant-scoping by signature; withTransaction wrapper + Tx type; guarded conditional state transitions; atomic per-tenant sequencing (pg_advisory_xact_lock); append-only compile/runtime enforcement; packages/db/README.md transaction boundary table; milestone G1 unlocked | bun run check-types green (6/6 pkgs); bun run test green (287 tests incl. parallel obligation race x10, action claim race x2, guarded transitions, idempotency lease lifecycle); bun run db:migrate:check green (2/2 applied); bun run lint green; check-docs green (19 links OK)
 2026-08-27 | s-07 | Backend Fastify application skeleton complete: Fastify 5 app factory (buildApp), server entrypoint with signal-aware graceful shutdown (20s in-flight drain), request context + W3C traceparent correlation, structured Pino logging with secret redaction, canonical error envelope across 400/404/413/422/429/500, Redis rate limiting with graceful fallback, CORS allowlist, db/repos decoration, route registry, /health, /api/health, /ready (5s cache), /version | bun run check-types green (6/6 pkgs); bun run test green (314 tests across 12 files incl. 27 backend skeleton unit/integration tests); bun run lint green; check-docs green (19 links OK)
 2026-08-27 | s-08 | Observability foundation complete: @repo/observability package with idempotent OpenTelemetry distributed tracing, Bun runtime choke-point spans (withSpan), standard span attributes, Prometheus metrics registry (prom-client) with all 15 Spec 01 §20 metric families, /metrics endpoint on Fastify backend, request tracing/metric hooks, structured Pino logger with secret redaction and trace mixing, compose otel-collector service (:4317/:4318), Grafana provisioning stubs, ADR-014 accepted | bun run check-types green (7/7 pkgs); bun run test green (329 tests across 15 files); bun run lint green; check-docs green (19 links OK)
+2026-08-27 | s-09 | Authentication, authorization & tenant context complete: user_sessions table & repository with Redis 60s hot-path caching + 12h sliding renewal, machine API keys lifecycle (creation, SHA-256 verification, async lastUsed touch, revocation), Fastify authn plugin with request.auth decorator, RBAC plugin with 5 spec roles (ADMIN, FINANCE, OPERATIONS, SUPPORT, VIEWER), getTenantScope mandatory tenant context guard, login rate-limiting (5/min per IP+email with lockout backoff), argon2id password hashing, bootstrap admin seed script (seed-admin.ts), exhaustive permission matrix tests + 17 integration tests | bun run check-types green (7/7 pkgs); bun run test green (386 tests across 19 files); bun run lint green; check-docs green (19 links OK)
 ```

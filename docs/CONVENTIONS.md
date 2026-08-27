@@ -125,3 +125,27 @@ Inherited by every step that touches LLM output:
 - Commit messages reference the roadmap step id with prefix, e.g. `s-07: add fastify app factory and graceful shutdown`.
 - One roadmap step per PR when practical; PR description links the step file's Definition of Done.
 - `specs/` files are never modified by implementation steps; progress is tracked only in `specs/steps/progress.md`.
+
+## 15. Authentication, RBAC & Tenant Context (ADR-012 & Step 09)
+
+All routes requiring caller authorization declare decorators and pre-handlers:
+
+- **Request Auth Decorator**: Fastify decorates `request.auth` in the global `onRequest` hook:
+  ```ts
+  request.auth = {
+    kind: "session" | "api_key" | "webhook",
+    userId?: string,
+    tenantId: string,
+    role: "ADMIN" | "FINANCE" | "OPERATIONS" | "SUPPORT" | "VIEWER",
+    scopes?: string[],
+  };
+  ```
+- **Pre-handler Guards**:
+  - `fastify.requireAuth`: Rejects unauthenticated requests with `401 UNAUTHENTICATED`.
+  - `fastify.requireRole(...roles)`: Rejects callers without required roles with `403 FORBIDDEN`.
+- **Mandatory Tenant Context Guard**:
+  - Handlers and services resolve tenant scope strictly through `fastify.getTenantScope(request)` (or `getTenantScope(request)` helper).
+  - Returns `{ tenantId: string }`. If missing or invalid, throws `TenantContextMissingError` (`TENANT_CONTEXT_MISSING`, status `400`). Cross-tenant access is impossible because tenantId is never read from unverified request parameters.
+- **Sessions & API Keys**:
+  - Dashboard users: `rr_session` cookie (httpOnly, sameSite=Lax, Secure in prod, 12h sliding renewal, argon2id password verification, 5 attempts/min lockout backoff).
+  - Machine clients: `Authorization: Bearer rrk_<tenant>_<random>`, SHA-256 lookup, async `last_used_at` touch.

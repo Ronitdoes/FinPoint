@@ -11,8 +11,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^10.0.2",
     "@fastify/rate-limit": "^10.2.2",
+    "@node-rs/argon2": "^2.1.0",
     "@repo/config": "workspace:*",
     "@repo/db": "workspace:*",
     "@repo/domain": "workspace:*",

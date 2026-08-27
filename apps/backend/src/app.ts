@@ -11,6 +11,8 @@ import { dbPlugin, type Repositories } from "./plugins/db";
 import { errorHandlerPlugin } from "./plugins/error-handler";
 import { otelPlugin } from "./plugins/otel";
 import { shutdownPlugin } from "./plugins/shutdown";
+import { authPlugin } from "./plugins/auth";
+import { rbacPlugin } from "./plugins/rbac";
 import { registerRouteModules } from "./lib/routes";
 import type { Database } from "@repo/db";
 
@@ -118,7 +120,15 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
   // 8. Graceful Shutdown & In-flight tracking plugin
   await app.register(shutdownPlugin);
 
-  // 9. Register feature route modules
+  // 9. Auth & Sessions plugin
+  await app.register(authPlugin, {
+    sessionSecret: config.auth?.sessionSecret,
+  });
+
+  // 10. RBAC Role checking plugin
+  await app.register(rbacPlugin);
+
+  // 11. Register feature route modules
   await registerRouteModules(app);
 
   return app;

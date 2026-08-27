@@ -69,6 +69,14 @@ export interface OtelConfig {
   readonly otlpEndpoint: string | null;
 }
 
+export interface AuthConfig {
+  readonly sessionSecret: string;
+  readonly bootstrapAdminEmail: string | null;
+  readonly bootstrapAdminPassword: string | null;
+  readonly bootstrapAdminName: string | null;
+  readonly bootstrapTenantName: string | null;
+}
+
 /**
  * Full server-side configuration surface (API + worker). Provider credentials
  * are reachable only from `packages/integrations` per CONVENTIONS §12 — this
@@ -85,6 +93,7 @@ export interface ServerConfig {
   readonly messaging: MessagingConfig;
   readonly demo: DemoConfig;
   readonly otel: OtelConfig;
+  readonly auth: AuthConfig;
 }
 
 function fromRaw(raw: RawServerEnv): ServerConfig {
@@ -137,6 +146,13 @@ function fromRaw(raw: RawServerEnv): ServerConfig {
     }),
     otel: Object.freeze({
       otlpEndpoint: raw.OTEL_EXPORTER_OTLP_ENDPOINT ?? null,
+    }),
+    auth: Object.freeze({
+      sessionSecret: raw.SESSION_SECRET,
+      bootstrapAdminEmail: raw.BOOTSTRAP_ADMIN_EMAIL ?? null,
+      bootstrapAdminPassword: raw.BOOTSTRAP_ADMIN_PASSWORD ?? null,
+      bootstrapAdminName: raw.BOOTSTRAP_ADMIN_NAME ?? null,
+      bootstrapTenantName: raw.BOOTSTRAP_TENANT_NAME ?? null,
     }),
   });
 }

@@ -58,3 +58,4 @@ export * from "./entities/recovery-case";
 export * from "./entities/revenue-risk";
 export * from "./entities/subscription";
 export * from "./entities/workflow";
+export * from "./permissions/matrix";
