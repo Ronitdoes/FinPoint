@@ -86,6 +86,13 @@ export const policyEvaluationDurationMs = new Histogram({
   registers: [metricsRegistry],
 });
 
+export const policyRejectionsTotal = new Counter({
+  name: "policy_rejections_total",
+  help: "Total number of policy rule rejections partitioned by rule code and reason",
+  labelNames: ["rule_code", "reason"] as const,
+  registers: [metricsRegistry],
+});
+
 // 6. AI Decision Service Metrics (Spec 01 §20, emitted in s-14)
 export const llmCallsTotal = new Counter({
   name: "llm_calls_total",

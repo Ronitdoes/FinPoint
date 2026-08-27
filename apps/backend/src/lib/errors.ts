@@ -30,6 +30,9 @@ export const DomainErrorCodes = {
   CONTEXT_INVALID: "CONTEXT_INVALID",
   CASE_NOT_FOUND: "CASE_NOT_FOUND",
   CUSTOMER_MISSING: "CUSTOMER_MISSING",
+  POLICY_NOT_FOUND: "POLICY_NOT_FOUND",
+  CONCURRENT_VERSION: "CONCURRENT_VERSION",
+  POLICY_EVALUATION_FAILED: "POLICY_EVALUATION_FAILED",
   CONFIG_ERROR: "CONFIG_ERROR",
   INTERNAL: "INTERNAL",
 } as const;
@@ -194,6 +197,24 @@ export class ContextInvalidError extends DomainError {
 export class ConfigurationError extends DomainError {
   constructor(message: string = "System configuration error", details: unknown = {}) {
     super(message, DomainErrorCodes.CONFIG_ERROR, 500, details);
+  }
+}
+
+export class PolicyNotFoundError extends DomainError {
+  constructor(message: string = "Policy rule not found", details: unknown = {}) {
+    super(message, DomainErrorCodes.POLICY_NOT_FOUND, 404, details);
+  }
+}
+
+export class ConcurrentVersionError extends DomainError {
+  constructor(message: string = "Concurrent version conflict detected while updating policy", details: unknown = {}) {
+    super(message, DomainErrorCodes.CONCURRENT_VERSION, 409, details);
+  }
+}
+
+export class PolicyEvaluationFailedError extends DomainError {
+  constructor(message: string = "Policy evaluation failed internally (fail-closed activated)", details: unknown = {}) {
+    super(message, DomainErrorCodes.POLICY_EVALUATION_FAILED, 500, details);
   }
 }
 

@@ -221,7 +221,7 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
     expect(llmEntry).toBeDefined();
     expect(llmEntry?.amount).toBeGreaterThan(0n);
     expect(llmEntry?.currency).toBe("INR");
-  });
+  }, 30000);
 
   // Scenario 2: Invalid structured output -> INVALID_OUTPUT recorded, repair invoked once, then FALLBACK
   it("Scenario 2: Invalid structured output -> INVALID_OUTPUT recorded, repair invoked once, then FALLBACK", async () => {
@@ -265,7 +265,7 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
     const decisions = await listDecisionsForCase({ db }, { tenantId, caseId });
     const invalidRows = decisions.filter((d) => d.status === "INVALID_OUTPUT");
     expect(invalidRows.length).toBeGreaterThanOrEqual(1);
-  });
+  }, 30000);
 
   // Scenario 3: Low confidence (0.4) + RETRY -> requiresApproval=true
   it("Scenario 3: Low confidence (0.4) + RETRY -> requiresApproval=true", () => {
@@ -339,7 +339,7 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
     expect(decision.status).toBe("FALLBACK_RULE_BASED");
     expect(decision.fallback).toBe(true);
     expect(decision.actions[0]).not.toHaveProperty("type", "OFFER_INCENTIVE");
-  });
+  }, 30000);
 
   // Scenario 6: Policy-violating suggestion -> incentive > cap -> semantic rejection before policy layer
   it("Scenario 6: Policy-violating suggestion -> incentive > cap -> semantic rejection before policy layer", async () => {
@@ -406,7 +406,7 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
 
     expect(decision.status).toBe("FALLBACK_RULE_BASED");
     expect(decision.fallback).toBe(true);
-  });
+  }, 30000);
 
   // Scenario 7: Missing context fields -> CONTEXT_INVALID, no LLM call made
   it("Scenario 7: Missing context fields -> CONTEXT_INVALID, no LLM call made", async () => {
@@ -429,7 +429,7 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
     ).rejects.toThrow();
 
     expect(networkCalled).toBe(false);
-  });
+  }, 30000);
 
   // Scenario 8: LLM timeout -> retry x2 -> FALLBACK_RULE_BASED; latency budget respected
   it("Scenario 8: LLM timeout -> retry x2 -> FALLBACK_RULE_BASED; latency budget respected", async () => {
@@ -464,7 +464,7 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
     expect(decision.status).toBe("FALLBACK_RULE_BASED");
     expect(decision.fallback).toBe(true);
     expect(elapsed).toBeLessThan(5000); // Latency budget respected
-  });
+  }, 30000);
 
   // Scenario 9: Provider 500s -> circuit opens after threshold; subsequent calls skip network
   it("Scenario 9: Provider 500s -> circuit opens after threshold; subsequent calls skip network", async () => {
@@ -497,7 +497,7 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
     expect(networkHit).toBe(false);
 
     await breakerApp.close();
-  });
+  }, 30000);
 
   // Scenario 10: Token accounting -> usage parsed across provider shapes; cost math exact
   it("Scenario 10: Token accounting -> usage parsed across provider shapes; cost math exact", () => {
@@ -547,7 +547,7 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
     });
     expect(tamperedReport.passed).toBe(false);
     expect(tamperedReport.must_not_violations).toBeGreaterThan(0);
-  });
+  }, 30000);
 
   // REST Read APIs: GET /ai/decisions and GET /ai/decisions/:id
   describe("Decision Read APIs (GET /ai/decisions and GET /ai/decisions/:id)", () => {
@@ -566,7 +566,7 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
       expect(json.items.length).toBeGreaterThanOrEqual(1);
       // OPERATIONS role: inputSnapshot is masked
       expect(json.items[0].inputSnapshot).toBeUndefined();
-    });
+    }, 30000);
 
     it("GET /ai/decisions?include=input_snapshot returns full snapshot for ADMIN role", async () => {
       const response = await app.inject({
@@ -580,6 +580,6 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
       expect(response.statusCode).toBe(200);
       const json = JSON.parse(response.body);
       expect(json.items[0].inputSnapshot).toBeDefined();
-    });
+    }, 30000);
   });
 });

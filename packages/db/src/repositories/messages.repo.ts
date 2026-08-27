@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, or, sql } from "drizzle-orm";
 import {
   messages,
   messageDeliveryEvents,
@@ -208,5 +208,35 @@ export async function listMessagesForCustomer(
     .orderBy(desc(messages.sentAt), desc(messages.createdAt))
     .limit(limit)
     .offset(offset);
+}
+
+export async function countCustomerMessagesByChannelSince(
+  ctx: RepoContext,
+  {
+    tenantId,
+    customerId,
+    channel,
+    since,
+  }: {
+    tenantId: string;
+    customerId: string;
+    channel: NewMessage["channel"];
+    since: Date;
+  },
+): Promise<number> {
+  const executor = getExecutor(ctx);
+  const conditions = [
+    eq(messages.tenantId, tenantId),
+    eq(messages.customerId, customerId),
+    eq(messages.channel, channel),
+    or(gte(messages.sentAt, since), gte(messages.createdAt, since)),
+  ];
+
+  const [row] = await executor
+    .select({ count: sql<number>`count(*)::int` })
+    .from(messages)
+    .where(and(...conditions));
+
+  return Number(row?.count ?? 0);
 }
 
