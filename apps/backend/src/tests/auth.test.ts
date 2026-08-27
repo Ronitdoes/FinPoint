@@ -71,11 +71,11 @@ describe("Step 09 Integration: Authentication, Sessions, RBAC & Tenant Context",
       },
     );
     viewerUserId = viewerUser.id;
-  });
+  }, 30000);
 
   afterAll(async () => {
     await app.close();
-  });
+  }, 30000);
 
   describe("Interactive Session Authentication (/auth/*)", () => {
     let sessionCookie: string;

@@ -163,6 +163,23 @@
       "name": "@repo/typescript-config",
       "version": "0.0.0",
     },
+    "services/eval": {
+      "name": "@repo/eval",
+      "version": "0.1.0",
+      "bin": {
+        "eval-harness": "./src/run.ts",
+      },
+      "dependencies": {
+        "@repo/config": "workspace:*",
+        "@repo/domain": "workspace:*",
+        "zod": "^3.25.76",
+      },
+      "devDependencies": {
+        "@repo/typescript-config": "workspace:*",
+        "@types/node": "^20",
+        "typescript": "^5",
+      },
+    },
   },
   "trustedDependencies": [
     "sharp",
@@ -500,6 +517,8 @@
     "@repo/domain": ["@repo/domain@workspace:packages/domain"],
 
     "@repo/eslint-config": ["@repo/eslint-config@workspace:packages/eslint-config"],
+
+    "@repo/eval": ["@repo/eval@workspace:services/eval"],
 
     "@repo/integrations": ["@repo/integrations@workspace:packages/integrations"],
 

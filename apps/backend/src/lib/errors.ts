@@ -27,8 +27,10 @@ export const DomainErrorCodes = {
   UNMAPPABLE_PAYLOAD: "UNMAPPABLE_PAYLOAD",
   NOT_ACCEPTABLE: "NOT_ACCEPTABLE",
   CONTEXT_UNAVAILABLE: "CONTEXT_UNAVAILABLE",
+  CONTEXT_INVALID: "CONTEXT_INVALID",
   CASE_NOT_FOUND: "CASE_NOT_FOUND",
   CUSTOMER_MISSING: "CUSTOMER_MISSING",
+  CONFIG_ERROR: "CONFIG_ERROR",
   INTERNAL: "INTERNAL",
 } as const;
 
@@ -180,6 +182,18 @@ export class CaseNotFoundError extends DomainError {
 export class CustomerMissingError extends DomainError {
   constructor(message: string = "Customer associated with case not found", details: unknown = {}) {
     super(message, DomainErrorCodes.CUSTOMER_MISSING, 404, details);
+  }
+}
+
+export class ContextInvalidError extends DomainError {
+  constructor(message: string = "Customer or case context is invalid or incomplete", details: unknown = {}) {
+    super(message, DomainErrorCodes.CONTEXT_INVALID, 422, details);
+  }
+}
+
+export class ConfigurationError extends DomainError {
+  constructor(message: string = "System configuration error", details: unknown = {}) {
+    super(message, DomainErrorCodes.CONFIG_ERROR, 500, details);
   }
 }
 

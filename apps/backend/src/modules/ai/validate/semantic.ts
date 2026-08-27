@@ -40,6 +40,7 @@ export function validateSemantic(
   // 3. Validate each action against surface allowlist and parameters
   for (let i = 0; i < decision.actions.length; i++) {
     const action = decision.actions[i];
+    if (!action) continue;
     const prefix = `actions[${i}] (${action.type})`;
 
     if (!allowedActions.includes(action.type)) {

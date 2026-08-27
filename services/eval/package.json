@@ -1,0 +1,24 @@
+{
+  "name": "@repo/eval",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/run.ts",
+  "bin": {
+    "eval-harness": "./src/run.ts"
+  },
+  "scripts": {
+    "run:eval": "bun src/run.ts",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@repo/domain": "workspace:*",
+    "@repo/config": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

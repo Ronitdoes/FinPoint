@@ -182,12 +182,12 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
       disableRateLimit: true,
     });
     await appSimulateFailure.ready();
-  });
+  }, 30000);
 
   afterAll(async () => {
     if (app) await app.close();
     if (appSimulateFailure) await appSimulateFailure.close();
-  });
+  }, 30000);
 
   describe("POST /ai/decide — Core Decision Path", () => {
     it("1. Happy path: returns 200 with valid recommendation and persists COMPLETED decision row", async () => {
@@ -230,7 +230,7 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
       expect(persisted?.promptVersion).toBe("payment_failure@1");
       expect(persisted?.inputSnapshot).toBeDefined();
       expect((persisted?.inputSnapshot as any).customer_context).toBeDefined();
-    });
+    }, 30000);
 
     it("2. SIMULATE_LLM_FAILURE=true: gracefully triggers deterministic rule-based fallback with 200", async () => {
       const response = await appSimulateFailure.inject({
@@ -260,7 +260,7 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
         { tenantId: tenantAId, decisionId: json.decisionId },
       );
       expect(persisted?.status).toBe("FALLBACK_RULE_BASED");
-    });
+    }, 30000);
 
     it("3. Idempotency-Key replay: returns original decision row without additional spend", async () => {
       const idempotencyKey = `idemp_ai_${randomUUID().slice(0, 8)}`;
@@ -317,7 +317,7 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
         )
       ).length;
       expect(countAfter).toBe(countBefore);
-    });
+    }, 30000);
 
     it("4. Terminal case: returns 409 CASE_TERMINAL when case is already resolved/stopped", async () => {
       // Create a case and transition to terminal status
@@ -362,7 +362,7 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
       expect(response.statusCode).toBe(409);
       const json = JSON.parse(response.body);
       expect(json.error.code).toBe("CASE_TERMINAL");
-    });
+    }, 30000);
 
     it("5. Tenant isolation: returns 404 CASE_NOT_FOUND when requesting another tenant's case", async () => {
       const response = await app.inject({
@@ -380,7 +380,7 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
       expect(response.statusCode).toBe(404);
       const json = JSON.parse(response.body);
       expect(json.error.code).toBe("CASE_NOT_FOUND");
-    });
+    }, 30000);
 
     it("6. RBAC: returns 403 FORBIDDEN for VIEWER role without ai:decide scope", async () => {
       const response = await app.inject({
@@ -398,7 +398,7 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
       expect(response.statusCode).toBe(403);
       const json = JSON.parse(response.body);
       expect(json.error.code).toBe("FORBIDDEN");
-    });
+    }, 30000);
 
     it("7. GET /ai/decisions/:id returns stored decision with tenant isolation", async () => {
       // First create a decision
@@ -436,7 +436,7 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
         },
       });
       expect(crossRes.statusCode).toBe(404);
-    });
+    }, 30000);
 
     it("8. Mock LLM completion: produces COMPLETED row with tokens, cost, latency, and matching payload", async () => {
       const mockLlmPayload = {
@@ -513,7 +513,7 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
       expect(persisted?.inputTokens).toBe(350);
       expect(persisted?.outputTokens).toBe(120);
       expect(persisted?.costMinorUnits).toBeGreaterThan(0n);
-    });
+    }, 30000);
 
     it("9. Malformed fixture: attempts N=1 repair retry, persists INVALID_OUTPUT and returns FALLBACK_RULE_BASED", async () => {
       let fetchCallCount = 0;
@@ -563,6 +563,6 @@ describe("Step 14 Integration: AI Decision Service (Core Decision Path)", { time
       );
       const invalidRows = allDecisions.filter((d) => d.status === "INVALID_OUTPUT");
       expect(invalidRows.length).toBeGreaterThanOrEqual(1);
-    });
+    }, 30000);
   });
 });

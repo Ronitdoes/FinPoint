@@ -101,3 +101,40 @@ export async function findLatestDecisionForCase(
   return decision ?? null;
 }
 
+export interface ListDecisionsOptions {
+  tenantId: string;
+  caseId?: string;
+  status?: NewAiDecision["status"];
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Lists decisions with optional caseId, status filter, and pagination (Spec 01 §10, Step 15).
+ */
+export async function listDecisions(
+  ctx: RepoContext,
+  opts: ListDecisionsOptions,
+): Promise<AiDecision[]> {
+  const executor = getExecutor(ctx);
+  const conditions = [eq(aiDecisions.tenantId, opts.tenantId)];
+
+  if (opts.caseId) {
+    conditions.push(eq(aiDecisions.caseId, opts.caseId));
+  }
+  if (opts.status) {
+    conditions.push(eq(aiDecisions.status, opts.status));
+  }
+
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 100);
+  const offset = Math.max(opts.offset ?? 0, 0);
+
+  return await executor
+    .select()
+    .from(aiDecisions)
+    .where(and(...conditions))
+    .orderBy(desc(aiDecisions.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+

@@ -7,6 +7,8 @@ import { getLogger, recordLlmCall, recordFallback } from "@repo/observability";
 import {
   CaseNotFoundError,
   ConflictError,
+  ContextInvalidError,
+  ConfigurationError,
   IdempotencyInFlightError,
   IdempotencyKeyReusedError,
 } from "../../lib/errors";
@@ -25,6 +27,7 @@ import { validateSemantic } from "./validate/semantic";
 import { generateFallbackDecision } from "./validate/fallback";
 import type { DecisionRecord } from "./schemas/decision";
 import { defaultCircuitBreaker } from "./llm/circuit-breaker";
+import { MODEL_PRICING_TABLE, computeCostMinorUnits } from "./governance/pricing";
 
 const logger = getLogger({ component: "ai-decide-service" });
 
@@ -32,7 +35,7 @@ export interface DecideOptions {
   tenantId: string;
   caseId: string;
   riskId?: string;
-  purpose?: "CASE_OPENING" | "REPLAN";
+  purpose?: "CASE_OPENING" | "REPLAN" | "EVAL";
   idempotencyKey?: string;
   db: Database;
   repos: Repositories;
@@ -61,9 +64,10 @@ export interface DecisionResponse {
 export class AiDecideService {
   /**
    * Orchestrates the complete AI decision pipeline:
-   * Case verification -> Context gathering -> Versioned prompt lookup ->
+   * Case verification -> Context gathering & safety validation -> Versioned prompt lookup ->
    * Structured LLM inference (with timeout/retries/circuit breaker) ->
-   * Multi-stage validation -> Repair retry -> Deterministic fallback -> Persistence.
+   * Multi-stage validation -> Repair retry -> Deterministic fallback ->
+   * In-transaction decision row and cost ledger entry persistence.
    */
   public static async decide(options: DecideOptions): Promise<DecisionResponse> {
     const {
@@ -81,6 +85,15 @@ export class AiDecideService {
 
     const requestPayload = { caseId, riskId, purpose };
     let compositeKey: string | undefined;
+
+    // 0. Model Pricing Pre-validation: fail CLOSED if model is unconfigured (Step 15 §Reliability)
+    const configuredModel = config.ai.model || "gpt-4o";
+    if (!MODEL_PRICING_TABLE[configuredModel]) {
+      throw new ConfigurationError(
+        `Unknown LLM model '${configuredModel}' has no configured pricing table entry`,
+        { model: configuredModel, supportedModels: Object.keys(MODEL_PRICING_TABLE) },
+      );
+    }
 
     // 1. Idempotency handling
     if (idempotencyKey) {
@@ -155,6 +168,22 @@ export class AiDecideService {
       redis,
     });
 
+    // Validate Context Fields completeness before invoking LLM (Step 15 Adversarial Test 7)
+    if (
+      !recoveryCase.id ||
+      !recoveryCase.riskType ||
+      recoveryCase.amountAtRisk === undefined ||
+      recoveryCase.amountAtRisk === null ||
+      !customerContext ||
+      !customerContext.customer?.id ||
+      !customerContext.recovery_history
+    ) {
+      throw new ContextInvalidError(
+        "Mandatory context fields missing for AI decisioning",
+        { caseId, hasCustomerContext: Boolean(customerContext) },
+      );
+    }
+
     // 5. Assemble Redacted Input Snapshot (Spec 01 §10)
     const inputSnapshot = {
       recovery_case: {
@@ -181,7 +210,7 @@ export class AiDecideService {
     const llmClient = new LlmClient({
       baseUrl: config.ai.baseUrl,
       apiKey: config.ai.apiKey,
-      model: config.ai.model,
+      model: configuredModel,
       timeoutMs: config.ai.timeoutMs,
       maxRetries: config.ai.maxRetries,
       simulateLlmFailure: config.demo.simulateLlmFailure,
@@ -192,7 +221,7 @@ export class AiDecideService {
 
     let decisionResponse: DecisionResponse;
 
-    // Helper to generate fallback
+    // Helper to generate fallback and write transactional cost entry
     const runFallback = async (reason: string, errorMsg?: string): Promise<DecisionResponse> => {
       recordFallback(reason);
       const fallbackDecision = generateFallbackDecision({
@@ -204,27 +233,50 @@ export class AiDecideService {
         currency: recoveryCase.currency,
       });
 
-      const persisted = await repos.createDecision(
-        { db },
-        {
-          tenantId,
-          caseId,
-          model: config.ai.model,
-          promptVersion: prompt.version,
-          inputSnapshot,
-          outputRaw: fallbackDecision as unknown as Record<string, unknown>,
-          diagnosisCause: fallbackDecision.diagnosis.cause,
-          diagnosisConfidence: String(fallbackDecision.diagnosis.confidence),
-          recommendedActions: fallbackDecision.actions,
-          stopConditions: fallbackDecision.stop_conditions,
-          status: "FALLBACK_RULE_BASED",
-          latencyMs: 0,
-          inputTokens: 0,
-          outputTokens: 0,
-          costMinorUnits: 0n,
-          error: errorMsg,
-        },
-      );
+      const persisted = await repos.withTransaction({ db }, async (tx) => {
+        const dec = await repos.createDecision(
+          { tx },
+          {
+            tenantId,
+            caseId,
+            model: configuredModel,
+            promptVersion: prompt.version,
+            inputSnapshot,
+            outputRaw: fallbackDecision as unknown as Record<string, unknown>,
+            diagnosisCause: fallbackDecision.diagnosis.cause,
+            diagnosisConfidence: String(fallbackDecision.diagnosis.confidence),
+            recommendedActions: fallbackDecision.actions,
+            stopConditions: fallbackDecision.stop_conditions,
+            status: "FALLBACK_RULE_BASED",
+            latencyMs: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            costMinorUnits: 0n,
+            error: errorMsg,
+          },
+        );
+
+        await repos.recordCostEntry(
+          { tx },
+          {
+            tenantId,
+            caseId,
+            category: "LLM",
+            amount: 0n,
+            currency: recoveryCase.currency,
+            metadata: {
+              decision_id: dec.id,
+              model: configuredModel,
+              prompt_version: prompt.version,
+              fallback: true,
+              reason,
+            },
+            incurredAt: new Date(),
+          },
+        );
+
+        return dec;
+      });
 
       return {
         decisionId: persisted.id,
@@ -234,7 +286,7 @@ export class AiDecideService {
         actions: fallbackDecision.actions,
         stop_conditions: fallbackDecision.stop_conditions,
         latency_ms: 0,
-        model: config.ai.model,
+        model: configuredModel,
         prompt_version: prompt.version,
         fallback: true,
       };
@@ -251,7 +303,7 @@ export class AiDecideService {
           result = await structuredService.generateDecision({
             prompt,
             snapshot: inputSnapshot,
-            model: config.ai.model,
+            model: configuredModel,
             customFetch,
           });
         } catch (llmErr: any) {
@@ -259,7 +311,7 @@ export class AiDecideService {
             { err: llmErr.message, caseId },
             "LLM inference call failed; degrading to rule-based fallback",
           );
-          recordLlmCall(config.ai.model, "error", 0);
+          recordLlmCall(configuredModel, "error", 0);
           decisionResponse = await runFallback("transport_failure", llmErr.message);
           return await AiDecideService.finalizeIdempotency(
             { db, repos, compositeKey, response: decisionResponse },
@@ -294,7 +346,7 @@ export class AiDecideService {
               snapshot: inputSnapshot,
               previousOutput: result.rawText,
               validationErrors: initialErrors,
-              model: config.ai.model,
+              model: configuredModel,
               customFetch,
             });
 
@@ -315,27 +367,50 @@ export class AiDecideService {
         }
 
         if (validDecision) {
-          // Persist COMPLETED decision row
-          const persisted = await repos.createDecision(
-            { db },
-            {
-              tenantId,
-              caseId,
-              model: result.model,
-              promptVersion: prompt.version,
-              inputSnapshot,
-              outputRaw: result.parsedJson as Record<string, unknown>,
-              diagnosisCause: validDecision.diagnosis.cause,
-              diagnosisConfidence: String(validDecision.diagnosis.confidence),
-              recommendedActions: validDecision.actions,
-              stopConditions: validDecision.stop_conditions,
-              status: "COMPLETED",
-              latencyMs: result.latencyMs,
-              inputTokens: result.inputTokens,
-              outputTokens: result.outputTokens,
-              costMinorUnits: result.costMinorUnits,
-            },
-          );
+          // Persist COMPLETED decision row and Cost Ledger Entry in-tx (Step 15 §1)
+          const persisted = await repos.withTransaction({ db }, async (tx) => {
+            const dec = await repos.createDecision(
+              { tx },
+              {
+                tenantId,
+                caseId,
+                model: result.model,
+                promptVersion: prompt.version,
+                inputSnapshot,
+                outputRaw: result.parsedJson as Record<string, unknown>,
+                diagnosisCause: validDecision.diagnosis.cause,
+                diagnosisConfidence: String(validDecision.diagnosis.confidence),
+                recommendedActions: validDecision.actions,
+                stopConditions: validDecision.stop_conditions,
+                status: "COMPLETED",
+                latencyMs: result.latencyMs,
+                inputTokens: result.inputTokens,
+                outputTokens: result.outputTokens,
+                costMinorUnits: result.costMinorUnits,
+              },
+            );
+
+            await repos.recordCostEntry(
+              { tx },
+              {
+                tenantId,
+                caseId,
+                category: "LLM",
+                amount: result.costMinorUnits,
+                currency: recoveryCase.currency,
+                metadata: {
+                  decision_id: dec.id,
+                  model: result.model,
+                  prompt_version: prompt.version,
+                  input_tokens: result.inputTokens,
+                  output_tokens: result.outputTokens,
+                },
+                incurredAt: new Date(),
+              },
+            );
+
+            return dec;
+          });
 
           recordLlmCall(result.model, "success", result.latencyMs, {
             prompt: result.inputTokens,
@@ -355,26 +430,50 @@ export class AiDecideService {
             prompt_version: prompt.version,
           };
         } else {
-          // Persist INVALID_OUTPUT and trigger fallback
-          await repos.createDecision(
-            { db },
-            {
-              tenantId,
-              caseId,
-              model: result.model,
-              promptVersion: prompt.version,
-              inputSnapshot,
-              outputRaw: (result.parsedJson as Record<string, unknown>) ?? {},
-              status: "INVALID_OUTPUT",
-              recommendedActions: [],
-              stopConditions: [],
-              latencyMs: result.latencyMs,
-              inputTokens: result.inputTokens,
-              outputTokens: result.outputTokens,
-              costMinorUnits: result.costMinorUnits,
-              error: "Malformed structured output after repair retry",
-            },
-          );
+          // Persist INVALID_OUTPUT and cost entry in-tx, then trigger fallback
+          await repos.withTransaction({ db }, async (tx) => {
+            const dec = await repos.createDecision(
+              { tx },
+              {
+                tenantId,
+                caseId,
+                model: result.model,
+                promptVersion: prompt.version,
+                inputSnapshot,
+                outputRaw: (result.parsedJson as Record<string, unknown>) ?? {},
+                status: "INVALID_OUTPUT",
+                recommendedActions: [],
+                stopConditions: [],
+                latencyMs: result.latencyMs,
+                inputTokens: result.inputTokens,
+                outputTokens: result.outputTokens,
+                costMinorUnits: result.costMinorUnits,
+                error: "Malformed structured output after repair retry",
+              },
+            );
+
+            await repos.recordCostEntry(
+              { tx },
+              {
+                tenantId,
+                caseId,
+                category: "LLM",
+                amount: result.costMinorUnits,
+                currency: recoveryCase.currency,
+                metadata: {
+                  decision_id: dec.id,
+                  model: result.model,
+                  prompt_version: prompt.version,
+                  status: "INVALID_OUTPUT",
+                  input_tokens: result.inputTokens,
+                  output_tokens: result.outputTokens,
+                },
+                incurredAt: new Date(),
+              },
+            );
+
+            return dec;
+          });
 
           decisionResponse = await runFallback(
             "validation_failure",
@@ -383,6 +482,9 @@ export class AiDecideService {
         }
       }
     } catch (unexpectedErr: any) {
+      if (unexpectedErr instanceof ContextInvalidError || unexpectedErr instanceof ConfigurationError) {
+        throw unexpectedErr;
+      }
       logger.error(
         { err: unexpectedErr.message, caseId },
         "Unexpected error in AI decide service; applying safety fallback",

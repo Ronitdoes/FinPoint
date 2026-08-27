@@ -9,5 +9,6 @@ export * from "./llm/structured";
 export * from "./validate/structural";
 export * from "./validate/semantic";
 export * from "./validate/fallback";
+export * from "./governance";
 export * from "./decide.service";
 export * from "./routes";

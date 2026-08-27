@@ -23,9 +23,9 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 
 ```text
 Last updated : 2026-08-27   (update on every change)
-Current step : s-15 AI Governance & Evaluation Harness
-Next up      : s-15 — NOT STARTED
-Overall      : 14 / 35 steps complete
+Current step : s-16 Policy Engine
+Next up      : s-16 — NOT STARTED
+Overall      : 15 / 35 steps complete
 ```
 
 ---
@@ -38,7 +38,7 @@ Overall      : 14 / 35 steps complete
 | Data layer (schemas, repositories) | s-04–s-06 | 3 / 3 | DONE |
 | Platform (API skeleton, observability, auth) | s-07–s-09 | 3 / 3 | DONE |
 | Ingestion (gateway, bus, risk, context) | s-10–s-13 | 4 / 4 | DONE |
-| Intelligence (AI decision, governance, policy) | s-14–s-16 | 1 / 3 | IN PROGRESS |
+| Intelligence (AI decision, governance, policy) | s-14–s-16 | 2 / 3 | IN PROGRESS |
 | Execution (orchestration, adapters, Temporal, approvals) | s-17–s-21 | 0 / 5 | NOT STARTED |
 | Workflows (payment, checkout, invoice) | s-22–s-24 | 0 / 3 | NOT STARTED |
 | Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 0 / 5 | NOT STARTED |
@@ -64,7 +64,7 @@ Overall      : 14 / 35 steps complete
 | s-12 | Risk Engine v1 | DONE | 2026-08-27 | 2026-08-27 | Deterministic rule-weighted scoring engine (payment failure, checkout abandonment, invoice overdue), 0–100 score + band mapping (LOW <40, MEDIUM 40–59, HIGH 60–84, CRITICAL ≥85), factor explainability JSONB, idempotent upsertOpenRisk, success resolution closing path (EXPIRED / resolved_upstream), risk.calculated domain event emission with correlation continuity, GET /risks (filters + cursor pagination) and GET /risks/:id with strict tenant isolation, 35 unit + 10 integration tests green |
 | s-13 | Customer Context Service | DONE | 2026-08-27 | 2026-08-27 | Single batch query builder across 8 sections, pure summarizers (180d, 90d, 14d, 7d windows), strict field allowlist projection, deterministic PII masking (email & phone), 8KB size budget with 5-step trimming preserving invariants, 30s Redis caching with purpose distinction and opt-out invalidation, CustomerContextService.buildForCase, GET /customers/:id/context with RBAC & 404 tenant isolation, OpenTelemetry metrics and spans; 542 tests passing across 34 files |
 | s-14 | AI Decision Service: Core Decision Path | DONE | 2026-08-27 | 2026-08-27 | Versioned prompt templates (`payment_failure@1`, `checkout_abandonment@1`, `invoice_overdue@1`) with strict JSON schema export and sha256 checksums; OpenAI-compatible LLM client with timeout (20s), exponential backoff + jitter retries (N=2), circuit breaker (5 failures / 60s cooldown), and SIMULATE_LLM_FAILURE injection; structured output parser with N=1 repair retry and deterministic rule-based fallback; paise token cost tracking; guarded case validation and 24h Idempotency-Key support; POST /ai/decide & GET /ai/decisions/:id with tenant isolation & RBAC; 38 unit + 9 integration tests green |
-| s-15 | AI Governance & Evaluation Harness | NOT STARTED | | | |
+| s-15 | AI Governance & Evaluation Harness | DONE | 2026-08-27 | 2026-08-27 | AI governance complete: universal token usage parsing across OpenAI/Anthropic/Gemini, authoritative minor unit pricing table with fail-closed unknown model handling, confidence hook contract (`requiresApproval`), transactional write of decision + `recovery_cost_entries` (`category: 'LLM'`), `GET /ai/decisions` and `GET /ai/decisions/:id` with RBAC & input snapshot masking, `@repo/eval` evaluation harness with 30 golden test cases across 3 risk surfaces, drift analysis, latency tracking, CI gate enforcement, prompt change runbook `docs/PROMPT_EVALUATION.md`; 608 tests passing across workspace |
 | s-16 | Policy Engine | NOT STARTED | | | |
 | s-17 | Recovery Case Orchestration Pipeline | NOT STARTED | | | |
 | s-18 | Payment Provider Adapters | NOT STARTED | | | |
@@ -140,5 +140,6 @@ One line per completed step or notable event. Format: `- YYYY-MM-DD | s-XX | sho
 2026-08-27 | s-12 | Risk Engine v1 (Deterministic Scoring) complete: rule-weighted scoring engines for payment failure, checkout abandonment, and invoice overdue; 0–100 score + band mapping (LOW, MEDIUM, HIGH, CRITICAL); JSONB factor explainability breakdown; idempotent upsertOpenRisk & EXPIRED success closing path; risk.calculated domain event emission on bus with correlation continuity; GET /risks and GET /risks/:id endpoints with strict tenant scoping & cursor pagination | bun run check-types green (8/8 pkgs); bun run test green (509 tests across 29 files incl. 35 rule unit + 10 risk integration tests); bun run check-docs green
 2026-08-27 | s-13 | Customer Context Service complete: single batch query builder across 8 sections, pure summarizers (180d, 90d, 14d, 7d windows), strict field allowlist projection, deterministic PII masking (email & phone), 8KB size budget with 5-step trimming preserving invariants, 30s Redis caching with purpose distinction and opt-out invalidation, CustomerContextService.buildForCase, GET /customers/:id/context with RBAC & 404 tenant isolation, OpenTelemetry metrics and spans | bun run check-types green (8/8 pkgs); bun run test green (542 tests across 34 files incl. 20 context unit + 8 integration tests); bun run lint green; bun run check-docs green
 2026-08-27 | s-14 | AI Decision Service: Core Decision Path complete: versioned prompt templates (payment_failure@1, checkout_abandonment@1, invoice_overdue@1) with sha256 checksums; OpenAI-compatible structured LLM client with timeout (20s), exponential backoff + jitter retries (N=2), circuit breaker (5 failures / 60s cooldown), and SIMULATE_LLM_FAILURE injection; structured output parser with N=1 repair retry and deterministic rule-based fallback; paise token cost tracking; guarded case validation and 24h Idempotency-Key support; POST /ai/decide & GET /ai/decisions/:id with tenant isolation & RBAC | bun run check-types green (8/8 pkgs); bun run test green (580 tests across 39 files incl. 29 AI unit + 9 integration tests); bun run lint green; bun run check-docs green (19 links OK)
+2026-08-27 | s-15 | AI Governance & Evaluation Harness complete: token pricing table in minor units (paise) with fail-closed unconfigured model guard, universal multi-provider token parsing, confidence hook contract (requiresApproval), in-transaction recovery_cost_entries writes, GET /ai/decisions & GET /ai/decisions/:id read APIs with RBAC inputSnapshot masking, services/eval evaluation runner with 30 golden dataset cases and CI gating (<95% validity or must_not violations fail), docs/PROMPT_EVALUATION.md prompt change checklist | bun run check-types green (9/9 pkgs); bun run test green (608 tests across 42 files incl. 13 governance unit + 13 adversarial + 2 eval tests); bun run check-docs green (19 links OK)
 ```
 

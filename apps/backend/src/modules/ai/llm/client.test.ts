@@ -6,7 +6,7 @@ import {
   LlmTransportError,
 } from "./client";
 import { LlmCircuitBreaker, CircuitBreakerOpenError } from "./circuit-breaker";
-import { calculateLlmCostMinorUnits } from "./structured";
+import { calculateLlmCostMinorUnits } from "../governance/pricing";
 
 describe("LLM Client, Circuit Breaker & Pricing (Step 14)", () => {
   beforeEach(() => {

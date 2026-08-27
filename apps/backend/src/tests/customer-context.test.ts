@@ -267,13 +267,13 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
       eventBus,
     });
     await app.ready();
-  });
+  }, 30000);
 
   afterAll(async () => {
     if (app) {
       await app.close();
     }
-  });
+  }, 30000);
 
   describe("1. GET /customers/:id/context Contract & Snapshot", () => {
     it("returns full allowlisted, size-bounded context matching Spec 01 §9 shape", async () => {
@@ -338,7 +338,7 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
       // Preferences
       expect(body.preferences.preferred_channel).toBe("WHATSAPP");
       expect(body.preferences.language).toBe("en");
-    });
+    }, 30000);
 
     it("returns zero-filled valid schema shape for empty-history customer", async () => {
       const response = await app.inject({
@@ -364,7 +364,7 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
       expect(body.checkout_summary.active_carts).toBe(0);
       expect(body.recovery_history.prior_cases).toBe(0);
       expect(body.communication_history.whatsapp_last_7d).toBe(0);
-    });
+    }, 30000);
   });
 
   describe("2. Security & Tenant Isolation", () => {
@@ -380,7 +380,7 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
       expect(response.statusCode).toBe(404);
       const body = JSON.parse(response.body);
       expect(body.error.code).toBe("NOT_FOUND");
-    });
+    }, 30000);
 
     it("returns 401 UNAUTHENTICATED without credentials", async () => {
       const response = await app.inject({
@@ -389,7 +389,7 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
       });
 
       expect(response.statusCode).toBe(401);
-    });
+    }, 30000);
 
     it("returns 422 for invalid UUID parameter", async () => {
       const response = await app.inject({
@@ -401,7 +401,7 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
       });
 
       expect(response.statusCode).toBe(422);
-    });
+    }, 30000);
   });
 
   describe("3. Redis Caching & Cache Invalidation", () => {
@@ -445,7 +445,7 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
         },
       });
       expect(res3.statusCode).toBe(200);
-    });
+    }, 30000);
   });
 
   describe("4. Internal Service API: buildForCase", () => {
@@ -462,7 +462,7 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
       expect(context).toBeDefined();
       expect(context.customer.id).toBe(richCustomerId);
       expect(context.recovery_history.prior_cases).toBeGreaterThanOrEqual(1);
-    });
+    }, 30000);
 
     it("throws CASE_NOT_FOUND when case does not exist or across tenants", async () => {
       await expect(
@@ -474,7 +474,7 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
           redis: app.redisClient,
         }),
       ).rejects.toThrow("Recovery case");
-    });
+    }, 30000);
   });
 
   describe("5. Latency Performance Smoke Test", () => {

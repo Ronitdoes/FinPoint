@@ -1,0 +1,994 @@
+[
+  {
+    "case_ref": "golden/payment-failure-001",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000001",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 499900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000001",
+        "score": 40,
+        "band": "MEDIUM",
+        "factors": ["card_declined_insufficient_funds"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000001", "name": "Customer 1", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 499900, "tenure_days": 120 },
+        "recovery_history": { "prior_cases": 1, "recovered_cases": 1, "total_recovered_minor": 499900, "consecutive_failures": 1 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": "visa" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["OFFER_INCENTIVE"],
+      "should_actions_any_of": [["RETRY_PAYMENT"], ["SEND_WHATSAPP"], ["SEND_EMAIL"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["insufficient_funds", "bank_decline", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/payment-failure-002",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000002",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 150000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T11:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000002",
+        "score": 75,
+        "band": "HIGH",
+        "factors": ["expired_card"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000002", "name": "Customer 2", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 10 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 2 },
+        "payment_method_health": { "is_expired": true, "has_backup_method": false, "card_brand": "mastercard" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": "EMAIL", "last_contact_at": "2026-08-24T12:00:00.000Z", "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["OFFER_INCENTIVE"],
+      "should_actions_any_of": [["CREATE_PAYMENT_LINK"], ["SEND_EMAIL"], ["SEND_WHATSAPP"]],
+      "min_confidence": 0.6,
+      "cause_one_of": ["stale_card", "bank_decline", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/payment-failure-003",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000003",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 89900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T12:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000003",
+        "score": 25,
+        "band": "LOW",
+        "factors": ["network_timeout"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000003", "name": "Customer 3", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 450000, "tenure_days": 300 },
+        "recovery_history": { "prior_cases": 5, "recovered_cases": 5, "total_recovered_minor": 450000, "consecutive_failures": 1 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": true, "card_brand": "visa" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": ["WHATSAPP"] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["SEND_WHATSAPP", "OFFER_INCENTIVE"],
+      "should_actions_any_of": [["RETRY_PAYMENT"], ["SEND_EMAIL"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["network_issue", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/payment-failure-004",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000004",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 1200000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T13:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000004",
+        "score": 60,
+        "band": "MEDIUM",
+        "factors": ["authentication_required"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000004", "name": "Customer 4", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 1 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 1 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": "visa" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["OFFER_INCENTIVE"],
+      "should_actions_any_of": [["CREATE_PAYMENT_LINK"], ["SEND_EMAIL"], ["SEND_WHATSAPP"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["bank_decline", "insufficient_funds", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/payment-failure-005",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000005",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 299900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T14:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000005",
+        "score": 85,
+        "band": "HIGH",
+        "factors": ["consecutive_declines_x3"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000005", "name": "Customer 5", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 50 },
+        "recovery_history": { "prior_cases": 2, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 3 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": "mastercard" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": "WHATSAPP", "last_contact_at": "2026-08-23T10:00:00.000Z", "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["OFFER_INCENTIVE"],
+      "should_actions_any_of": [["CREATE_PAYMENT_LINK"], ["CREATE_HUMAN_TASK"], ["SEND_EMAIL"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["bank_decline", "stale_card", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/payment-failure-006",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000006",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 59900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T15:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000006",
+        "score": 30,
+        "band": "LOW",
+        "factors": ["card_velocity_exceeded"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000006", "name": "Customer 6", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 180000, "tenure_days": 180 },
+        "recovery_history": { "prior_cases": 3, "recovered_cases": 3, "total_recovered_minor": 180000, "consecutive_failures": 1 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": "visa" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["OFFER_INCENTIVE"],
+      "should_actions_any_of": [["RETRY_PAYMENT"], ["SEND_EMAIL"], ["SEND_WHATSAPP"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["network_issue", "bank_decline", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/payment-failure-007",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000007",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 249900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T16:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000007",
+        "score": 50,
+        "band": "MEDIUM",
+        "factors": ["do_not_honor"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000007", "name": "Customer 7", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 249900, "tenure_days": 90 },
+        "recovery_history": { "prior_cases": 1, "recovered_cases": 1, "total_recovered_minor": 249900, "consecutive_failures": 1 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": true, "card_brand": "rupay" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["OFFER_INCENTIVE"],
+      "should_actions_any_of": [["RETRY_PAYMENT"], ["SEND_WHATSAPP"], ["CREATE_PAYMENT_LINK"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["bank_decline", "insufficient_funds", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/payment-failure-008",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000008",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 999900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T17:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000008",
+        "score": 90,
+        "band": "HIGH",
+        "factors": ["stolen_card_flag"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000008", "name": "Customer 8", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 5 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 1 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": "visa" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT", "OFFER_INCENTIVE"],
+      "should_actions_any_of": [["CREATE_PAYMENT_LINK"], ["CREATE_HUMAN_TASK"], ["SEND_EMAIL"]],
+      "min_confidence": 0.6,
+      "cause_one_of": ["bank_decline", "stale_card", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/payment-failure-009",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000009",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 79900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T18:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000009",
+        "score": 35,
+        "band": "LOW",
+        "factors": ["insufficient_funds"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000009", "name": "Customer 9", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 320000, "tenure_days": 210 },
+        "recovery_history": { "prior_cases": 4, "recovered_cases": 4, "total_recovered_minor": 320000, "consecutive_failures": 1 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": "mastercard" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["OFFER_INCENTIVE"],
+      "should_actions_any_of": [["RETRY_PAYMENT"], ["SEND_WHATSAPP"], ["SEND_EMAIL"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["insufficient_funds", "waiting_for_payday", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/payment-failure-010",
+    "surface": "PAYMENT_FAILURE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "10000000-0000-0000-0000-000000000010",
+        "risk_type": "PAYMENT_FAILURE",
+        "amount_at_risk": 350000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T19:00:00.000Z"
+      },
+      "risk": {
+        "id": "11000000-0000-0000-0000-000000000010",
+        "score": 45,
+        "band": "MEDIUM",
+        "factors": ["upi_collect_timeout"]
+      },
+      "customer_context": {
+        "customer": { "id": "12000000-0000-0000-0000-000000000010", "name": "Customer 10", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 700000, "tenure_days": 150 },
+        "recovery_history": { "prior_cases": 2, "recovered_cases": 2, "total_recovered_minor": 700000, "consecutive_failures": 1 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": "upi" },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["OFFER_INCENTIVE"],
+      "should_actions_any_of": [["CREATE_PAYMENT_LINK"], ["SEND_WHATSAPP"], ["SEND_SMS"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["network_issue", "bank_decline", "unknown"]
+    }
+  },
+
+  {
+    "case_ref": "golden/invoice-overdue-001",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000001",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 5000000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-20T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000001",
+        "score": 45,
+        "band": "MEDIUM",
+        "factors": ["overdue_5_days"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000001", "name": "Enterprise 1", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 10000000, "tenure_days": 200 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": "netbanking" },
+        "invoice_summary": { "overdue_count": 1, "total_overdue_minor": 5000000 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_EMAIL"], ["CREATE_PAYMENT_LINK"], ["SEND_WHATSAPP"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["waiting_for_payday", "distraction", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/invoice-overdue-002",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000002",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 15000000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-10T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000002",
+        "score": 80,
+        "band": "HIGH",
+        "factors": ["overdue_15_days", "unresponsive_to_email"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000002", "name": "Enterprise 2", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 10000000, "tenure_days": 90 },
+        "recovery_history": { "prior_cases": 1, "recovered_cases": 1, "total_recovered_minor": 10000000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 2, "total_overdue_minor": 25000000 },
+        "communication_history": { "last_contact_channel": "EMAIL", "last_contact_at": "2026-08-15T09:00:00.000Z", "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["CREATE_HUMAN_TASK"], ["SEND_WHATSAPP"], ["CREATE_PAYMENT_LINK"]],
+      "min_confidence": 0.6,
+      "cause_one_of": ["price_objection", "waiting_for_payday", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/invoice-overdue-003",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000003",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 2000000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-24T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000003",
+        "score": 20,
+        "band": "LOW",
+        "factors": ["overdue_1_day"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000003", "name": "Enterprise 3", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 16000000, "tenure_days": 400 },
+        "recovery_history": { "prior_cases": 8, "recovered_cases": 8, "total_recovered_minor": 16000000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": "netbanking" },
+        "invoice_summary": { "overdue_count": 1, "total_overdue_minor": 2000000 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT", "CREATE_HUMAN_TASK"],
+      "should_actions_any_of": [["SEND_EMAIL"], ["SEND_WHATSAPP"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["distraction", "waiting_for_payday", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/invoice-overdue-004",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000004",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 8000000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-18T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000004",
+        "score": 65,
+        "band": "MEDIUM",
+        "factors": ["overdue_7_days"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000004", "name": "Enterprise 4", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 30 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 1, "total_overdue_minor": 8000000 },
+        "communication_history": { "last_contact_channel": "EMAIL", "last_contact_at": "2026-08-20T10:00:00.000Z", "opted_out_channels": ["EMAIL"] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["SEND_EMAIL", "RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_WHATSAPP"], ["CREATE_PAYMENT_LINK"], ["SEND_SMS"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["distraction", "waiting_for_payday", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/invoice-overdue-005",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000005",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 25000000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-01T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000005",
+        "score": 90,
+        "band": "HIGH",
+        "factors": ["overdue_24_days", "large_balance"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000005", "name": "Enterprise 5", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 15 },
+        "recovery_history": { "prior_cases": 2, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 2 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 3, "total_overdue_minor": 55000000 },
+        "communication_history": { "last_contact_channel": "WHATSAPP", "last_contact_at": "2026-08-10T10:00:00.000Z", "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["CREATE_HUMAN_TASK"], ["SEND_EMAIL"], ["OFFER_INCENTIVE"]],
+      "min_confidence": 0.6,
+      "cause_one_of": ["price_objection", "waiting_for_payday", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/invoice-overdue-006",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000006",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 4500000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-22T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000006",
+        "score": 35,
+        "band": "LOW",
+        "factors": ["overdue_3_days"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000006", "name": "Enterprise 6", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 9000000, "tenure_days": 250 },
+        "recovery_history": { "prior_cases": 2, "recovered_cases": 2, "total_recovered_minor": 9000000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 1, "total_overdue_minor": 4500000 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_EMAIL"], ["CREATE_PAYMENT_LINK"], ["SEND_WHATSAPP"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["distraction", "waiting_for_payday", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/invoice-overdue-007",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000007",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 11000000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-16T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000007",
+        "score": 55,
+        "band": "MEDIUM",
+        "factors": ["overdue_9_days"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000007", "name": "Enterprise 7", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 8000000, "tenure_days": 180 },
+        "recovery_history": { "prior_cases": 1, "recovered_cases": 1, "total_recovered_minor": 8000000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 1, "total_overdue_minor": 11000000 },
+        "communication_history": { "last_contact_channel": "EMAIL", "last_contact_at": "2026-08-18T10:00:00.000Z", "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_WHATSAPP"], ["CREATE_PAYMENT_LINK"], ["SEND_EMAIL"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["waiting_for_payday", "distraction", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/invoice-overdue-008",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000008",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 3200000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-23T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000008",
+        "score": 30,
+        "band": "LOW",
+        "factors": ["overdue_2_days"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000008", "name": "Enterprise 8", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 9600000, "tenure_days": 350 },
+        "recovery_history": { "prior_cases": 3, "recovered_cases": 3, "total_recovered_minor": 9600000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 1, "total_overdue_minor": 3200000 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_EMAIL"], ["SEND_WHATSAPP"], ["CREATE_PAYMENT_LINK"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["distraction", "waiting_for_payday", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/invoice-overdue-009",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000009",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 18000000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-08T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000009",
+        "score": 75,
+        "band": "HIGH",
+        "factors": ["overdue_17_days"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000009", "name": "Enterprise 9", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 10 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 1, "total_overdue_minor": 18000000 },
+        "communication_history": { "last_contact_channel": "EMAIL", "last_contact_at": "2026-08-12T10:00:00.000Z", "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["CREATE_HUMAN_TASK"], ["SEND_WHATSAPP"], ["CREATE_PAYMENT_LINK"]],
+      "min_confidence": 0.6,
+      "cause_one_of": ["price_objection", "waiting_for_payday", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/invoice-overdue-010",
+    "surface": "INVOICE_OVERDUE",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "20000000-0000-0000-0000-000000000010",
+        "risk_type": "INVOICE_OVERDUE",
+        "amount_at_risk": 6000000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-19T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "21000000-0000-0000-0000-000000000010",
+        "score": 40,
+        "band": "MEDIUM",
+        "factors": ["overdue_6_days"]
+      },
+      "customer_context": {
+        "customer": { "id": "22000000-0000-0000-0000-000000000010", "name": "Enterprise 10", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 5000000, "tenure_days": 120 },
+        "recovery_history": { "prior_cases": 1, "recovered_cases": 1, "total_recovered_minor": 5000000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 1, "total_overdue_minor": 6000000 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_EMAIL"], ["SEND_WHATSAPP"], ["CREATE_PAYMENT_LINK"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["waiting_for_payday", "distraction", "unknown"]
+    }
+  },
+
+  {
+    "case_ref": "golden/checkout-abandonment-001",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000001",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 299900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T10:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000001",
+        "score": 40,
+        "band": "MEDIUM",
+        "factors": ["abandoned_at_payment_step"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000001", "name": "Shopper 1", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 1 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_WHATSAPP"], ["SEND_EMAIL"], ["OFFER_INCENTIVE"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["price_objection", "distraction", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/checkout-abandonment-002",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000002",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 999900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T11:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000002",
+        "score": 70,
+        "band": "HIGH",
+        "factors": ["high_cart_value", "coupon_failed"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000002", "name": "Shopper 2", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 500000, "tenure_days": 100 },
+        "recovery_history": { "prior_cases": 1, "recovered_cases": 1, "total_recovered_minor": 500000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["OFFER_INCENTIVE"], ["SEND_WHATSAPP"], ["SEND_EMAIL"]],
+      "min_confidence": 0.6,
+      "cause_one_of": ["price_objection", "distraction", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/checkout-abandonment-003",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000003",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 49900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T12:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000003",
+        "score": 25,
+        "band": "LOW",
+        "factors": ["abandoned_after_30m"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000003", "name": "Shopper 3", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 1 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT", "CREATE_HUMAN_TASK"],
+      "should_actions_any_of": [["SEND_WHATSAPP"], ["SEND_EMAIL"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["distraction", "price_objection", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/checkout-abandonment-004",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000004",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 1500000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T13:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000004",
+        "score": 60,
+        "band": "MEDIUM",
+        "factors": ["high_intent_multiple_visits"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000004", "name": "Shopper 4", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 2000000, "tenure_days": 180 },
+        "recovery_history": { "prior_cases": 2, "recovered_cases": 2, "total_recovered_minor": 2000000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": ["WHATSAPP"] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["SEND_WHATSAPP", "RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_EMAIL"], ["OFFER_INCENTIVE"], ["CREATE_PAYMENT_LINK"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["price_objection", "distraction", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/checkout-abandonment-005",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000005",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 550000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T14:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000005",
+        "score": 50,
+        "band": "MEDIUM",
+        "factors": ["shipping_info_entered"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000005", "name": "Shopper 5", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 1 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_WHATSAPP"], ["SEND_EMAIL"], ["OFFER_INCENTIVE"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["price_objection", "distraction", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/checkout-abandonment-006",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000006",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 199900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T15:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000006",
+        "score": 30,
+        "band": "LOW",
+        "factors": ["mobile_browser"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000006", "name": "Shopper 6", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 199900, "tenure_days": 80 },
+        "recovery_history": { "prior_cases": 1, "recovered_cases": 1, "total_recovered_minor": 199900, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_WHATSAPP"], ["SEND_EMAIL"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["distraction", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/checkout-abandonment-007",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000007",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 750000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T16:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000007",
+        "score": 45,
+        "band": "MEDIUM",
+        "factors": ["payment_page_dropoff"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000007", "name": "Shopper 7", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 1 },
+        "recovery_history": { "prior_cases": 0, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_WHATSAPP"], ["SEND_EMAIL"], ["OFFER_INCENTIVE"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["distraction", "price_objection", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/checkout-abandonment-008",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000008",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 1250000,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T17:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000008",
+        "score": 65,
+        "band": "MEDIUM",
+        "factors": ["comparison_shopper"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000008", "name": "Shopper 8", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 0, "tenure_days": 10 },
+        "recovery_history": { "prior_cases": 1, "recovered_cases": 0, "total_recovered_minor": 0, "consecutive_failures": 1 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["OFFER_INCENTIVE"], ["SEND_WHATSAPP"], ["SEND_EMAIL"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["price_objection", "distraction", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/checkout-abandonment-009",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000009",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 349900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T18:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000009",
+        "score": 35,
+        "band": "LOW",
+        "factors": ["returning_customer"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000009", "name": "Shopper 9", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 950000, "tenure_days": 260 },
+        "recovery_history": { "prior_cases": 3, "recovered_cases": 3, "total_recovered_minor": 950000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["SEND_WHATSAPP"], ["SEND_EMAIL"]],
+      "min_confidence": 0.5,
+      "cause_one_of": ["distraction", "unknown"]
+    }
+  },
+  {
+    "case_ref": "golden/checkout-abandonment-010",
+    "surface": "CHECKOUT_ABANDONMENT",
+    "input_snapshot": {
+      "recovery_case": {
+        "id": "30000000-0000-0000-0000-000000000010",
+        "risk_type": "CHECKOUT_ABANDONMENT",
+        "amount_at_risk": 1899900,
+        "currency": "INR",
+        "status": "OPEN",
+        "opened_at": "2026-08-25T19:00:00.000Z"
+      },
+      "risk": {
+        "id": "31000000-0000-0000-0000-000000000010",
+        "score": 85,
+        "band": "HIGH",
+        "factors": ["vip_customer", "multiple_attempts"]
+      },
+      "customer_context": {
+        "customer": { "id": "32000000-0000-0000-0000-000000000010", "name": "Shopper 10", "status": "ACTIVE", "opted_out": false, "lifetime_value_minor": 3500000, "tenure_days": 300 },
+        "recovery_history": { "prior_cases": 2, "recovered_cases": 2, "total_recovered_minor": 3500000, "consecutive_failures": 0 },
+        "payment_method_health": { "is_expired": false, "has_backup_method": false, "card_brand": null },
+        "invoice_summary": { "overdue_count": 0, "total_overdue_minor": 0 },
+        "communication_history": { "last_contact_channel": null, "last_contact_at": null, "opted_out_channels": [] }
+      }
+    },
+    "expect": {
+      "must_not_actions": ["RETRY_PAYMENT"],
+      "should_actions_any_of": [["CREATE_HUMAN_TASK"], ["SEND_WHATSAPP"], ["OFFER_INCENTIVE"]],
+      "min_confidence": 0.6,
+      "cause_one_of": ["price_objection", "unknown"]
+    }
+  }
+]

@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { ValidationError } from "../../lib/errors";
 import { AiDecideService } from "./decide.service";
+import { decisionGovernanceRoutes } from "./governance/routes";
 
 const decideBodySchema = z.object({
   case_id: z.string().uuid(),
@@ -10,10 +11,14 @@ const decideBodySchema = z.object({
 });
 
 /**
- * AI Decision Service Fastify Routes (Spec 01 §10, Spec 03 §5, Step 14).
- * Provides internal controlled LLM decisioning behind POST /ai/decide.
+ * AI Decision Service Fastify Routes (Spec 01 §10, Spec 03 §5, Step 14 & 15).
+ * Provides internal controlled LLM decisioning behind POST /ai/decide
+ * and decision audit / governance APIs behind GET /ai/decisions and GET /ai/decisions/:id.
  */
 export const aiRoutes: FastifyPluginAsync = async (app) => {
+  // Register decision governance read routes (GET /decisions, GET /decisions/:id)
+  await app.register(decisionGovernanceRoutes);
+
   /**
    * POST /ai/decide — Run controlled LLM decision pipeline for a recovery case.
    * Internal endpoint: requires session role >= OPERATIONS or API key with 'ai:decide' scope.
@@ -53,49 +58,6 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
       });
 
       return reply.status(200).send(decision);
-    },
-  );
-
-  /**
-   * GET /ai/decisions/:id — Retrieve a single AI decision record by ID.
-   */
-  app.get(
-    "/decisions/:id",
-    {
-      preHandler: [app.requireAuth],
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const paramsSchema = z.object({ id: z.string().uuid() });
-      const parseParams = paramsSchema.safeParse(request.params);
-      if (!parseParams.success) {
-        throw new ValidationError("Invalid decision ID format", {
-          issues: parseParams.error.issues,
-        });
-      }
-
-      const tenantScope = app.getTenantScope(request);
-      const decision = await app.repos.findDecisionById(
-        { db: app.db },
-        {
-          tenantId: tenantScope.tenantId,
-          decisionId: parseParams.data.id,
-        },
-      );
-
-      if (!decision) {
-        return reply.status(404).send({
-          error: {
-            code: "NOT_FOUND",
-            message: "AI decision record not found",
-            details: {},
-          },
-        });
-      }
-
-      return reply.status(200).send({
-        ...decision,
-        costMinorUnits: Number(decision.costMinorUnits ?? 0n),
-      });
     },
   );
 };

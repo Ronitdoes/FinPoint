@@ -1,6 +1,10 @@
 import { LlmClient, type ChatMessage } from "./client";
 import { getDecisionJsonSchema } from "../schemas/decision";
 import type { PromptDefinition, DecisionPromptSnapshot } from "../prompts/registry";
+import {
+  computeCostMinorUnits,
+  parseTokenUsage,
+} from "../governance/pricing";
 
 export interface StructuredDecisionResult {
   parsedJson: unknown;
@@ -10,36 +14,6 @@ export interface StructuredDecisionResult {
   outputTokens: number;
   costMinorUnits: bigint;
   model: string;
-}
-
-/**
- * Model token pricing constants in INR paise per 1,000,000 tokens (assuming ~$1 = ₹85):
- * gpt-4o: $2.50 input / 1M => ₹212.50 => 21250 paise / 1M tokens
- *         $10.00 output / 1M => ₹850.00 => 85000 paise / 1M tokens
- */
-export const MODEL_PRICING_PAISE_PER_MILLION: Record<
-  string,
-  { prompt: number; completion: number }
-> = {
-  "gpt-4o": { prompt: 21250, completion: 85000 },
-  "gpt-4o-mini": { prompt: 1275, completion: 5100 },
-  default: { prompt: 21250, completion: 85000 },
-};
-
-export function calculateLlmCostMinorUnits(
-  model: string,
-  promptTokens: number,
-  completionTokens: number,
-): bigint {
-  const pricing =
-    MODEL_PRICING_PAISE_PER_MILLION[model] ||
-    MODEL_PRICING_PAISE_PER_MILLION.default;
-
-  const promptCost = (BigInt(promptTokens) * BigInt(pricing.prompt)) / 1_000_000n;
-  const completionCost =
-    (BigInt(completionTokens) * BigInt(pricing.completion)) / 1_000_000n;
-
-  return promptCost + completionCost;
 }
 
 export class StructuredCompletionService {
@@ -97,21 +71,16 @@ export class StructuredCompletionService {
       parsedJson = null;
     }
 
-    const inputTokens = response.usage?.prompt_tokens ?? 0;
-    const outputTokens = response.usage?.completion_tokens ?? 0;
+    const tokenUsage = parseTokenUsage(response.usage);
     const resolvedModel = response.model || model || "gpt-4o";
-    const costMinorUnits = calculateLlmCostMinorUnits(
-      resolvedModel,
-      inputTokens,
-      outputTokens,
-    );
+    const costMinorUnits = computeCostMinorUnits(tokenUsage, resolvedModel);
 
     return {
       parsedJson,
       rawText,
       latencyMs,
-      inputTokens,
-      outputTokens,
+      inputTokens: tokenUsage.promptTokens,
+      outputTokens: tokenUsage.completionTokens,
       costMinorUnits,
       model: resolvedModel,
     };
@@ -184,21 +153,16 @@ Please fix the errors and output a valid JSON decision matching the required sch
       parsedJson = null;
     }
 
-    const inputTokens = response.usage?.prompt_tokens ?? 0;
-    const outputTokens = response.usage?.completion_tokens ?? 0;
+    const tokenUsage = parseTokenUsage(response.usage);
     const resolvedModel = response.model || model || "gpt-4o";
-    const costMinorUnits = calculateLlmCostMinorUnits(
-      resolvedModel,
-      inputTokens,
-      outputTokens,
-    );
+    const costMinorUnits = computeCostMinorUnits(tokenUsage, resolvedModel);
 
     return {
       parsedJson,
       rawText,
       latencyMs,
-      inputTokens,
-      outputTokens,
+      inputTokens: tokenUsage.promptTokens,
+      outputTokens: tokenUsage.completionTokens,
       costMinorUnits,
       model: resolvedModel,
     };
