@@ -20,8 +20,12 @@ export const DomainErrorCodes = {
   NOT_FOUND: "NOT_FOUND",
   CONFLICT: "CONFLICT",
   IDEMPOTENCY_IN_FLIGHT: "IDEMPOTENCY_IN_FLIGHT",
+  IDEMPOTENCY_KEY_REUSED: "IDEMPOTENCY_KEY_REUSED",
   RATE_LIMITED: "RATE_LIMITED",
   TENANT_CONTEXT_MISSING: "TENANT_CONTEXT_MISSING",
+  INVALID_SIGNATURE: "INVALID_SIGNATURE",
+  UNMAPPABLE_PAYLOAD: "UNMAPPABLE_PAYLOAD",
+  NOT_ACCEPTABLE: "NOT_ACCEPTABLE",
   INTERNAL: "INTERNAL",
 } as const;
 
@@ -113,6 +117,15 @@ export class IdempotencyInFlightError extends DomainError {
   }
 }
 
+export class IdempotencyKeyReusedError extends DomainError {
+  constructor(
+    message: string = "Idempotency key was already used with a different request payload",
+    details: unknown = {},
+  ) {
+    super(message, DomainErrorCodes.IDEMPOTENCY_KEY_REUSED, 409, details);
+  }
+}
+
 export class RateLimitedError extends DomainError {
   constructor(
     message: string = "Rate limit exceeded",
@@ -125,8 +138,27 @@ export class RateLimitedError extends DomainError {
   }
 }
 
+export class InvalidSignatureError extends DomainError {
+  constructor(message: string = "Invalid webhook signature", details: unknown = {}) {
+    super(message, DomainErrorCodes.INVALID_SIGNATURE, 401, details);
+  }
+}
+
+export class UnmappablePayloadError extends DomainError {
+  constructor(message: string = "Payload cannot be mapped or parsed", details: unknown = {}) {
+    super(message, DomainErrorCodes.UNMAPPABLE_PAYLOAD, 400, details);
+  }
+}
+
+export class NotAcceptableError extends DomainError {
+  constructor(message: string = "Content-Type must be application/json", details: unknown = {}) {
+    super(message, DomainErrorCodes.NOT_ACCEPTABLE, 406, details);
+  }
+}
+
 export class InternalError extends DomainError {
   constructor(message: string = "An internal server error occurred", details: unknown = {}) {
     super(message, DomainErrorCodes.INTERNAL, 500, details);
   }
 }
+

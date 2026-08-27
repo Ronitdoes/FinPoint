@@ -181,3 +181,48 @@ export async function listUnprocessedEvents(
     .limit(limit)
     .orderBy(events.receivedAt);
 }
+
+export interface EventFilterInput {
+  tenantId?: string;
+  type?: NewEvent["type"];
+  status?: NewEvent["status"];
+  from?: Date;
+  to?: Date;
+  limit?: number;
+}
+
+/**
+ * Lists events matching filter parameters with strict pagination (max 1000).
+ */
+export async function findEventsByFilter(
+  ctx: RepoContext,
+  filter: EventFilterInput,
+): Promise<Event[]> {
+  const executor = getExecutor(ctx);
+  const conditions = [];
+
+  if (filter.tenantId) {
+    conditions.push(eq(events.tenantId, filter.tenantId));
+  }
+  if (filter.type) {
+    conditions.push(eq(events.type, filter.type));
+  }
+  if (filter.status) {
+    conditions.push(eq(events.status, filter.status));
+  }
+  if (filter.from) {
+    conditions.push(sql`${events.receivedAt} >= ${filter.from}`);
+  }
+  if (filter.to) {
+    conditions.push(sql`${events.receivedAt} <= ${filter.to}`);
+  }
+
+  const effectiveLimit = Math.min(Math.max(1, filter.limit ?? 100), 1000);
+
+  return await executor
+    .select()
+    .from(events)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(sql`${events.receivedAt} DESC`)
+    .limit(effectiveLimit);
+}

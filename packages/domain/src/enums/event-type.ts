@@ -24,6 +24,7 @@ export const EVENT_TYPES = [
   "customer.payment_method_changed",
   "customer_promised_to_pay",
   "customer_payment_received",
+  "UNMAPPED",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -47,6 +48,8 @@ export const INVOICE_EVENT_TYPES = EVENT_TYPES.filter((type) =>
 export const CUSTOMER_EVENT_TYPES = EVENT_TYPES.filter(
   (type) => type.startsWith("customer.") || type.startsWith("customer_"),
 ) as readonly (typeof EVENT_TYPES)[number][];
+
+export const UNMAPPED_EVENT_TYPES = ["UNMAPPED"] as const;
 
 export function isEventType(value: unknown): value is EventType {
   return (

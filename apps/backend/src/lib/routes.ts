@@ -3,6 +3,8 @@ import { metaRoutes } from "../modules/meta/routes";
 import { authRoutes } from "../modules/auth/routes";
 import { adminUsersRoutes } from "../modules/admin/users.routes";
 import { adminApiKeysRoutes } from "../modules/admin/api-keys.routes";
+import { webhooksRoutes } from "../modules/webhooks/routes";
+import { eventsRoutes } from "../modules/events/routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -30,6 +32,14 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/admin",
     plugin: adminApiKeysRoutes,
+  },
+  {
+    prefix: "/webhooks",
+    plugin: webhooksRoutes,
+  },
+  {
+    prefix: "/events",
+    plugin: eventsRoutes,
   },
 ];
 

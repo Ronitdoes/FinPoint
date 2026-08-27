@@ -44,10 +44,10 @@ MVP scenario items mapped across s-10…s-32. "Verified in" names the step whose
 
 | # | DoD item | Implemented in | Verified in |
 |---|---|---|---|
-| 1 | Provider sends payment.failed | s-10 | s-10, s-32 |
-| 2 | Event is authenticated | s-10 (signature verification; authn plugins s-09) | s-10, s-30 |
-| 3 | Duplicate event is ignored | s-10 idempotency (+ Redis fast path ADR-007) | s-31 concurrency tests, s-32 |
-| 4 | Internal event is created | s-11 | s-11, s-32 |
+| 1 | Provider sends payment.failed | s-10 | s-10 ✅, s-32 |
+| 2 | Event is authenticated | s-10 (signature verification; authn plugins s-09) | s-10 ✅, s-30 |
+| 3 | Duplicate event is ignored | s-10 idempotency (+ Redis fast path ADR-007) | s-10 ✅, s-31 concurrency tests, s-32 |
+| 4 | Internal event is created | s-11 | s-11 ✅, s-32 |
 | 5 | Risk is calculated | s-12 | s-12 unit suite |
 | 6 | Recovery case is created | s-17 | s-17, s-32 |
 | 7 | Context is assembled | s-13 | s-13, s-32 |
@@ -111,7 +111,7 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Architectural contract (AI/Policy/Temporal/PG/bus/adapters/dashboard) | spec 02 §1 | all steps; recorded in ARCHITECTURE.md |
 | Core loop Detection→Decision→Policy→Execution→Outcome→Learning | spec 00 §1 | s-10…s-27 chain |
 | Bounded autonomy principle | spec 00 §1, §8 | s-14/s-15/s-16 enforcement; CONVENTIONS.md §10 |
-| Event envelope standardization | spec 01 §6 | s-03 (envelope in domain) ✅ confirmed; s-11 (bus transport/replay) |
+| Event envelope standardization | spec 01 §6 | s-03 (envelope in domain) ✅ confirmed; s-11 (bus transport/replay) ✅ |
 | Domain vocabulary package `@repo/domain`: entities, enums, canonical state machine + transition table, closed action catalog with zod parameter schemas, policy-limit constants, money helpers (integer minor units), AI-decidable per-surface subsets, case-timeline vocabulary | spec 01 §1, §10, §12, §17; spec 02 §4, §5, §6; spec 03 §5, §6 | s-03 ✅; s-04 ✅ (pgEnum parity confirmed) |
 | Idempotency key formula | spec 01 §21 | s-04 ✅ (payment_attempts constraint); s-05 ✅ (actions/messages unique keys); s-18/s-19 adapters; verified s-31 |
 | Tenant isolation on business tables | spec 02 §15 | s-04 ✅ (financial core schema FK + indexes); s-05 ✅ (recovery schema FK + indexes); s-06 ✅ (repositories with tenant-first signatures); s-09 request context; s-30 verification |
@@ -122,6 +122,8 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Security acceptance criteria | spec 03 §11 | s-09/s-10 build; s-30 verifies each line |
 | Observability foundation: OpenTelemetry distributed tracing, Prometheus metrics registry (@repo/observability), /metrics endpoint, structured logging with secret redaction, 5 core trace keys propagation | spec 01 §20; spec 02 §1; spec 03 §10; ADR-014 | s-08 ✅ (@repo/observability, Fastify otel plugin, /metrics, compose otel-collector) |
 | Authentication, authorization & tenant context (sessions, API keys, RBAC with 5 roles, tenant context guard, login rate-limiting, bootstrap admin seed) | spec 01 §22; spec 03 §11; ADR-012 | s-09 ✅ (user_sessions schema & repo, API keys, Fastify auth/rbac plugins, /auth & /admin routes, seed-admin script, 17 integration tests) |
+| Webhook ingestion & event gateway (Stripe & Razorpay HMAC signature verification, pure normalization matrix, financial core transactional upserts, deduplication anchor, EventBus async dispatch, UNMAPPED handling, secret rotation runbook) | spec 01 §7; spec 02 §5, §14; spec 03 §4, §10; ADR-006 | s-10 ✅ (POST /webhooks/stripe, /webhooks/razorpay, normalizers, core upserts, EventBus, rotation runbook, 11 integration tests) |
+| Internal Event Bus & Replay (EventBus abstraction with InProcess and Redpanda drivers, consumer framework with retry/backoff/DLQ, poison message routing, POST /events and POST /events/replay endpoints with RBAC & audit trail) | spec 01 §0, §6; spec 02 §13; spec 03 §9; ADR-006 | s-11 ✅ (InProcessEventBus, RedpandaEventBus, consumer.ts, POST /events, POST /events/replay, parity tests, 10 integration tests) |
 | Attribution definition documented | spec 01 §25, spec 02 §9 | s-26 |
 | Local infrastructure stack (postgres, redis, temporal, temporal-ui, redpanda, redpanda-console) with healthchecks + named volumes | spec 01 §4 | s-02 |
 | `.env.example` + typed/validated config (`@repo/config`, fail-fast, frozen) consumed by apps/services instead of raw `process.env` | spec 01 §3, §4; CONVENTIONS §1, §12 | s-02 |

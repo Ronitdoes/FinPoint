@@ -15,6 +15,17 @@ import { authPlugin } from "./plugins/auth";
 import { rbacPlugin } from "./plugins/rbac";
 import { registerRouteModules } from "./lib/routes";
 import type { Database } from "@repo/db";
+import { createEventBus, NullBus, type EventBus } from "@repo/integrations";
+
+declare module "fastify" {
+  interface FastifyRequest {
+    rawBody?: string | Buffer;
+  }
+  interface FastifyInstance {
+    eventBus: EventBus;
+    config: ServerConfig;
+  }
+}
 
 export interface AppOptions {
   config?: ServerConfig;
@@ -25,6 +36,7 @@ export interface AppOptions {
   trustProxy?: boolean;
   disableRateLimit?: boolean;
   logger?: FastifyServerOptions["logger"];
+  eventBus?: EventBus;
 }
 
 /**
@@ -43,6 +55,41 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     trustProxy: opts.trustProxy ?? false,
     requestIdHeader: "x-request-id",
     genReqId: () => randomUUID(),
+  });
+
+  // Register raw body preserving parser for JSON payloads (s-10 §Requirements 2)
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "buffer" },
+    (req, body, done) => {
+      (req as any).rawBody = body.toString("utf8");
+      if (body.length === 0) {
+        return done(null, {});
+      }
+      try {
+        const json = JSON.parse(body.toString("utf8"));
+        done(null, json);
+      } catch (err: any) {
+        err.statusCode = 400;
+        done(err, undefined);
+      }
+    },
+  );
+
+  // Decorate fastify with EventBus and ServerConfig (s-11)
+  const eventBus = opts.eventBus ?? createEventBus(config.bus);
+  app.decorate("eventBus", eventBus);
+  app.decorate("config", config);
+
+  // Close event bus cleanly on app shutdown
+  app.addHook("onClose", async () => {
+    try {
+      if (eventBus && typeof eventBus.close === "function") {
+        await eventBus.close();
+      }
+    } catch {
+      // ignore teardown errors
+    }
   });
 
   // Redis client setup for rate limiting & caching

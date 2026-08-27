@@ -155,6 +155,58 @@ export const authFailuresTotal = new Counter({
   registers: [metricsRegistry],
 });
 
+// 10. Webhook Ingestion & Anti-Duplication Metrics (Step 10)
+export const webhookDeliveriesTotal = new Counter({
+  name: "webhook_deliveries_total",
+  help: "Total number of inbound webhook deliveries partitioned by provider and delivery status",
+  labelNames: ["provider", "status"] as const,
+  registers: [metricsRegistry],
+});
+
+export const webhookDurationMs = new Histogram({
+  name: "webhook_duration_ms",
+  help: "Webhook processing latency distribution in milliseconds",
+  labelNames: ["provider", "status"] as const,
+  buckets: [5, 10, 25, 50, 100, 250, 300, 500, 1000, 2500],
+  registers: [metricsRegistry],
+});
+
+export const eventOrderRegressionTotal = new Counter({
+  name: "event_order_regression_total",
+  help: "Total out-of-order events detected that would cause status regression",
+  labelNames: ["provider", "entity_type", "from_status", "to_status"] as const,
+  registers: [metricsRegistry],
+});
+
+// 11. Event Bus Metrics (Step 11 — Spec 01 §20)
+export const busPublishedTotal = new Counter({
+  name: "bus_published_total",
+  help: "Total events published onto the event bus partitioned by topic",
+  labelNames: ["topic"] as const,
+  registers: [metricsRegistry],
+});
+
+export const busConsumedTotal = new Counter({
+  name: "bus_consumed_total",
+  help: "Total events processed by event bus consumers partitioned by consumer group and outcome status",
+  labelNames: ["group", "status"] as const, // status: success | retry | dlq | poison
+  registers: [metricsRegistry],
+});
+
+export const busRetryTotal = new Counter({
+  name: "bus_retry_total",
+  help: "Total retry attempts initiated by event bus consumer groups",
+  labelNames: ["group"] as const,
+  registers: [metricsRegistry],
+});
+
+export const busDlqTotal = new Counter({
+  name: "bus_dlq_total",
+  help: "Total dead-letter events routed to DLQ by consumer groups",
+  labelNames: ["group"] as const,
+  registers: [metricsRegistry],
+});
+
 /* ==============================================================================
  * Typed Helper Functions for Safe Metric Recording
  * ============================================================================== */
@@ -242,6 +294,54 @@ export function recordAuthLogin(result: "success" | "failure" | string): void {
 
 export function recordAuthFailure(reason: string): void {
   authFailuresTotal.inc({ reason });
+}
+
+export function recordWebhookDelivery(
+  provider: string,
+  status: "accepted" | "duplicate" | "invalid_signature" | "unmappable" | "error" | string,
+): void {
+  webhookDeliveriesTotal.inc({ provider, status });
+}
+
+export function recordWebhookLatency(
+  provider: string,
+  status: "accepted" | "duplicate" | "invalid_signature" | "unmappable" | "error" | string,
+  durationMs: number,
+): void {
+  webhookDurationMs.observe({ provider, status }, durationMs);
+}
+
+export function recordEventOrderRegression(
+  provider: string,
+  entityType: string,
+  fromStatus: string,
+  toStatus: string,
+): void {
+  eventOrderRegressionTotal.inc({
+    provider,
+    entity_type: entityType,
+    from_status: fromStatus,
+    to_status: toStatus,
+  });
+}
+
+export function recordBusPublished(topic: string): void {
+  busPublishedTotal.inc({ topic });
+}
+
+export function recordBusConsumed(
+  group: string,
+  status: "success" | "retry" | "dlq" | "poison" | string,
+): void {
+  busConsumedTotal.inc({ group, status });
+}
+
+export function recordBusRetry(group: string): void {
+  busRetryTotal.inc({ group });
+}
+
+export function recordBusDlq(group: string): void {
+  busDlqTotal.inc({ group });
 }
 
 /**

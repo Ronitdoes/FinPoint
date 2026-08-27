@@ -6,6 +6,7 @@ declare module "fastify" {
   interface FastifyRequest {
     requestId: string;
     correlationId: string;
+    traceparent?: string;
   }
 }
 
@@ -24,6 +25,7 @@ const contextPluginCallback: FastifyPluginAsync<ContextPluginOptions> = async (
   // Decorate FastifyRequest prototype for TypeScript and V8 shape optimization
   fastify.decorateRequest("requestId", "");
   fastify.decorateRequest("correlationId", "");
+  fastify.decorateRequest("traceparent", undefined);
 
   fastify.addHook("onRequest", async (req: FastifyRequest) => {
     // 1. Resolve or generate Request ID
@@ -49,6 +51,7 @@ const contextPluginCallback: FastifyPluginAsync<ContextPluginOptions> = async (
       correlationId = randomUUID();
     }
     req.correlationId = correlationId;
+    req.traceparent = typeof traceparent === "string" && traceparent.trim().length > 0 ? traceparent : undefined;
 
     // 3. Bind request context to child logger
     req.log = req.log.child({

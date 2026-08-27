@@ -283,6 +283,7 @@ describe("enum parity with specs (drift guard)", () => {
       ...SUBSCRIPTION_EVENT_TYPES,
       ...INVOICE_EVENT_TYPES,
       ...CUSTOMER_EVENT_TYPES,
+      "UNMAPPED",
     ];
     expect(partition).toHaveLength(new Set(partition).size);
     expectParity(EVENT_TYPES, [...partition]);

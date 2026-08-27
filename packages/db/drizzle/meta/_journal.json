@@ -22,6 +22,13 @@
       "when": 1787826389954,
       "tag": "0002_uneven_hammerhead",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787828000000,
+      "tag": "0003_add_unmapped_event_type",
+      "breakpoints": true
     }
   ]
 }
