@@ -9,9 +9,9 @@ import { createApiKey, findApiKeyByHash } from "./api-keys.repo";
 import { createCustomer, findCustomerById, setCustomerOptOut } from "./customers.repo";
 import { createPayment, findPaymentById, updatePaymentStatus } from "./payments.repo";
 import { createPaymentAttempt, findPaymentAttemptsByPaymentId, resolvePaymentAttempt } from "./payment-attempts.repo";
-import { createSubscription, findSubscriptionById } from "./subscriptions.repo";
-import { createCheckout, recordCheckoutEvent, listCheckoutEvents } from "./checkouts.repo";
-import { createInvoice, recordInvoiceEvent, listInvoiceEvents } from "./invoices.repo";
+import { createSubscription, findSubscriptionById, listSubscriptionsForCustomer } from "./subscriptions.repo";
+import { createCheckout, recordCheckoutEvent, listCheckoutEvents, listCheckoutsForCustomer } from "./checkouts.repo";
+import { createInvoice, recordInvoiceEvent, listInvoiceEvents, listInvoicesForCustomer } from "./invoices.repo";
 import { insertEventIfNew, markEventProcessed } from "./events.repo";
 import { createRevenueRisk, findLatestRiskForSubject } from "./risks.repo";
 import {
@@ -36,6 +36,7 @@ import {
   updateMessageStatus,
   recordDeliveryEvent,
   listDeliveryEvents,
+  listMessagesForCustomer,
 } from "./messages.repo";
 import { createCustomerResponse, listResponsesForCustomer } from "./responses.repo";
 import { createPromiseToPay, resolvePromise } from "./promises.repo";
@@ -49,7 +50,7 @@ import {
 import * as auditRepo from "./audit.repo";
 import { recordAuditLog, listAuditLogs } from "./audit.repo";
 import { recordCaseEvent, listCaseEvents } from "./case-events.repo";
-import { recordOutcomeInTx, findOutcomeByCaseId, recordCostEntry, listCostEntriesForCase } from "./outcomes.repo";
+import { recordOutcomeInTx, findOutcomeByCaseId, recordCostEntry, listCostEntriesForCase, findOutcomesByCaseIds } from "./outcomes.repo";
 import { tryAcquire, complete, releaseLease, getResponseSnapshot } from "./idempotency.repo";
 import { randomUUID } from "crypto";
 
@@ -612,5 +613,94 @@ describe("Step 06 — Repository Layer & Concurrency Guards", () => {
       });
       expect(decided?.status).toBe("APPROVED");
     }, 15000);
+
+    it("lists customer-scoped invoices, checkouts, messages, and outcomes", async () => {
+      // 1. Invoices
+      const inv = await createInvoice({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+        number: `INV-CUST-${randomUUID().slice(0, 8)}`,
+        amount: 3000n,
+        currency: "USD",
+        dueAt: new Date(),
+      });
+      const customerInvoices = await listInvoicesForCustomer({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+      });
+      expect(customerInvoices.some((i) => i.id === inv.id)).toBe(true);
+
+      // 2. Checkouts
+      const chk = await createCheckout({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+        currency: "USD",
+        cartValue: 4500n,
+        startedAt: new Date(),
+        lastActivityAt: new Date(),
+      });
+      const customerCheckouts = await listCheckoutsForCustomer({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+      });
+      expect(customerCheckouts.some((c) => c.id === chk.id)).toBe(true);
+
+      // 3. Messages
+      const msg = await insertMessage({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+        channel: "WHATSAPP",
+        templateId: "reminder_1",
+        toAddress: "+14155550000",
+        provider: "MOCK",
+        idempotencyKey: `msg_${randomUUID()}`,
+      });
+      const customerMessages = await listMessagesForCustomer({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+      });
+      expect(customerMessages.some((m) => m.id === msg.id)).toBe(true);
+
+      // 4. Outcomes
+      const pay = await createPayment({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+        amount: 1000n,
+        currency: "USD",
+        status: "SUCCEEDED",
+        provider: "STRIPE",
+        providerPaymentId: `pi_test_${randomUUID()}`,
+        occurredAt: new Date(),
+      });
+      const c = await createCase({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+        riskType: "PAYMENT_FAILURE",
+        sourceEntityType: "payments",
+        sourceEntityId: pay.id,
+        amountAtRisk: 1000n,
+        currency: "USD",
+        riskScore: 50,
+      });
+      await withTransaction(async (tx) => {
+        await recordOutcomeInTx(tx, {
+          tenantId: testTenantId,
+          caseId: c.id,
+          paymentId: pay.id,
+          baselineAmount: 1000n,
+          recoveredAmount: 1000n,
+          attributionMethod: "DIRECT",
+          attributionWindowHours: 72,
+          recoveredAt: new Date(),
+        });
+      });
+      const outcomes = await findOutcomesByCaseIds({}, {
+        tenantId: testTenantId,
+        caseIds: [c.id],
+      });
+      expect(outcomes.length).toBe(1);
+      expect(outcomes[0].caseId).toBe(c.id);
+    }, 15000);
   });
 });
+

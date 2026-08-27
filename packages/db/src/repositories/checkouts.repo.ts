@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   checkouts,
   checkoutEvents,
@@ -157,3 +157,23 @@ export async function listCheckoutEvents(
     .where(eq(checkoutEvents.checkoutId, checkoutId))
     .orderBy(checkoutEvents.occurredAt);
 }
+
+export async function listCheckoutsForCustomer(
+  ctx: RepoContext,
+  {
+    tenantId,
+    customerId,
+    limit = 50,
+    offset = 0,
+  }: { tenantId: string; customerId: string; limit?: number; offset?: number },
+): Promise<Checkout[]> {
+  const executor = getExecutor(ctx);
+  return await executor
+    .select()
+    .from(checkouts)
+    .where(and(eq(checkouts.tenantId, tenantId), eq(checkouts.customerId, customerId)))
+    .orderBy(desc(checkouts.lastActivityAt))
+    .limit(limit)
+    .offset(offset);
+}
+

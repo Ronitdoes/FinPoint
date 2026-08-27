@@ -50,8 +50,8 @@ MVP scenario items mapped across s-10…s-32. "Verified in" names the step whose
 | 4 | Internal event is created | s-11 | s-11 ✅, s-32 |
 | 5 | Risk is calculated | s-12 | s-12 ✅ (unit + integration suite), s-32 |
 | 6 | Recovery case is created | s-17 | s-17, s-32 |
-| 7 | Context is assembled | s-13 | s-13, s-32 |
-| 8 | AI returns schema-valid decision | s-14 (schema enforcement, eval harness s-15) | s-15 |
+| 7 | Context is assembled | s-13 | s-13 ✅ (unit + PII sweep + integration suite), s-32 |
+| 8 | AI returns schema-valid decision | s-14 (schema enforcement, eval harness s-15) | s-14 ✅ (prompts, structured outputs, repair retry, fallback, 9 integration tests), s-15 |
 | 9 | Policy validates decision | s-16 | s-16, s-32 |
 | 10 | Temporal workflow starts | s-20 runtime; orchestration trigger s-17 | s-22 workflow harness |
 | 11 | Message is sent | s-19 adapters + ledger; used by s-22 | s-22 |
@@ -124,6 +124,9 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Authentication, authorization & tenant context (sessions, API keys, RBAC with 5 roles, tenant context guard, login rate-limiting, bootstrap admin seed) | spec 01 §22; spec 03 §11; ADR-012 | s-09 ✅ (user_sessions schema & repo, API keys, Fastify auth/rbac plugins, /auth & /admin routes, seed-admin script, 17 integration tests) |
 | Webhook ingestion & event gateway (Stripe & Razorpay HMAC signature verification, pure normalization matrix, financial core transactional upserts, deduplication anchor, EventBus async dispatch, UNMAPPED handling, secret rotation runbook) | spec 01 §7; spec 02 §5, §14; spec 03 §4, §10; ADR-006 | s-10 ✅ (POST /webhooks/stripe, /webhooks/razorpay, normalizers, core upserts, EventBus, rotation runbook, 11 integration tests) |
 | Internal Event Bus & Replay (EventBus abstraction with InProcess and Redpanda drivers, consumer framework with retry/backoff/DLQ, poison message routing, POST /events and POST /events/replay endpoints with RBAC & audit trail) | spec 01 §0, §6; spec 02 §13; spec 03 §9; ADR-006 | s-11 ✅ (InProcessEventBus, RedpandaEventBus, consumer.ts, POST /events, POST /events/replay, parity tests, 10 integration tests) |
+| Risk Engine v1 (Deterministic Scoring) (weighted rules, 0-100 score, LOW/MEDIUM/HIGH/CRITICAL bands, JSONB factors explainability, event triggers payment.failed/checkout.abandoned/invoice.overdue, upstream resolutions, risk.calculated event, GET /risks & GET /risks/:id) | spec 01 §8; spec 02 §6; spec 03 §6; ADR-006 | s-12 ✅ (revenue_risks state machine, rule catalog, subject scorers, risks.repo.ts, consumer.ts, GET /risks, 10 integration tests) |
+| Customer Context Service (single batch queries, field allowlist, PII email/phone masking, deterministic 8KB budget trimming, Redis 30s caching, GET /customers/:id/context endpoint with RBAC & tenant isolation, CustomerContextService.buildForCase) | spec 01 §9; spec 02 §7; spec 03 §6; ADR-007; ADR-008 | s-13 ✅ (modules/customers/context, customer-context.service.ts, allowlist/summarize/trim/pii-sweep unit tests, 8 integration tests) |
+| AI Decision Service: Core Decision Path (versioned prompts payment_failure@1/checkout_abandonment@1/invoice_overdue@1, structured JSON schema, OpenAI client with timeout/retries/circuit-breaker, structural + semantic validation, N=1 repair retry, deterministic rule fallback, paise token cost tracking, POST /ai/decide & GET /ai/decisions/:id with RBAC & tenant isolation) | spec 01 §10; spec 02 §8; spec 03 §5; ADR-008 | s-14 ✅ (prompts registry, structured LLM service, validation pipeline, AiDecideService, 38 unit + 9 integration tests) |
 | Attribution definition documented | spec 01 §25, spec 02 §9 | s-26 |
 | Local infrastructure stack (postgres, redis, temporal, temporal-ui, redpanda, redpanda-console) with healthchecks + named volumes | spec 01 §4 | s-02 |
 | `.env.example` + typed/validated config (`@repo/config`, fail-fast, frozen) consumed by apps/services instead of raw `process.env` | spec 01 §3, §4; CONVENTIONS §1, §12 | s-02 |

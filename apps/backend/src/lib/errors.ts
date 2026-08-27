@@ -26,6 +26,9 @@ export const DomainErrorCodes = {
   INVALID_SIGNATURE: "INVALID_SIGNATURE",
   UNMAPPABLE_PAYLOAD: "UNMAPPABLE_PAYLOAD",
   NOT_ACCEPTABLE: "NOT_ACCEPTABLE",
+  CONTEXT_UNAVAILABLE: "CONTEXT_UNAVAILABLE",
+  CASE_NOT_FOUND: "CASE_NOT_FOUND",
+  CUSTOMER_MISSING: "CUSTOMER_MISSING",
   INTERNAL: "INTERNAL",
 } as const;
 
@@ -161,4 +164,23 @@ export class InternalError extends DomainError {
     super(message, DomainErrorCodes.INTERNAL, 500, details);
   }
 }
+
+export class ContextUnavailableError extends DomainError {
+  constructor(message: string = "Customer context is temporarily unavailable", details: unknown = {}) {
+    super(message, DomainErrorCodes.CONTEXT_UNAVAILABLE, 503, details);
+  }
+}
+
+export class CaseNotFoundError extends DomainError {
+  constructor(message: string = "Recovery case not found", details: unknown = {}) {
+    super(message, DomainErrorCodes.CASE_NOT_FOUND, 404, details);
+  }
+}
+
+export class CustomerMissingError extends DomainError {
+  constructor(message: string = "Customer associated with case not found", details: unknown = {}) {
+    super(message, DomainErrorCodes.CUSTOMER_MISSING, 404, details);
+  }
+}
+
 

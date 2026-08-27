@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   subscriptions,
   type Subscription,
@@ -145,6 +145,7 @@ export async function listSubscriptionsForCustomer(
         eq(subscriptions.customerId, customerId),
       ),
     )
+    .orderBy(desc(subscriptions.createdAt))
     .limit(limit)
     .offset(offset);
 }

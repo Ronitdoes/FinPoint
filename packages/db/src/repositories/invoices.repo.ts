@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   invoices,
   invoiceEvents,
@@ -176,3 +176,23 @@ export async function listInvoiceEvents(
     .where(eq(invoiceEvents.invoiceId, invoiceId))
     .orderBy(invoiceEvents.occurredAt);
 }
+
+export async function listInvoicesForCustomer(
+  ctx: RepoContext,
+  {
+    tenantId,
+    customerId,
+    limit = 50,
+    offset = 0,
+  }: { tenantId: string; customerId: string; limit?: number; offset?: number },
+): Promise<Invoice[]> {
+  const executor = getExecutor(ctx);
+  return await executor
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.tenantId, tenantId), eq(invoices.customerId, customerId)))
+    .orderBy(desc(invoices.dueAt))
+    .limit(limit)
+    .offset(offset);
+}
+

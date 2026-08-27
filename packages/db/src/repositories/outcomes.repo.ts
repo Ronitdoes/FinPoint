@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   recoveryOutcomes,
   recoveryCostEntries,
@@ -142,3 +142,22 @@ export async function listCostEntriesForCase(
     )
     .orderBy(desc(recoveryCostEntries.incurredAt));
 }
+
+export async function findOutcomesByCaseIds(
+  ctx: RepoContext,
+  { tenantId, caseIds }: { tenantId: string; caseIds: string[] },
+): Promise<RecoveryOutcome[]> {
+  if (!caseIds || caseIds.length === 0) return [];
+  const executor = getExecutor(ctx);
+  return await executor
+    .select()
+    .from(recoveryOutcomes)
+    .where(
+      and(
+        eq(recoveryOutcomes.tenantId, tenantId),
+        inArray(recoveryOutcomes.caseId, caseIds),
+      ),
+    )
+    .orderBy(desc(recoveryOutcomes.recoveredAt));
+}
+

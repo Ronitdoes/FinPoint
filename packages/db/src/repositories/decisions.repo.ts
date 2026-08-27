@@ -84,3 +84,20 @@ export async function listDecisionsForCase(
     )
     .orderBy(desc(aiDecisions.createdAt));
 }
+
+export async function findLatestDecisionForCase(
+  ctx: RepoContext,
+  { tenantId, caseId }: { tenantId: string; caseId: string },
+): Promise<AiDecision | null> {
+  const executor = getExecutor(ctx);
+  const [decision] = await executor
+    .select()
+    .from(aiDecisions)
+    .where(
+      and(eq(aiDecisions.tenantId, tenantId), eq(aiDecisions.caseId, caseId)),
+    )
+    .orderBy(desc(aiDecisions.createdAt))
+    .limit(1);
+  return decision ?? null;
+}
+

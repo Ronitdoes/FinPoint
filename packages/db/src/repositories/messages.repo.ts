@@ -190,3 +190,23 @@ export async function listMessagesForCase(
     .where(and(eq(messages.tenantId, tenantId), eq(messages.caseId, caseId)))
     .orderBy(desc(messages.createdAt));
 }
+
+export async function listMessagesForCustomer(
+  ctx: RepoContext,
+  {
+    tenantId,
+    customerId,
+    limit = 50,
+    offset = 0,
+  }: { tenantId: string; customerId: string; limit?: number; offset?: number },
+): Promise<Message[]> {
+  const executor = getExecutor(ctx);
+  return await executor
+    .select()
+    .from(messages)
+    .where(and(eq(messages.tenantId, tenantId), eq(messages.customerId, customerId)))
+    .orderBy(desc(messages.sentAt), desc(messages.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+

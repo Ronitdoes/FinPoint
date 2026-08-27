@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { payments, type Payment, type NewPayment } from "../schema/payments";
 import { type RepoContext, getExecutor } from "./types";
 
@@ -131,6 +131,7 @@ export async function listPaymentsForCustomer(
     .select()
     .from(payments)
     .where(and(eq(payments.tenantId, tenantId), eq(payments.customerId, customerId)))
+    .orderBy(desc(payments.occurredAt))
     .limit(limit)
     .offset(offset);
 }

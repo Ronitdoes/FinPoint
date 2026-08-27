@@ -109,6 +109,13 @@ export const llmTokensTotal = new Counter({
   registers: [metricsRegistry],
 });
 
+export const fallbackTotal = new Counter({
+  name: "fallback_total",
+  help: "Total number of fallback recommendations triggered",
+  labelNames: ["reason"] as const,
+  registers: [metricsRegistry],
+});
+
 // 7. Provider Integration Metrics (emitted s-18 / s-19)
 export const providerCallsTotal = new Counter({
   name: "provider_calls_total",
@@ -207,6 +214,23 @@ export const busDlqTotal = new Counter({
   registers: [metricsRegistry],
 });
 
+// 12. Customer Context Metrics (Step 13)
+export const contextBuildDurationMs = new Histogram({
+  name: "context_build_duration_ms",
+  help: "Time spent constructing customer context in milliseconds",
+  labelNames: ["purpose"] as const,
+  buckets: [5, 10, 25, 50, 100, 250, 500, 1000],
+  registers: [metricsRegistry],
+});
+
+export const contextBytes = new Histogram({
+  name: "context_bytes",
+  help: "Serialized customer context size in bytes",
+  labelNames: ["purpose"] as const,
+  buckets: [256, 512, 1024, 2048, 4096, 8192, 16384],
+  registers: [metricsRegistry],
+});
+
 /* ==============================================================================
  * Typed Helper Functions for Safe Metric Recording
  * ============================================================================== */
@@ -268,6 +292,10 @@ export function recordLlmCall(
   if (tokens?.total) {
     llmTokensTotal.inc({ kind: "total", model }, tokens.total);
   }
+}
+
+export function recordFallback(reason: string): void {
+  fallbackTotal.inc({ reason });
 }
 
 export function recordProviderCall(
@@ -342,6 +370,15 @@ export function recordBusRetry(group: string): void {
 
 export function recordBusDlq(group: string): void {
   busDlqTotal.inc({ group });
+}
+
+export function recordContextBuild(
+  purpose: string,
+  durationMs: number,
+  bytes: number,
+): void {
+  contextBuildDurationMs.observe({ purpose }, durationMs);
+  contextBytes.observe({ purpose }, bytes);
 }
 
 /**
