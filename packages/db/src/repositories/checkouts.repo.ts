@@ -177,3 +177,83 @@ export async function listCheckoutsForCustomer(
     .offset(offset);
 }
 
+/**
+ * Checks if a checkout is eligible to be watched by an abandonment workflow.
+ * Ensures duplicate checkout.started events do not spawn multiple workflows.
+ */
+export async function findWatchable(
+  ctx: RepoContext,
+  { tenantId, checkoutId }: { tenantId: string; checkoutId: string },
+): Promise<{ watchable: boolean; checkout: Checkout | null; alreadyStarted: boolean }> {
+  const checkout = await findCheckoutById(ctx, { tenantId, checkoutId });
+  if (!checkout || checkout.status === "COMPLETED") {
+    return { watchable: false, checkout, alreadyStarted: false };
+  }
+  const events = await listCheckoutEvents(ctx, { checkoutId });
+  const alreadyStarted = events.some(
+    (e) =>
+      e.type === "WATCH_STARTED" ||
+      (e.payload as Record<string, unknown> | null)?.abandonment_workflow_started === true,
+  );
+  return {
+    watchable: !alreadyStarted && checkout.status === "STARTED",
+    checkout,
+    alreadyStarted,
+  };
+}
+
+/**
+ * Records that a recovery message/contact was dispatched for this checkout (Spec 23 §7).
+ */
+export async function markContacted(
+  ctx: RepoContext,
+  {
+    tenantId,
+    checkoutId,
+    step = "1",
+    contactedAt = new Date(),
+  }: { tenantId: string; checkoutId: string; step?: string; contactedAt?: Date },
+): Promise<CheckoutEvent> {
+  return await recordCheckoutEvent(ctx, {
+    tenantId,
+    checkoutId,
+    type: "RECOVERY_CONTACTED",
+    payload: {
+      recovery_contacted_at: contactedAt.toISOString(),
+      step,
+    },
+    occurredAt: contactedAt,
+  });
+}
+
+/**
+ * Transactional check-and-flag completion race guard (Spec 23 §7).
+ * Re-reads checkout status and completedAt; if completed between check and send,
+ * flags safeToSend=false so the workflow aborts outbound communication.
+ */
+export async function completeRaceGuard(
+  ctx: RepoContext,
+  {
+    tenantId,
+    checkoutId,
+    step = "1",
+  }: { tenantId: string; checkoutId: string; step?: string },
+): Promise<{ safeToSend: boolean; checkout: Checkout | null; completedAt?: Date }> {
+  const checkout = await findCheckoutById(ctx, { tenantId, checkoutId });
+  if (!checkout) {
+    return { safeToSend: false, checkout: null };
+  }
+  if (checkout.status === "COMPLETED" || checkout.completedAt !== null) {
+    return {
+      safeToSend: false,
+      checkout,
+      completedAt: checkout.completedAt ?? undefined,
+    };
+  }
+
+  // Record contact attempt to ledger
+  await markContacted(ctx, { tenantId, checkoutId, step });
+
+  return { safeToSend: true, checkout };
+}
+

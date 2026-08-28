@@ -6,6 +6,7 @@ export type WorkflowSignal =
   | "stop"
   | "human-decision"
   | "external-payment-succeeded"
+  | "external-checkout-completed"
   | string;
 
 export interface StartWorkflowInput {

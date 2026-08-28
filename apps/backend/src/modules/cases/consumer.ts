@@ -5,6 +5,10 @@ import {
   TOPIC_MAIN,
   type EventContext,
 } from "@repo/integrations";
+import {
+  DefaultWorkflowClient,
+  type RecoveryWorkflowClient,
+} from "@repo/orchestration";
 import { getLogger } from "@repo/observability";
 import { CaseCreationService } from "./creation.service";
 import { CasePipelineService } from "./pipeline.service";
@@ -14,6 +18,7 @@ const logger = getLogger({ component: "cases-consumer" });
 export class CaseConsumerHandler {
   private readonly creationService: CaseCreationService;
   private readonly pipelineService: CasePipelineService;
+  private readonly workflowClient: RecoveryWorkflowClient;
 
   constructor(private readonly app: FastifyInstance) {
     this.creationService = new CaseCreationService(
@@ -27,6 +32,8 @@ export class CaseConsumerHandler {
       config: app.config,
       redis: (app as any).redisClient,
     });
+    this.workflowClient =
+      (app as any).workflowClient ?? new DefaultWorkflowClient(app.db);
   }
 
   async handleDomainEvent(
@@ -34,6 +41,10 @@ export class CaseConsumerHandler {
     _ctx?: EventContext,
   ): Promise<void> {
     switch (event.type) {
+      case "checkout.started":
+        await this.handleCheckoutStarted(event);
+        break;
+
       case "risk.calculated":
         await this.handleRiskCalculated(event);
         break;
@@ -46,6 +57,70 @@ export class CaseConsumerHandler {
         // Ignore other events in orchestrator group
         break;
     }
+  }
+
+  /**
+   * Handles checkout.started: Creates a lightweight WATCH record on the checkout
+   * and starts the CheckoutAbandonmentWorkflow (Spec 23 §Requirements 1).
+   */
+  private async handleCheckoutStarted(event: DomainEvent): Promise<void> {
+    const payload = (event.payload ?? {}) as {
+      checkoutId?: string;
+      customerId?: string;
+      cartValue?: string | number;
+      currency?: string;
+    };
+
+    const tenantId = event.tenant_id;
+    const checkoutId = payload.checkoutId ?? event.entity_id;
+
+    logger.info(
+      { tenantId, checkoutId },
+      "Received checkout.started; checking watchability",
+    );
+
+    // Verify checkout exists and is watchable (prevents duplicate workflows)
+    const watchableInfo = await this.app.repos.findWatchable(
+      { db: this.app.db },
+      { tenantId, checkoutId },
+    );
+
+    if (!watchableInfo.watchable) {
+      logger.info(
+        { tenantId, checkoutId, alreadyStarted: watchableInfo.alreadyStarted },
+        "Checkout is not watchable or watch workflow already active; skipping duplicate watch initiation",
+      );
+      return;
+    }
+
+    // Record WATCH_STARTED event to append-only cart ledger
+    await this.app.repos.recordCheckoutEvent(
+      { db: this.app.db },
+      {
+        tenantId,
+        checkoutId,
+        type: "WATCH_STARTED",
+        payload: {
+          abandonment_workflow_started: true,
+          startedAt: new Date().toISOString(),
+          correlationId: event.correlation_id,
+        },
+      },
+    );
+
+    // Start the CheckoutAbandonmentWorkflow
+    await this.workflowClient.startRecoveryWorkflow({
+      tenantId,
+      caseId: checkoutId,
+      workflowType: "CheckoutAbandonmentWorkflow",
+      actions: [],
+      db: this.app.db,
+    });
+
+    logger.info(
+      { tenantId, checkoutId },
+      "Checkout watch record established; abandonment workflow initiated",
+    );
   }
 
   /**

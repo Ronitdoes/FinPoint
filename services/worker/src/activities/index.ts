@@ -14,6 +14,9 @@ export * from "./append-timeline";
 export * from "./emit-metric";
 export * from "./escalate-workflow-failure";
 export * from "./replan-decision";
+export * from "./check-checkout-status";
+export * from "./confirm-abandonment-and-create-case";
+export * from "./checkout-race-guard";
 
 import * as loadCaseSnapshotActivity from "./load-case-snapshot";
 import * as checkPolicyAgainActivity from "./check-policy-again";
@@ -31,6 +34,9 @@ import * as appendTimelineActivity from "./append-timeline";
 import * as emitMetricActivity from "./emit-metric";
 import * as escalateWorkflowFailureActivity from "./escalate-workflow-failure";
 import * as replanDecisionActivity from "./replan-decision";
+import * as checkCheckoutStatusActivity from "./check-checkout-status";
+import * as confirmAbandonmentAndCreateCaseActivity from "./confirm-abandonment-and-create-case";
+import * as checkoutRaceGuardActivity from "./checkout-race-guard";
 
 /**
  * Complete activities dictionary for Temporal worker registration and proxyActivities typing.
@@ -52,6 +58,9 @@ export const activities = {
   emitMetric: emitMetricActivity.emitMetric,
   escalateWorkflowFailure: escalateWorkflowFailureActivity.escalateWorkflowFailure,
   requestReplanDecision: replanDecisionActivity.requestReplanDecision,
+  checkCheckoutStatus: checkCheckoutStatusActivity.checkCheckoutStatus,
+  confirmAbandonmentAndCreateCase: confirmAbandonmentAndCreateCaseActivity.confirmAbandonmentAndCreateCase,
+  checkoutRaceGuard: checkoutRaceGuardActivity.checkoutRaceGuard,
 };
 
 export type RecoveryActivities = typeof activities;

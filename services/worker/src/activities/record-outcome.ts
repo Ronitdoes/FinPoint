@@ -20,6 +20,8 @@ export interface RecordOutcomeInput extends ActivityContext {
   recoveredAmountMinor?: string | bigint;
   currency?: string;
   paymentId?: string;
+  checkoutId?: string;
+  invoiceId?: string;
   recoverySource?: string;
   notes?: string;
 }

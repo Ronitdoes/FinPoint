@@ -31,6 +31,7 @@ export const SIGNAL_RESUME = "resume";
 export const SIGNAL_STOP = "stop";
 export const SIGNAL_HUMAN_DECISION = "human-decision";
 export const SIGNAL_EXTERNAL_PAYMENT_SUCCEEDED = "external-payment-succeeded";
+export const SIGNAL_EXTERNAL_CHECKOUT_COMPLETED = "external-checkout-completed";
 
 /**
  * Payload for external-payment-succeeded signal.
@@ -40,6 +41,18 @@ export interface ExternalPaymentSucceededPayload {
   amount?: string | number;
   currency?: string;
   paidAt?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Payload for external-checkout-completed signal.
+ */
+export interface ExternalCheckoutCompletedPayload {
+  checkoutId?: string;
+  completedAt?: string;
+  paymentId?: string;
+  amount?: string | number;
+  currency?: string;
   [key: string]: unknown;
 }
 
@@ -91,6 +104,7 @@ export const resumeSignal = defineSignal<[void]>(SIGNAL_RESUME);
 export const stopSignal = defineSignal<[{ reason?: string }]>(SIGNAL_STOP);
 export const humanDecisionSignal = defineSignal<[HumanDecisionSignalPayload]>(SIGNAL_HUMAN_DECISION);
 export const externalPaymentSucceededSignal = defineSignal<[ExternalPaymentSucceededPayload]>(SIGNAL_EXTERNAL_PAYMENT_SUCCEEDED);
+export const externalCheckoutCompletedSignal = defineSignal<[ExternalCheckoutCompletedPayload]>(SIGNAL_EXTERNAL_CHECKOUT_COMPLETED);
 
 // Query Definitions
 export const workflowStateQuery = defineQuery<WorkflowState>("getState");

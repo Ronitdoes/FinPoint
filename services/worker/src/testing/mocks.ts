@@ -32,7 +32,6 @@ export function createActivityMocks(
 
   const defaultMocks: RecoveryActivities = {
     async loadCaseSnapshot(input) {
-      recordCall("loadCaseSnapshot", [input]);
       return {
         case: {
           id: input.caseId,
@@ -78,8 +77,7 @@ export function createActivityMocks(
       };
     },
 
-    async checkPolicyAgain(input) {
-      recordCall("checkPolicyAgain", [input]);
+    async checkPolicyAgain() {
       return {
         allowed: true,
         requiresApproval: false,
@@ -89,7 +87,6 @@ export function createActivityMocks(
     },
 
     async executeRetryPayment(input) {
-      recordCall("executeRetryPayment", [input]);
       return {
         status: "SUCCEEDED",
         attemptId: randomUUID(),
@@ -97,8 +94,7 @@ export function createActivityMocks(
       };
     },
 
-    async createPaymentLinkAndStore(input) {
-      recordCall("createPaymentLinkAndStore", [input]);
+    async createPaymentLinkAndStore() {
       return {
         paymentLinkId: randomUUID(),
         url: "https://pay.mock.provider/link-123",
@@ -106,8 +102,7 @@ export function createActivityMocks(
       };
     },
 
-    async sendTemplateMessage(input) {
-      recordCall("sendTemplateMessage", [input]);
+    async sendTemplateMessage() {
       return {
         messageId: randomUUID(),
         externalMessageId: `msg_${randomUUID()}`,
@@ -116,7 +111,6 @@ export function createActivityMocks(
     },
 
     async refreshPaymentStatus(input) {
-      recordCall("refreshPaymentStatus", [input]);
       return {
         status: "SUCCEEDED",
         paymentId: input.paymentId,
@@ -125,7 +119,6 @@ export function createActivityMocks(
     },
 
     async recordOutcome(input) {
-      recordCall("recordOutcome", [input]);
       return {
         outcomeId: randomUUID(),
         outcome: input.outcome,
@@ -133,8 +126,7 @@ export function createActivityMocks(
       };
     },
 
-    async createHumanTask(input) {
-      recordCall("createHumanTask", [input]);
+    async createHumanTask() {
       return {
         taskId: randomUUID(),
         status: "PENDING",
@@ -143,7 +135,6 @@ export function createActivityMocks(
     },
 
     async waitForHumanDecision(input) {
-      recordCall("waitForHumanDecision", [input]);
       return {
         taskId: input.taskId,
         status: "APPROVED",
@@ -153,16 +144,14 @@ export function createActivityMocks(
       };
     },
 
-    async markCaseWaiting(input) {
-      recordCall("markCaseWaiting", [input]);
+    async markCaseWaiting() {
       return {
         success: true,
         status: "WAITING",
       };
     },
 
-    async markCaseInProgress(input) {
-      recordCall("markCaseInProgress", [input]);
+    async markCaseInProgress() {
       return {
         success: true,
         status: "IN_PROGRESS",
@@ -170,7 +159,6 @@ export function createActivityMocks(
     },
 
     async stopCaseWithReason(input) {
-      recordCall("stopCaseWithReason", [input]);
       return {
         success: true,
         status: "STOPPED",
@@ -178,16 +166,14 @@ export function createActivityMocks(
       };
     },
 
-    async appendTimeline(input) {
-      recordCall("appendTimeline", [input]);
+    async appendTimeline() {
       return {
         eventId: 101,
         occurredAt: new Date().toISOString(),
       };
     },
 
-    async emitMetric(input) {
-      recordCall("emitMetric", [input]);
+    async emitMetric() {
       return {
         success: true,
       };
@@ -200,8 +186,7 @@ export function createActivityMocks(
       };
     },
 
-    async requestReplanDecision(input) {
-      recordCall("requestReplanDecision", [input]);
+    async requestReplanDecision() {
       return {
         decisionId: randomUUID(),
         replanAction: "STOP_CASE",
@@ -210,6 +195,70 @@ export function createActivityMocks(
         diagnosis: "Max retries exhausted",
         allowed: true,
         requiresApproval: false,
+      };
+    },
+
+    async checkCheckoutStatus() {
+      return {
+        exists: true,
+        status: "STARTED",
+        isCompleted: false,
+        isAbandoned: true,
+        cartValue: "799900",
+        currency: "INR",
+        customerId: "cust-1",
+        lastActivityAt: new Date(Date.now() - 31 * 60 * 1000).toISOString(),
+        startedAt: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
+      };
+    },
+
+    async confirmAbandonmentAndCreateCase(input) {
+      const caseId = randomUUID();
+      return {
+        isCompleted: false,
+        caseId,
+        caseNumber: 2001,
+        riskScore: 75,
+        riskBand: "HIGH",
+        customerId: "cust-1",
+        cartValueMinor: "799900",
+        currency: "INR",
+        reminderChannel: "WHATSAPP",
+        reminderTemplate: "checkout_abandonment_reminder",
+        reminderVariables: {
+          customer_name: "Customer",
+          cart_value: "7999.00",
+          currency: "INR",
+          checkout_url: `https://checkout.example.com/pay/${input.checkoutId}`,
+        },
+        incentiveApproved: true,
+        incentiveDiscountMinor: input.proposedIncentiveDiscountMinor ?? 50_000,
+        incentiveChannel: "WHATSAPP",
+        incentiveTemplate: "checkout_incentive_reminder",
+        incentiveVariables: {
+          customer_name: "Customer",
+          discount_amount: "500",
+          currency: "INR",
+          checkout_url: `https://checkout.example.com/pay/${input.checkoutId}?coupon=SAVE500`,
+        },
+        actions: [
+          {
+            type: "SEND_WHATSAPP",
+            parameters: { template: "checkout_abandonment_reminder" },
+          },
+          {
+            type: "OFFER_INCENTIVE",
+            parameters: { discount_minor: 50000 },
+          },
+        ],
+      };
+    },
+
+    async checkoutRaceGuard() {
+      return {
+        safeToSend: true,
+        isCompleted: false,
+        status: "STARTED",
       };
     },
   };
