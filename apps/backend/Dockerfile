@@ -12,9 +12,11 @@ COPY packages/observability/package.json ./packages/observability/package.json
 COPY packages/policy/package.json ./packages/policy/package.json
 COPY packages/orchestration/package.json ./packages/orchestration/package.json
 COPY packages/integrations/package.json ./packages/integrations/package.json
-COPY packages/eval/package.json ./packages/eval/package.json
+COPY services/eval/package.json ./services/eval/package.json
+COPY services/worker/package.json ./services/worker/package.json
 COPY packages/typescript-config/package.json ./packages/typescript-config/package.json
 COPY packages/eslint-config/package.json ./packages/eslint-config/package.json
+COPY packages/testing/package.json ./packages/testing/package.json
 
 RUN bun install --frozen-lockfile
 

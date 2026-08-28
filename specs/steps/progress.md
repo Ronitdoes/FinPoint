@@ -21,9 +21,9 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 
 ```text
 Last updated : 2026-08-29   (update on every change)
-Current step : s-28 Product: Dashboard UI — NOT STARTED
-Next up      : s-29 Product: Demo Mode, Simulation Endpoints & Seed Data — NOT STARTED
-Overall      : 27 / 35 steps complete
+Current step : s-29 Product: Demo Mode, Simulation Endpoints & Seed Data — NOT STARTED
+Next up      : s-30 Verification: Security Hardening & Compliance Verification — NOT STARTED
+Overall      : 28 / 35 steps complete
 ```
 
 ---
@@ -39,7 +39,7 @@ Overall      : 27 / 35 steps complete
 | Intelligence (AI decision, governance, policy) | s-14–s-16 | 3 / 3 | DONE |
 | Execution (orchestration, adapters, Temporal, approvals) | s-17–s-21 | 5 / 5 | DONE |
 | Workflows (payment, checkout, invoice) | s-22–s-24 | 3 / 3 | DONE |
-| Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 3 / 5 | IN PROGRESS |
+| Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 4 / 5 | IN PROGRESS |
 | Verification & ship (security, chaos, e2e, deploy, ops, release) | s-30–s-35 | 0 / 6 | NOT STARTED |
 
 ---
@@ -73,7 +73,7 @@ Overall      : 27 / 35 steps complete
 | s-24 | Workflow C: Overdue Invoice & Promise-to-Pay | DONE | 2026-08-28 | 2026-08-28 | `invoiceOverdueWorkflow` (3-touch reminder ladder: Day-0 polite reminder -> +3d follow-up -> +7d final notice w/ payment link; Scenario C POL-HIGHVALUE approval for >₹100k discounts; dispute hard stop; contact caps), child `promiseToPayWorkflow` composition, PTP state machine (`MADE`->`HONORED`\|`BROKEN`\|`EXPIRED`), guarded DB repo methods, `CustomerResponseSignalBridge` on `revenue-events.v1`, daily cron reconcilers (`DailyReconciler`), REST APIs `GET /promises-to-pay` & `POST /promises-to-pay/:id/mark-honored`, 9-scenario matrix test suite all green |
 | s-26 | Outcomes, Attribution & Cost Model | DONE | 2026-08-29 | 2026-08-29 | `OutcomeRecordService` (authoritative persistence, idempotent no-op, competing payment warnings, guarded case transition to `RECOVERED`, cost rollup `SUM(recovery_cost_entries)`), `AttributionSweeper` (hourly sweeper evaluating 4 strict conditions on closed/stopped cases), `CostCompletenessJob` (daily action cost gap audit with messaging unit pricing table 50p/5p/25p), REST APIs `GET /outcomes` (SQL aggregates + cursor pagination) & `GET /cases/:id/outcome` with RBAC, `docs/attribution.md`, 8 integration tests green |
 | s-27 | Analytics Service & APIs | DONE | 2026-08-29 | 2026-08-29 | PostgreSQL `analytics` schema and 6 views (`v_recovery_summary`, `v_recovery_timeseries`, `v_intervention_performance`, `v_funnel`, `v_risk_mix`, `v_ai_performance`), migration `0009_wild_bastion.sql` generated via `db:generate` and applied via `db:migrate`, analytics repo with financial/operational aggregations, 6 REST endpoints (`/summary`, `/recovery`, `/interventions`, `/funnel`, `/risk-mix`, `/ai`), range validation (`<= 370d`, `from <= to` -> 400), RBAC cost-field gating + `x-cost-data-redacted` header, Redis 30s single-flight caching with stampede guard, outcome record cache invalidation, 15 golden snapshot integration tests passing |
-| s-28 | Dashboard UI | NOT STARTED | | | |
+| s-28 | Dashboard UI | DONE | 2026-08-29 | 2026-08-29 | Complete Next.js financial control plane dashboard in `apps/frontend` (Next 16, Tailwind, Lucide, Recharts); authenticated shell + `rr_session` cookie middleware guard; 8 full pages (`/dashboard`, `/cases`, `/cases/[id]`, `/risk`, `/recovery`, `/policies`, `/audit`, `/tasks`, `/settings`) + `/login`; case timeline with 30s auto-refresh polling & `?demo=1` screen-share scaling; minor unit money formatting with ₹ Lakh/Crore grouping; 5-stage funnel chart; intervention success bars; interactive approve/reject modals (mandatory notes on reject); client RBAC matrix mirroring server; 19 frontend unit/component tests green; next build static/dynamic export verified |
 | s-29 | Demo Mode, Simulation Endpoints & Seed Data | NOT STARTED | | | |
 | s-30 | Security Hardening & Compliance Verification | NOT STARTED | | | |
 | s-31 | Resilience, Chaos & Concurrency Testing | NOT STARTED | | | |

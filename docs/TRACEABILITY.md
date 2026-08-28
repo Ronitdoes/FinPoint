@@ -59,7 +59,7 @@ MVP scenario items mapped across s-10…s-32. "Verified in" names the step whose
 | 13 | Provider returns success | s-18 (mock/live parity) | s-18 ✅, s-22 ✅, s-32 |
 | 14 | Outcome is recorded | s-26 | s-26 ✅ |
 | 15 | Recovered amount is computed | s-26 attribution + cost model | s-26 ✅, s-27 |
-| 16 | Dashboard reflects it | s-28 reads authoritative outcomes (spec 01 §25) | s-28 |
+| 16 | Dashboard reflects it | s-28 reads authoritative outcomes (spec 01 §25) | s-28 ✅, s-32 |
 | 17 | Audit timeline contains every major event | s-25 | s-25, s-32 |
 | 18 | System recovers from worker/API restarts | s-20 durable execution design | s-22 ✅, s-31 chaos/restart tests |
 

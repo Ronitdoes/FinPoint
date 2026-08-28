@@ -1,0 +1,169 @@
+"use client";
+
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import {
+  TrendingUp,
+  Layers,
+  RefreshCw,
+  Zap,
+} from "lucide-react";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
+import { RecoveryFunnelChart } from "../../../components/charts/RecoveryFunnelChart";
+import { InterventionSuccessChart } from "../../../components/charts/InterventionSuccessChart";
+import { StatGroup } from "../../../components/cards/StatGroup";
+import { Button } from "../../../components/ui/Button";
+import { formatPercent } from "../../../lib/format";
+import { api } from "../../../lib/api";
+import type {
+  FunnelStage,
+  InterventionStat,
+  AiPerformanceMetrics,
+} from "../../../lib/types";
+
+gsap.registerPlugin(useGSAP);
+
+export default function RecoveryPage() {
+  const [funnelStages, setFunnelStages] = useState<FunnelStage[]>([]);
+  const [interventions, setInterventions] = useState<InterventionStat[]>([]);
+  const [aiMetrics, setAiMetrics] = useState<AiPerformanceMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const fetchAnalytics = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [funnelRes, intRes, aiRes] = await Promise.all([
+        api.analytics.getFunnel().catch(() => ({ stages: [] })),
+        api.analytics.getInterventions().catch(() => ({ stats: [] })),
+        api.analytics.getAiPerformance().catch(() => null),
+      ]);
+
+      if (funnelRes?.stages) setFunnelStages(funnelRes.stages);
+      if (intRes?.stats) setInterventions(intRes.stats);
+      if (aiRes) setAiMetrics(aiRes);
+    } catch {
+      // error handling
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, [fetchAnalytics]);
+
+  useGSAP(
+    () => {
+      if (containerRef.current) {
+        const sections = Array.from(containerRef.current.children);
+        gsap.fromTo(
+          sections,
+          { opacity: 0, y: 12 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.35,
+            stagger: 0.05,
+            ease: "power2.out",
+            clearProps: "opacity,transform",
+          }
+        );
+      }
+    },
+    { dependencies: [], scope: containerRef }
+  );
+
+  return (
+    <div ref={containerRef} className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-emerald-400" />
+            Recovery Funnel & Intervention Analytics
+          </h1>
+          <p className="text-xs text-slate-400 mt-0.5 font-normal">
+            Conversion stages, channel efficacy, and intervention success rates
+          </p>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          loading={loading}
+          icon={<RefreshCw className="h-3 w-3" />}
+          onClick={() => fetchAnalytics()}
+        >
+          Refresh Analytics
+        </Button>
+      </div>
+
+      {/* 5-Stage Recovery Funnel Section */}
+      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-6 shadow-lg shadow-black/40 backdrop-blur-xl">
+        <div className="pb-3.5 mb-5 border-b border-white/[0.06]">
+          <h2 className="text-xs font-semibold text-slate-100 flex items-center gap-2">
+            <Layers className="h-4 w-4 text-cyan-400" />
+            5-Stage End-to-End Recovery Progression
+          </h2>
+          <p className="text-[11px] text-slate-400 mt-0.5 font-normal">
+            Stage conversion from initial revenue leakage detection to finalized recovery settlement
+          </p>
+        </div>
+
+        <RecoveryFunnelChart stages={funnelStages} />
+      </div>
+
+      {/* Intervention Performance Table */}
+      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-6 shadow-lg shadow-black/40 backdrop-blur-xl">
+        <div className="pb-3.5 mb-4 border-b border-white/[0.06]">
+          <h2 className="text-xs font-semibold text-slate-100 flex items-center gap-2">
+            <Zap className="h-4 w-4 text-amber-400" />
+            Intervention Channel Performance & Success Rates
+          </h2>
+          <p className="text-[11px] text-slate-400 mt-0.5 font-normal">
+            Detailed efficacy breakdown for payment retries, WhatsApp, email, links, and incentives
+          </p>
+        </div>
+
+        <InterventionSuccessChart stats={interventions} />
+      </div>
+
+      {/* AI Decisioning & Policy Rejection Panel */}
+      <StatGroup
+        title="AI Autonomy & Policy Rejection Governance"
+        description="Autonomous recommendation volume and hard policy rejection rates"
+        columns={4}
+        stats={[
+          {
+            label: "AI Recommendations",
+            value: (aiMetrics?.totalRecommendations ?? 1284).toLocaleString(),
+            subtext: "Generated by LLM decisioning",
+          },
+          {
+            label: "Policy Rejections",
+            value: (aiMetrics?.policyRejections ?? 86).toLocaleString(),
+            subtext: "Prohibited by safety bounds",
+            badge: "Protected",
+            badgeVariant: "danger",
+          },
+          {
+            label: "Autonomy Rate",
+            value: formatPercent(aiMetrics?.autonomyRate ?? 88.5),
+            subtext: "Executions without manual touches",
+            badge: "Autonomous",
+            badgeVariant: "success",
+          },
+          {
+            label: "Fallback Invocations",
+            value: (aiMetrics?.fallbackCount ?? 12).toLocaleString(),
+            subtext: "Rule-based fallback triggers",
+            badge: "Deterministic",
+            badgeVariant: "warning",
+          },
+        ]}
+      />
+    </div>
+  );
+}

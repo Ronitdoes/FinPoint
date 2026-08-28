@@ -25,11 +25,19 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       password: parseResult.data.password,
     });
 
+    const isLocalhost = Boolean(
+      request.headers.host?.includes("localhost") ||
+      request.headers.origin?.includes("localhost") ||
+      request.headers.host?.includes("127.0.0.1") ||
+      request.headers.origin?.includes("127.0.0.1")
+    );
+    const isSecure = !isLocalhost && (process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production");
+
     // Set httpOnly session cookie
     reply.setCookie("rr_session", rawToken, {
       path: "/",
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isSecure,
       sameSite: "lax",
       maxAge: 12 * 60 * 60, // 12 hours in seconds
     });
@@ -53,10 +61,18 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
         sessionToken,
       });
 
+      const isLocalhost = Boolean(
+        request.headers.host?.includes("localhost") ||
+        request.headers.origin?.includes("localhost") ||
+        request.headers.host?.includes("127.0.0.1") ||
+        request.headers.origin?.includes("127.0.0.1")
+      );
+      const isSecure = !isLocalhost && (process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production");
+
       reply.clearCookie("rr_session", {
         path: "/",
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: isSecure,
         sameSite: "lax",
       });
 

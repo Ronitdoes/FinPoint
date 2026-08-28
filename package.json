@@ -13,6 +13,8 @@
     "db:migrate": "bun --filter @repo/db db:migrate",
     "db:migrate:check": "bun --filter @repo/db db:migrate:check",
     "infra:up": "docker compose -f infra/docker/docker-compose.yml up -d --wait",
+    "infra:up:build": "docker compose -f infra/docker/docker-compose.yml up -d --build --wait",
+    "infra:build": "docker compose -f infra/docker/docker-compose.yml build",
     "infra:down": "docker compose -f infra/docker/docker-compose.yml down"
   },
   "devDependencies": {

@@ -7,11 +7,13 @@ export interface CorsPluginOptions {
   isProduction?: boolean;
 }
 
-const DEFAULT_DEV_ORIGINS = [
+const DEFAULT_ORIGINS = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://localhost:3001",
   "http://127.0.0.1:3001",
+  "http://localhost:4000",
+  "http://127.0.0.1:4000",
 ];
 
 const corsPluginCallback: FastifyPluginAsync<CorsPluginOptions> = async (
@@ -19,9 +21,17 @@ const corsPluginCallback: FastifyPluginAsync<CorsPluginOptions> = async (
   opts,
 ) => {
   const isProd = opts.isProduction ?? process.env.NODE_ENV === "production";
-  const origins = opts.allowedOrigins && opts.allowedOrigins.length > 0
-    ? opts.allowedOrigins
-    : (isProd ? [] : DEFAULT_DEV_ORIGINS);
+  const envOrigins = process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+
+  const allowedOrigins = new Set([
+    ...DEFAULT_ORIGINS,
+    ...envOrigins,
+    ...(opts.allowedOrigins ?? []),
+  ]);
 
   const corsOptions: FastifyCorsOptions = {
     origin: (origin, cb) => {
@@ -30,19 +40,17 @@ const corsPluginCallback: FastifyPluginAsync<CorsPluginOptions> = async (
         return cb(null, true);
       }
 
-      if (!isProd) {
-        // In development/test, allow localhost or explicitly specified dev origins
-        if (origins.includes(origin) || origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
-          return cb(null, true);
-        }
-      } else {
-        // In production, enforce strict allowlist
-        if (origins.includes(origin)) {
-          return cb(null, true);
-        }
+      // Check if origin is explicitly allowed or matches local origin pattern
+      if (
+        allowedOrigins.has(origin) ||
+        origin.startsWith("http://localhost:") ||
+        origin.startsWith("http://127.0.0.1:")
+      ) {
+        return cb(null, true);
       }
 
-      return cb(new Error("Origin not allowed by CORS"), false);
+      // Safe reject without throwing 500 server error
+      return cb(null, false);
     },
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: [
@@ -59,6 +67,7 @@ const corsPluginCallback: FastifyPluginAsync<CorsPluginOptions> = async (
       "X-Correlation-ID",
       "X-Request-ID",
       "Retry-After",
+      "x-cost-data-redacted",
     ],
     credentials: true,
   };

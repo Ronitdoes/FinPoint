@@ -5,6 +5,7 @@ WORKDIR /app
 # Copy dependency manifests
 COPY package.json bun.lock turbo.json ./
 COPY apps/frontend/package.json ./apps/frontend/package.json
+COPY packages/domain/package.json ./packages/domain/package.json
 COPY packages/config/package.json ./packages/config/package.json
 COPY packages/typescript-config/package.json ./packages/typescript-config/package.json
 COPY packages/eslint-config/package.json ./packages/eslint-config/package.json
@@ -17,6 +18,9 @@ COPY . .
 # Build Next.js standalone application
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ARG NEXT_PUBLIC_API_URL=http://localhost:4000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 RUN bun run --cwd apps/frontend build
 
 # Slim production runner

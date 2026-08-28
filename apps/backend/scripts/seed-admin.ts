@@ -10,10 +10,9 @@ import {
   findUserByEmail,
   createUser,
   updateUser,
-  eq,
-  and,
 } from "@repo/db";
 import { hashPassword } from "../src/lib/crypto";
+import type { UserRole } from "@repo/domain";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,17 +20,29 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
+interface PersonaSeed {
+  email: string;
+  name: string;
+  role: UserRole;
+}
+
+const PERSONAS: PersonaSeed[] = [
+  { email: "admin@example.com", name: "System Admin", role: "ADMIN" },
+  { email: "finance@example.com", name: "Finance Director", role: "FINANCE" },
+  { email: "ops@example.com", name: "Operations Lead", role: "OPERATIONS" },
+  { email: "support@example.com", name: "Support Specialist", role: "SUPPORT" },
+  { email: "viewer@example.com", name: "Executive Observer", role: "VIEWER" },
+];
+
 async function seedBootstrapAdmin() {
   console.log("🌱 Starting Bootstrap Admin & Demo Tenant Seeding...");
 
   const tenantName = process.env.BOOTSTRAP_TENANT_NAME || "Demo Organization";
   const tenantSlug = (process.env.BOOTSTRAP_TENANT_SLUG || "demo-tenant").toLowerCase().trim();
-  const adminEmail = (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@example.com").toLowerCase().trim();
-  const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD || "Admin12345!@#";
-  const adminName = process.env.BOOTSTRAP_ADMIN_NAME || "System Admin";
+  const defaultPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD || "Admin12345!@#";
 
   try {
-    const passwordHash = await hashPassword(adminPassword);
+    const passwordHash = await hashPassword(defaultPassword);
 
     await withTransaction({ db }, async (tx) => {
       // 1. Check or create demo tenant
@@ -51,44 +62,46 @@ async function seedBootstrapAdmin() {
         console.log(`🏢 Demo Tenant already exists (ID: ${tenant.id})`);
       }
 
-      // 2. Check or create Admin user
-      let adminUser = await findUserByEmail(
-        { tx },
-        { tenantId: tenant.id, email: adminEmail },
-      );
-
-      if (!adminUser) {
-        console.log(`👤 Creating Bootstrap ADMIN user '${adminEmail}'...`);
-        adminUser = await createUser(
+      // 2. Check or create persona users
+      for (const persona of PERSONAS) {
+        let user = await findUserByEmail(
           { tx },
-          {
-            tenantId: tenant.id,
-            email: adminEmail,
-            name: adminName,
-            role: "ADMIN",
-            status: "ACTIVE",
-            passwordHash,
-          },
+          { tenantId: tenant.id, email: persona.email },
         );
-        console.log(`✅ Admin user created successfully (ID: ${adminUser.id}, Role: ${adminUser.role})`);
-      } else {
-        console.log(`👤 Admin user '${adminEmail}' already exists in tenant. Updating credentials & role...`);
-        adminUser = (await updateUser(
-          { tx },
-          {
-            tenantId: tenant.id,
-            userId: adminUser.id,
-            name: adminName,
-            role: "ADMIN",
-            status: "ACTIVE",
-            passwordHash,
-          },
-        ))!;
-        console.log(`✅ Admin user credentials updated (ID: ${adminUser.id})`);
+
+        if (!user) {
+          console.log(`👤 Creating ${persona.role} user '${persona.email}'...`);
+          user = await createUser(
+            { tx },
+            {
+              tenantId: tenant.id,
+              email: persona.email,
+              name: persona.name,
+              role: persona.role,
+              status: "ACTIVE",
+              passwordHash,
+            },
+          );
+          console.log(`✅ ${persona.role} user created (ID: ${user.id})`);
+        } else {
+          console.log(`👤 Updating ${persona.role} user '${persona.email}'...`);
+          await updateUser(
+            { tx },
+            {
+              tenantId: tenant.id,
+              userId: user.id,
+              name: persona.name,
+              role: persona.role,
+              status: "ACTIVE",
+              passwordHash,
+            },
+          );
+          console.log(`✅ ${persona.role} user updated`);
+        }
       }
     });
 
-    console.log("✨ Seeding completed successfully!");
+    console.log("✨ Seeding completed successfully! Default password for all personas is: Admin12345!@#");
   } catch (err: any) {
     console.error("❌ Seeding failed:", err.message);
     process.exit(1);
