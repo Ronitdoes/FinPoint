@@ -1,0 +1,25 @@
+{
+  "id": "invoice_reminder",
+  "name": "invoice_reminder",
+  "category": "UTILITY",
+  "supported_languages": ["en", "es", "hi"],
+  "default_language": "en",
+  "variables": ["customer_name", "invoice_number", "amount_due", "currency", "due_date", "payment_url"],
+  "templates": {
+    "en": {
+      "header": "Invoice Overdue Reminder",
+      "body": "Dear {{customer_name}}, Invoice #{{invoice_number}} for {{currency}} {{amount_due}} was due on {{due_date}}. Please review and remit payment at: {{payment_url}}.",
+      "footer": "Reply STOP to unsubscribe."
+    },
+    "es": {
+      "header": "Recordatorio de Factura Vencida",
+      "body": "Estimado/a {{customer_name}}, la factura #{{invoice_number}} por {{currency}} {{amount_due}} venció el {{due_date}}. Puede consultar y pagar en: {{payment_url}}.",
+      "footer": "Responda STOP para darse de baja."
+    },
+    "hi": {
+      "header": "चालान बकाया सूचना",
+      "body": "प्रिय {{customer_name}}, चालान #{{invoice_number}} (राशि: {{currency}} {{amount_due}}) की देय तिथि {{due_date}} थी। कृपया यहाँ भुगतान करें: {{payment_url}}।",
+      "footer": "सदस्यता समाप्त करने के लिए STOP लिखें।"
+    }
+  }
+}

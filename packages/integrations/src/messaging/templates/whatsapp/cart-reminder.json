@@ -1,0 +1,25 @@
+{
+  "id": "cart_reminder",
+  "name": "cart_reminder",
+  "category": "MARKETING",
+  "supported_languages": ["en", "es", "hi"],
+  "default_language": "en",
+  "variables": ["customer_name", "item_count", "total_amount", "currency", "checkout_url", "discount_code"],
+  "templates": {
+    "en": {
+      "header": "Items waiting in your cart",
+      "body": "Hi {{customer_name}}, you left {{item_count}} items worth {{currency}} {{total_amount}} in your cart! Complete your purchase with discount code {{discount_code}}: {{checkout_url}}.",
+      "footer": "Reply STOP to unsubscribe."
+    },
+    "es": {
+      "header": "Artículos en su carrito",
+      "body": "Hola {{customer_name}}, dejó {{item_count}} artículos por {{currency}} {{total_amount}} en su carrito. Complete su compra con el código {{discount_code}}: {{checkout_url}}.",
+      "footer": "Responda STOP para darse de baja."
+    },
+    "hi": {
+      "header": "आपकी कार्ट में आइटम",
+      "body": "नमस्ते {{customer_name}}, आपकी कार्ट में {{currency}} {{total_amount}} मूल्य के {{item_count}} आइटम शेष हैं। कोड {{discount_code}} का उपयोग करके खरीदारी पूरी करें: {{checkout_url}}।",
+      "footer": "सदस्यता समाप्त करने के लिए STOP लिखें।"
+    }
+  }
+}

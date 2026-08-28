@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { processInboundWebhook } from "./ingest.service";
 import { NotAcceptableError } from "../../lib/errors";
+import { whatsappWebhookRoutes } from "../messaging/webhooks/whatsapp.routes";
+import { emailWebhookRoutes } from "../messaging/webhooks/email.routes";
 
 export interface WebhookRouteOptions {
   stripeWebhookSecret?: string | null;
@@ -119,4 +121,9 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
       return reply.status(200).send(result);
     },
   );
+
+  // Register Messaging status and inbound webhooks (s-19)
+  await fastify.register(whatsappWebhookRoutes, { prefix: "/whatsapp" });
+  await fastify.register(emailWebhookRoutes, { prefix: "/email" });
 };
+

@@ -4,4 +4,5 @@ export * from "./events/consumer";
 export * from "./events/inprocess.bus";
 export * from "./events/redpanda.bus";
 export * from "./payments";
+export * from "./messaging";
 

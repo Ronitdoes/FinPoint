@@ -116,6 +116,23 @@ export async function findMessageByIdempotencyKey(
   return message ?? null;
 }
 
+export async function findMessageByProviderMessageId(
+  ctx: RepoContext,
+  { tenantId, providerMessageId }: { tenantId?: string; providerMessageId: string },
+): Promise<Message | null> {
+  const executor = getExecutor(ctx);
+  const conditions = [eq(messages.providerMessageId, providerMessageId)];
+  if (tenantId) {
+    conditions.push(eq(messages.tenantId, tenantId));
+  }
+  const [message] = await executor
+    .select()
+    .from(messages)
+    .where(and(...conditions))
+    .limit(1);
+  return message ?? null;
+}
+
 export async function updateMessageStatus(
   ctx: RepoContext,
   input: UpdateMessageStatusInput,
@@ -206,6 +223,51 @@ export async function listMessagesForCustomer(
     .from(messages)
     .where(and(eq(messages.tenantId, tenantId), eq(messages.customerId, customerId)))
     .orderBy(desc(messages.sentAt), desc(messages.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function listMessages(
+  ctx: RepoContext,
+  {
+    tenantId,
+    caseId,
+    customerId,
+    channel,
+    status,
+    limit = 50,
+    offset = 0,
+  }: {
+    tenantId: string;
+    caseId?: string;
+    customerId?: string;
+    channel?: NewMessage["channel"];
+    status?: NewMessage["status"];
+    limit?: number;
+    offset?: number;
+  },
+): Promise<Message[]> {
+  const executor = getExecutor(ctx);
+  const conditions = [eq(messages.tenantId, tenantId)];
+
+  if (caseId) {
+    conditions.push(eq(messages.caseId, caseId));
+  }
+  if (customerId) {
+    conditions.push(eq(messages.customerId, customerId));
+  }
+  if (channel) {
+    conditions.push(eq(messages.channel, channel));
+  }
+  if (status) {
+    conditions.push(eq(messages.status, status));
+  }
+
+  return await executor
+    .select()
+    .from(messages)
+    .where(and(...conditions))
+    .orderBy(desc(messages.createdAt))
     .limit(limit)
     .offset(offset);
 }

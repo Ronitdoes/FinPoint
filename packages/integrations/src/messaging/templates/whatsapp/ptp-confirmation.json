@@ -1,0 +1,25 @@
+{
+  "id": "ptp_confirmation",
+  "name": "ptp_confirmation",
+  "category": "UTILITY",
+  "supported_languages": ["en", "es", "hi"],
+  "default_language": "en",
+  "variables": ["customer_name", "promised_amount", "currency", "promised_date", "payment_url"],
+  "templates": {
+    "en": {
+      "header": "Promise-to-Pay Scheduled",
+      "body": "Hi {{customer_name}}, thank you for scheduling your payment. We have recorded your promise to pay {{currency}} {{promised_amount}} on {{promised_date}}. You can pay anytime here: {{payment_url}}.",
+      "footer": "Reply STOP to unsubscribe."
+    },
+    "es": {
+      "header": "Promesa de Pago Confirmada",
+      "body": "Hola {{customer_name}}, confirmamos su compromiso de pago por {{currency}} {{promised_amount}} para la fecha {{promised_date}}. Puede abonar en: {{payment_url}}.",
+      "footer": "Responda STOP para darse de baja."
+    },
+    "hi": {
+      "header": "भुगतान प्रतिबद्धता दर्ज",
+      "body": "नमस्ते {{customer_name}}, हमने {{promised_date}} को {{currency}} {{promised_amount}} के भुगतान का आपका वादा दर्ज कर लिया है। भुगतान लिंक: {{payment_url}}।",
+      "footer": "सदस्यता समाप्त करने के लिए STOP लिखें।"
+    }
+  }
+}

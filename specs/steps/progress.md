@@ -23,9 +23,9 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 
 ```text
 Last updated : 2026-08-28   (update on every change)
-Current step : s-19 Messaging Adapters & Delivery Ledger
-Next up      : s-19 — NOT STARTED
-Overall      : 18 / 35 steps complete
+Current step : s-20 Temporal Recovery Workflow Worker
+Next up      : s-20 — NOT STARTED
+Overall      : 19 / 35 steps complete
 ```
 
 ---
@@ -39,7 +39,7 @@ Overall      : 18 / 35 steps complete
 | Platform (API skeleton, observability, auth) | s-07–s-09 | 3 / 3 | DONE |
 | Ingestion (gateway, bus, risk, context) | s-10–s-13 | 4 / 4 | DONE |
 | Intelligence (AI decision, governance, policy) | s-14–s-16 | 3 / 3 | DONE |
-| Execution (orchestration, adapters, Temporal, approvals) | s-17–s-21 | 2 / 5 | IN PROGRESS |
+| Execution (orchestration, adapters, Temporal, approvals) | s-17–s-21 | 3 / 5 | IN PROGRESS |
 | Workflows (payment, checkout, invoice) | s-22–s-24 | 0 / 3 | NOT STARTED |
 | Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 0 / 5 | NOT STARTED |
 | Verification & ship (security, chaos, e2e, deploy, ops, release) | s-30–s-35 | 0 / 6 | NOT STARTED |
@@ -68,7 +68,7 @@ Overall      : 18 / 35 steps complete
 | s-16 | Policy Engine & Bounded Autonomy | DONE | 2026-08-27 | 2026-08-27 | Packages/policy pure package (`@repo/policy`), 9 seeded platform rules (POL-OPTOUT, POL-DISPUTE, POL-MAXRETRY, POL-WA-CAP, POL-EM-CAP, POL-DISCOUNT, POL-HIGHVALUE, POL-CONFIDENCE, POL-PAYMENT-SUCCESS), AST JSONB matcher, immutable snapshot versioning in policy_versions, append-only evaluation ledger in policy_evaluations, POST /policy/evaluate + CRUD /policies endpoints, fail-closed guarantee, <50ms benchmark proven |
 | s-17 | Recovery Case Orchestration Pipeline | DONE | 2026-08-27 | 2026-08-28 | `@repo/orchestration` package; consumer group `orchestrator` on `revenue-events.v1` (`risk.calculated` -> `tryCreateCase` -> `case.opened`); multi-stage resumable recovery pipeline (`QUALIFIED` -> `DECISION_PENDING` -> `POLICY_REVIEW` -> `IN_PROGRESS` / `STOPPED` / `ESCALATED` / `FAILED`); case control APIs (`/pause`, `/resume`, `/escalate`, `/stop`) with guarded transitions, timeline events, and RBAC matrix; case read APIs with filters, cursor pagination, timeline, and 404 tenant isolation; 15 integration tests green; 703 monorepo tests passing |
 | s-18 | Payment Provider Adapters | DONE | 2026-08-28 | 2026-08-28 | `PaymentProvider` interface in `@repo/integrations/payments` with Stripe, Razorpay, and Mock adapters; decline taxonomy mapping; `PaymentExecutionService` with double-charge prevention, `{tenant}:{case}:RETRY_PAYMENT:{attempt}` idempotency, network retry loop, and fee capture into `recovery_cost_entries` (`PAYMENT_PROCESSING`); `PaymentRefreshService` for UNKNOWN status polling with giving-up semantics; REST endpoints `GET /payments/:id`, `GET /payments/:id/status`, `POST /demo/mock/payments/:key/next-outcome`; 28 tests passing across contract and integration suites |
-| s-19 | Messaging Adapters & Delivery Ledger | NOT STARTED | | | |
+| s-19 | Messaging Adapters & Delivery Ledger | DONE | 2026-08-28 | 2026-08-28 | `MessagingProvider` interface with WhatsApp Cloud API, Transactional Email, and Mock adapters in `@repo/integrations/messaging`; multi-language template registry (`en`/`es`/`hi`) and variable allowlist validator; `sendCaseMessage` pipeline with anti-double-send idempotency (`{tenant}:{case}:{channel}:{template}:{step}`), pre-dispatch fast-path, and defense-in-depth policy contact cap rechecks (WhatsApp 7d < 2, Email 14d < 3); finite state machine `QUEUED`→`SENT`→`DELIVERED`→`READ`/`FAILED`/`BOUNCED`; `POST /webhooks/whatsapp` (Meta verification handshake, constant-time HMAC-SHA256 signature verification, status receipts, STOP keyword customer opt-out automation & `customer.opted_out` event emission) and `POST /webhooks/email`; `GET /messages` & `GET /messages/:id` read APIs with PII masking (`maskPhone`/`maskEmail`) and RBAC; 29 tests passing across contract and integration suites |
 | s-20 | Temporal Foundation (Worker Service) | NOT STARTED | | | |
 | s-21 | Human Escalation & Approvals | NOT STARTED | | | |
 | s-22 | Workflow A: Failed Payment Recovery | NOT STARTED | | | |
@@ -144,5 +144,5 @@ One line per completed step or notable event. Format: `- YYYY-MM-DD | s-XX | sho
 2026-08-27 | s-16 | Policy Engine & Bounded Autonomy complete: packages/policy pure package (@repo/policy), 9 seeded platform rules (POL-OPTOUT, POL-DISPUTE, POL-MAXRETRY, POL-WA-CAP, POL-EM-CAP, POL-DISCOUNT, POL-HIGHVALUE, POL-CONFIDENCE, POL-PAYMENT-SUCCESS), AST JSONB matcher, immutable snapshot versioning in policy_versions, append-only evaluation ledger in policy_evaluations, POST /policy/evaluate + CRUD /policies endpoints, fail-closed guarantee, <50ms benchmark proven | bun run check-types green (10/10 pkgs); bun run test green (683 tests across 46 files incl. 43 policy unit + 16 policy integration tests); bun run lint green; bun run check-docs green (19 links OK)
 2026-08-28 | s-17 | Recovery Case Orchestration Pipeline complete: packages/orchestration (@repo/orchestration) workflow client abstraction; orchestrator consumer on revenue-events.v1 (risk.calculated -> tryCreateCase -> case.opened); multi-stage resumable recovery pipeline (QUALIFIED -> DECISION_PENDING -> POLICY_REVIEW -> IN_PROGRESS / STOPPED / ESCALATED / FAILED); case control APIs (/pause, /resume, /escalate, /stop) with guarded transitions, timeline events, and RBAC matrix; case read APIs (/cases, /cases/:id, /cases/:id/timeline) with filters, cursor pagination, and 404 tenant isolation; 15 integration tests green | bun run check-types green (11/11 pkgs); bun run test green (703 tests across 47 files); bun run check-docs green (19 links OK)
 2026-08-28 | s-18 | Payment Provider Adapters complete: PaymentProvider interface with Stripe, Razorpay, and Mock implementations in @repo/integrations/payments; internal decline taxonomy mapping; PaymentExecutionService with anti-double-charge idempotency ({tenant}:{case}:RETRY_PAYMENT:{attempt}), network retry loop, and fee capture into recovery_cost_entries; PaymentRefreshService for UNKNOWN status polling with giving-up semantics; REST endpoints GET /payments/:id, GET /payments/:id/status, POST /demo/mock/payments/:key/next-outcome; 28 tests passing | bun run check-types green (11/11 pkgs); bun run lint green; bunx vitest run payments green (28/28 tests); bun run check-docs green (19 links OK)
+2026-08-28 | s-19 | Messaging Adapters & Delivery Ledger complete: MessagingProvider interface in @repo/integrations/messaging with WhatsApp Cloud API, Transactional Email, and Mock adapters; multi-language template registry (en/es/hi) and variable allowlist validator; sendCaseMessage pipeline with anti-double-send idempotency ({tenant}:{case}:{channel}:{template}:{step}), pre-dispatch fast path, and defense-in-depth policy contact cap rechecks (WhatsApp 7d < 2, Email 14d < 3); finite state machine QUEUED→SENT→DELIVERED→READ/FAILED/BOUNCED; POST /webhooks/whatsapp (Meta verify handshake, constant-time HMAC-SHA256 signature verification, status receipts, STOP keyword customer opt-out automation & customer.opted_out event emission) and POST /webhooks/email; GET /messages & GET /messages/:id read APIs with PII masking (maskPhone/maskEmail) and RBAC | bun run check-types green (11/11 pkgs); bun run lint green; bun run test green (760/760 tests across 51 files); bun run check-docs green (19 links OK)
 ```
-

@@ -54,8 +54,10 @@ export interface PaymentsConfig {
 export interface MessagingConfig {
   readonly whatsappApiKey: string | null;
   readonly whatsappPhoneNumberId: string | null;
+  readonly whatsappVerifySecret: string | null;
   readonly emailApiKey: string | null;
   readonly emailFrom: string | null;
+  readonly emailWebhookSecret: string | null;
 }
 
 export interface DemoConfig {
@@ -135,8 +137,10 @@ function fromRaw(raw: RawServerEnv): ServerConfig {
     messaging: Object.freeze({
       whatsappApiKey: raw.WHATSAPP_API_KEY ?? null,
       whatsappPhoneNumberId: raw.WHATSAPP_PHONE_NUMBER_ID ?? null,
+      whatsappVerifySecret: raw.WHATSAPP_VERIFY_SECRET ?? null,
       emailApiKey: raw.EMAIL_API_KEY ?? null,
       emailFrom: raw.EMAIL_FROM ?? null,
+      emailWebhookSecret: raw.EMAIL_WEBHOOK_SECRET ?? null,
     }),
     demo: Object.freeze({
       mockProviders,

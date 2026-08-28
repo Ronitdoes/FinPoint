@@ -70,8 +70,10 @@ export const paymentsSchema = z.object({
 export const messagingSchema = z.object({
   WHATSAPP_API_KEY: z.string().min(1).optional(),
   WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
+  WHATSAPP_VERIFY_SECRET: z.string().min(1).optional(),
   EMAIL_API_KEY: z.string().min(1).optional(),
   EMAIL_FROM: z.string().min(1).optional(),
+  EMAIL_WEBHOOK_SECRET: z.string().min(1).optional(),
 });
 
 export const demoSchema = z.object({

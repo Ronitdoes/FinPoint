@@ -1,0 +1,25 @@
+{
+  "id": "payment_retry_notice",
+  "name": "payment_retry_notice",
+  "category": "UTILITY",
+  "supported_languages": ["en", "es", "hi"],
+  "default_language": "en",
+  "variables": ["customer_name", "amount", "currency", "payment_link", "due_date"],
+  "templates": {
+    "en": {
+      "header": "Payment Update Notice",
+      "body": "Hello {{customer_name}}, we noticed your recent payment of {{currency}} {{amount}} was unsuccessful. Please update your payment method or complete your payment using this link: {{payment_link}} before {{due_date}}.",
+      "footer": "Reply STOP to unsubscribe."
+    },
+    "es": {
+      "header": "Aviso de Pago",
+      "body": "Hola {{customer_name}}, detectamos que su pago reciente de {{currency}} {{amount}} no se pudo procesar. Por favor actualice su método de pago o complete su pago aquí: {{payment_link}} antes de {{due_date}}.",
+      "footer": "Responda STOP para darse de baja."
+    },
+    "hi": {
+      "header": "भुगतान सूचना",
+      "body": "नमस्ते {{customer_name}}, आपका {{currency}} {{amount}} का भुगतान विफल रहा। कृपया {{due_date}} से पहले इस लिंक से भुगतान पूर्ण करें: {{payment_link}}।",
+      "footer": "सदस्यता समाप्त करने के लिए STOP लिखें।"
+    }
+  }
+}

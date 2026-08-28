@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { customers, type Customer, type NewCustomer } from "../schema/customers";
 import { type RepoContext, getExecutor } from "./types";
 
@@ -102,6 +102,57 @@ export async function findCustomerByEmail(
         isNull(customers.deletedAt),
       ),
     )
+    .limit(1);
+  return customer ?? null;
+}
+
+export async function findCustomerByPhone(
+  ctx: RepoContext,
+  { tenantId, phone }: { tenantId: string; phone: string },
+): Promise<Customer | null> {
+  const executor = getExecutor(ctx);
+  const normalized = phone.startsWith("+") ? phone : `+${phone}`;
+  const withoutPlus = phone.replace(/^\+/, "");
+  const [customer] = await executor
+    .select()
+    .from(customers)
+    .where(
+      and(
+        eq(customers.tenantId, tenantId),
+        or(
+          eq(customers.phone, phone),
+          eq(customers.phone, normalized),
+          eq(customers.phone, withoutPlus),
+        ),
+        isNull(customers.deletedAt),
+      ),
+    )
+    .orderBy(desc(customers.createdAt))
+    .limit(1);
+  return customer ?? null;
+}
+
+export async function findFirstCustomerByPhone(
+  ctx: RepoContext,
+  { phone }: { phone: string },
+): Promise<Customer | null> {
+  const executor = getExecutor(ctx);
+  const normalized = phone.startsWith("+") ? phone : `+${phone}`;
+  const withoutPlus = phone.replace(/^\+/, "");
+  const [customer] = await executor
+    .select()
+    .from(customers)
+    .where(
+      and(
+        or(
+          eq(customers.phone, phone),
+          eq(customers.phone, normalized),
+          eq(customers.phone, withoutPlus),
+        ),
+        isNull(customers.deletedAt),
+      ),
+    )
+    .orderBy(desc(customers.createdAt))
     .limit(1);
   return customer ?? null;
 }
