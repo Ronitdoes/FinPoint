@@ -1,11 +1,14 @@
 import { activities, type RecoveryActivities } from "./activities";
 import { recoveryWorkflowTemplate } from "./workflows/_template";
+import { failedPaymentRecoveryWorkflow } from "./workflows/failed-payment";
 
 /**
  * Registry of all available Temporal Workflows in the recovery worker.
  */
 export const WORKFLOWS = {
   recoveryWorkflowTemplate,
+  failedPaymentRecoveryWorkflow,
+  FailedPaymentRecoveryWorkflow: failedPaymentRecoveryWorkflow,
 } as const;
 
 /**

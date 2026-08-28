@@ -10,7 +10,8 @@
     "./activities": "./src/activities/index.ts",
     "./workflows": "./src/workflows/index.ts",
     "./client": "./src/client.ts",
-    "./framework": "./src/framework/index.ts"
+    "./framework": "./src/framework/index.ts",
+    "./signaling": "./src/signaling/index.ts"
   },
   "scripts": {
     "dev": "bun --watch src/worker.ts",

@@ -30,6 +30,18 @@ export const SIGNAL_PAUSE = "pause";
 export const SIGNAL_RESUME = "resume";
 export const SIGNAL_STOP = "stop";
 export const SIGNAL_HUMAN_DECISION = "human-decision";
+export const SIGNAL_EXTERNAL_PAYMENT_SUCCEEDED = "external-payment-succeeded";
+
+/**
+ * Payload for external-payment-succeeded signal.
+ */
+export interface ExternalPaymentSucceededPayload {
+  paymentId?: string;
+  amount?: string | number;
+  currency?: string;
+  paidAt?: string;
+  [key: string]: unknown;
+}
 
 /**
  * Payload for human-decision signal.
@@ -70,6 +82,7 @@ export interface WorkflowState {
   stopReason?: string;
   currentStep?: string;
   lastDecision?: HumanDecisionSignalPayload;
+  retryCount?: number;
 }
 
 // Signal Definitions
@@ -77,6 +90,7 @@ export const pauseSignal = defineSignal<[void]>(SIGNAL_PAUSE);
 export const resumeSignal = defineSignal<[void]>(SIGNAL_RESUME);
 export const stopSignal = defineSignal<[{ reason?: string }]>(SIGNAL_STOP);
 export const humanDecisionSignal = defineSignal<[HumanDecisionSignalPayload]>(SIGNAL_HUMAN_DECISION);
+export const externalPaymentSucceededSignal = defineSignal<[ExternalPaymentSucceededPayload]>(SIGNAL_EXTERNAL_PAYMENT_SUCCEEDED);
 
 // Query Definitions
 export const workflowStateQuery = defineQuery<WorkflowState>("getState");

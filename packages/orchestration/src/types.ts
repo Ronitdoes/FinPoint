@@ -1,6 +1,12 @@
 import type { Database } from "@repo/db";
 
-export type WorkflowSignal = "pause" | "resume" | "stop" | "human-decision";
+export type WorkflowSignal =
+  | "pause"
+  | "resume"
+  | "stop"
+  | "human-decision"
+  | "external-payment-succeeded"
+  | string;
 
 export interface StartWorkflowInput {
   tenantId: string;

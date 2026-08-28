@@ -53,15 +53,15 @@ MVP scenario items mapped across s-10…s-32. "Verified in" names the step whose
 | 7 | Context is assembled | s-13 | s-13 ✅ (unit + PII sweep + integration suite), s-32 |
 | 8 | AI returns schema-valid decision | s-14 (schema enforcement, eval harness s-15) | s-14 ✅ (prompts, structured outputs, repair retry, fallback, 9 integration tests), s-15 |
 | 9 | Policy validates decision | s-16 | s-16 ✅, s-17 ✅, s-32 |
-| 10 | Temporal workflow starts | s-20 runtime; orchestration trigger s-17 | s-22 workflow harness |
-| 11 | Message is sent | s-19 adapters + ledger; used by s-22 | s-22 |
-| 12 | Payment retry occurs | s-18 adapter; orchestrated in s-22 | s-22 |
-| 13 | Provider returns success | s-18 (mock/live parity) | s-22, s-32 |
+| 10 | Temporal workflow starts | s-20 runtime; orchestration trigger s-17 | s-20 ✅, s-22 ✅ |
+| 11 | Message is sent | s-19 adapters + ledger; used by s-22 | s-19 ✅, s-22 ✅ |
+| 12 | Payment retry occurs | s-18 adapter; orchestrated in s-22 | s-18 ✅, s-22 ✅ |
+| 13 | Provider returns success | s-18 (mock/live parity) | s-18 ✅, s-22 ✅, s-32 |
 | 14 | Outcome is recorded | s-26 | s-26 |
 | 15 | Recovered amount is computed | s-26 attribution + cost model | s-26, s-27 |
 | 16 | Dashboard reflects it | s-28 reads authoritative outcomes (spec 01 §25) | s-28 |
 | 17 | Audit timeline contains every major event | s-25 | s-25, s-32 |
-| 18 | System recovers from worker/API restarts | s-20 durable execution design | s-31 chaos/restart tests |
+| 18 | System recovers from worker/API restarts | s-20 durable execution design | s-22 ✅, s-31 chaos/restart tests |
 
 ## 3. Acceptance tests — spec 03 §8 → s-32
 

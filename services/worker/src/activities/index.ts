@@ -13,6 +13,7 @@ export * from "./stop-case-with-reason";
 export * from "./append-timeline";
 export * from "./emit-metric";
 export * from "./escalate-workflow-failure";
+export * from "./replan-decision";
 
 import * as loadCaseSnapshotActivity from "./load-case-snapshot";
 import * as checkPolicyAgainActivity from "./check-policy-again";
@@ -29,6 +30,7 @@ import * as stopCaseWithReasonActivity from "./stop-case-with-reason";
 import * as appendTimelineActivity from "./append-timeline";
 import * as emitMetricActivity from "./emit-metric";
 import * as escalateWorkflowFailureActivity from "./escalate-workflow-failure";
+import * as replanDecisionActivity from "./replan-decision";
 
 /**
  * Complete activities dictionary for Temporal worker registration and proxyActivities typing.
@@ -49,6 +51,7 @@ export const activities = {
   appendTimeline: appendTimelineActivity.appendTimeline,
   emitMetric: emitMetricActivity.emitMetric,
   escalateWorkflowFailure: escalateWorkflowFailureActivity.escalateWorkflowFailure,
+  requestReplanDecision: replanDecisionActivity.requestReplanDecision,
 };
 
 export type RecoveryActivities = typeof activities;

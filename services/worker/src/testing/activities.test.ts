@@ -16,6 +16,7 @@ import {
   appendTimeline,
   emitMetric,
   escalateWorkflowFailure,
+  requestReplanDecision,
 } from "../activities";
 import {
   db,
@@ -329,6 +330,20 @@ describe("Step 20 — 15 Shared Activities Suite", () => {
       { tenantId: tenant.id, caseId: recoveryCase.id },
     );
     expect(caseRec?.status).toBe("ESCALATED");
+  });
+
+  it("16. requestReplanDecision evaluates replan path and records decision", async () => {
+    const result = await requestReplanDecision({
+      tenantId: tenant.id,
+      caseId: recoveryCase.id,
+      attemptsCount: 3,
+      lastDeclineCode: "insufficient_funds",
+    });
+
+    expect(result.decisionId).toBeDefined();
+    expect(result.replanAction).toBe("STOP_CASE");
+    expect(result.stopReason).toBe("MAX_RETRIES");
+    expect(result.allowed).toBe(true);
   });
 
   it("framework retry policies declare non-retryable error types correctly", () => {

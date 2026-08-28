@@ -199,6 +199,19 @@ export function createActivityMocks(
         taskId: randomUUID(),
       };
     },
+
+    async requestReplanDecision(input) {
+      recordCall("requestReplanDecision", [input]);
+      return {
+        decisionId: randomUUID(),
+        replanAction: "STOP_CASE",
+        actions: [{ type: "STOP_CASE", parameters: { reason: "MAX_RETRIES" } }],
+        stopReason: "MAX_RETRIES",
+        diagnosis: "Max retries exhausted",
+        allowed: true,
+        requiresApproval: false,
+      };
+    },
   };
 
   const mockActivities = {} as RecoveryActivities;
