@@ -10,6 +10,7 @@ import { customersRoutes } from "../modules/customers/routes";
 import { aiRoutes } from "../modules/ai/routes";
 import { policyRoutes, policiesCrudRoutes } from "../modules/policy/routes";
 import { caseRoutes } from "../modules/cases/routes";
+import { paymentRoutes, demoMockPaymentRoutes } from "../modules/payments/routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -69,6 +70,14 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/cases",
     plugin: caseRoutes,
+  },
+  {
+    prefix: "/payments",
+    plugin: paymentRoutes,
+  },
+  {
+    prefix: "/demo",
+    plugin: demoMockPaymentRoutes,
   },
 ];
 

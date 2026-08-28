@@ -139,6 +139,13 @@ export const providerLatencyMs = new Histogram({
   registers: [metricsRegistry],
 });
 
+export const providerDeclineTotal = new Counter({
+  name: "provider_decline_total",
+  help: "Total decline events received from payment providers partitioned by provider and decline code",
+  labelNames: ["provider", "decline_code"] as const,
+  registers: [metricsRegistry],
+});
+
 // 8. Workflow Metrics (emitted s-20+)
 export const workflowStartedTotal = new Counter({
   name: "workflow_started_total",
@@ -313,6 +320,13 @@ export function recordProviderCall(
 ): void {
   providerCallsTotal.inc({ provider, op, status });
   providerLatencyMs.observe({ provider, op }, latencyMs);
+}
+
+export function recordProviderDecline(
+  provider: string,
+  declineCode: string,
+): void {
+  providerDeclineTotal.inc({ provider, decline_code: declineCode });
 }
 
 export function recordWorkflowStarted(type: string): void {

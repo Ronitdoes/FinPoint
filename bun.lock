@@ -120,6 +120,7 @@
       "name": "@repo/integrations",
       "version": "0.1.0",
       "dependencies": {
+        "@repo/config": "workspace:*",
         "@repo/domain": "workspace:*",
         "@repo/observability": "workspace:*",
         "kafkajs": "^2.2.4",
