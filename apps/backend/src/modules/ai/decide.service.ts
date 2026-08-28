@@ -223,6 +223,9 @@ export class AiDecideService {
 
     // Helper to generate fallback and write transactional cost entry
     const runFallback = async (reason: string, errorMsg?: string): Promise<DecisionResponse> => {
+      if (config.ai.enableRuleFallback === false) {
+        throw new Error(errorMsg || `LLM decision failed and rule fallback is disabled (${reason})`);
+      }
       recordFallback(reason);
       const fallbackDecision = generateFallbackDecision({
         riskType: recoveryCase.riskType as RiskType,

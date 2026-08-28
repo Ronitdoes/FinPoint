@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import {
   recoveryCases,
   type RecoveryCase,
@@ -35,7 +35,25 @@ export interface TransitionCaseStatusInput {
   from: CaseStatus[];
   to: CaseStatus;
   reason?: string;
+  workflowId?: string;
   closedAt?: Date;
+}
+
+export interface ListCasesQuery {
+  tenantId: string;
+  status?: CaseStatus;
+  riskType?: NewRecoveryCase["riskType"];
+  customerId?: string;
+  minAmount?: bigint | number;
+  openedFrom?: Date;
+  openedTo?: Date;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface ListCasesResult {
+  items: RecoveryCase[];
+  nextCursor?: string;
 }
 
 /**
@@ -149,14 +167,20 @@ export async function transitionCaseStatus(
   const willClose = isTerminal(input.to);
   const closedAt = input.closedAt ?? (willClose ? new Date() : null);
 
+  const updateSet: Partial<NewRecoveryCase> = {
+    status: input.to,
+    statusReason: input.reason ?? null,
+    closedAt: closedAt,
+    updatedAt: new Date(),
+  };
+
+  if (input.workflowId) {
+    updateSet.workflowId = input.workflowId;
+  }
+
   const [updated] = await executor
     .update(recoveryCases)
-    .set({
-      status: input.to,
-      statusReason: input.reason ?? null,
-      closedAt: closedAt,
-      updatedAt: new Date(),
-    })
+    .set(updateSet)
     .where(
       and(
         eq(recoveryCases.tenantId, input.tenantId),
@@ -240,4 +264,128 @@ export async function listCases(
     .orderBy(desc(recoveryCases.openedAt))
     .limit(limit)
     .offset(offset);
+}
+
+/**
+ * Filtered list of recovery cases with cursor-based pagination and strict tenant isolation.
+ * Supports status, riskType, customerId, minAmount, openedFrom, openedTo.
+ */
+export async function listCasesWithCursor(
+  ctx: RepoContext,
+  query: ListCasesQuery,
+): Promise<ListCasesResult> {
+  const executor = getExecutor(ctx);
+  const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
+
+  const conditions = [eq(recoveryCases.tenantId, query.tenantId)];
+
+  if (query.status) {
+    conditions.push(eq(recoveryCases.status, query.status));
+  }
+  if (query.riskType) {
+    conditions.push(eq(recoveryCases.riskType, query.riskType));
+  }
+  if (query.customerId) {
+    conditions.push(eq(recoveryCases.customerId, query.customerId));
+  }
+  if (query.minAmount !== undefined) {
+    const minBig = BigInt(query.minAmount);
+    conditions.push(gte(recoveryCases.amountAtRisk, minBig));
+  }
+  if (query.openedFrom) {
+    conditions.push(gte(recoveryCases.openedAt, query.openedFrom));
+  }
+  if (query.openedTo) {
+    conditions.push(lte(recoveryCases.openedAt, query.openedTo));
+  }
+
+  if (query.cursor) {
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(query.cursor, "base64url").toString("utf8"),
+      );
+      if (decoded.openedAt && decoded.id) {
+        const cursorDate = new Date(decoded.openedAt);
+        conditions.push(
+          or(
+            lt(recoveryCases.openedAt, cursorDate),
+            and(
+              eq(recoveryCases.openedAt, cursorDate),
+              lt(recoveryCases.id, decoded.id),
+            ),
+          )!,
+        );
+      }
+    } catch {
+      // Invalid cursor ignored
+    }
+  }
+
+  const rows = await executor
+    .select()
+    .from(recoveryCases)
+    .where(and(...conditions))
+    .orderBy(desc(recoveryCases.openedAt), desc(recoveryCases.id))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+
+  let nextCursor: string | undefined;
+  if (hasMore && items.length > 0) {
+    const lastItem = items[items.length - 1];
+    nextCursor = Buffer.from(
+      JSON.stringify({
+        openedAt: lastItem.openedAt.toISOString(),
+        id: lastItem.id,
+      }),
+      "utf8",
+    ).toString("base64url");
+  }
+
+  return { items, nextCursor };
+}
+
+export async function assignCase(
+  ctx: RepoContext,
+  {
+    tenantId,
+    caseId,
+    assignedTo,
+  }: { tenantId: string; caseId: string; assignedTo: string | null },
+): Promise<RecoveryCase | null> {
+  const executor = getExecutor(ctx);
+  const [updated] = await executor
+    .update(recoveryCases)
+    .set({
+      assignedTo,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(recoveryCases.tenantId, tenantId), eq(recoveryCases.id, caseId)),
+    )
+    .returning();
+  return updated ?? null;
+}
+
+export async function attachWorkflowToCase(
+  ctx: RepoContext,
+  {
+    tenantId,
+    caseId,
+    workflowId,
+  }: { tenantId: string; caseId: string; workflowId: string },
+): Promise<RecoveryCase | null> {
+  const executor = getExecutor(ctx);
+  const [updated] = await executor
+    .update(recoveryCases)
+    .set({
+      workflowId,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(recoveryCases.tenantId, tenantId), eq(recoveryCases.id, caseId)),
+    )
+    .returning();
+  return updated ?? null;
 }

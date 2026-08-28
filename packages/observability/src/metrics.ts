@@ -388,6 +388,35 @@ export function recordContextBuild(
   contextBytes.observe({ purpose }, bytes);
 }
 
+// 15. Recovery Case Pipeline & Orchestration Metrics (Step 17 §Observability)
+export const pipelineStageDurationMs = new Histogram({
+  name: "pipeline_stage_duration_ms",
+  help: "Duration of recovery case pipeline stages in milliseconds",
+  labelNames: ["stage"] as const,
+  buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
+  registers: [metricsRegistry],
+});
+
+export const caseFunnelTotal = new Counter({
+  name: "case_funnel_total",
+  help: "Recovery case orchestration funnel progression counter",
+  labelNames: ["stage"] as const,
+  registers: [metricsRegistry],
+});
+
+export function recordPipelineStageDuration(
+  stage: string,
+  durationMs: number,
+): void {
+  pipelineStageDurationMs.observe({ stage }, durationMs);
+}
+
+export function recordCaseFunnel(
+  stage: "opened" | "qualified" | "decided" | "allowed" | "started" | string,
+): void {
+  caseFunnelTotal.inc({ stage });
+}
+
 /**
  * Returns the Prometheus exposition text format.
  */

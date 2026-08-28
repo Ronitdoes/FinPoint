@@ -9,6 +9,7 @@ import { riskRoutes } from "../modules/risk/routes";
 import { customersRoutes } from "../modules/customers/routes";
 import { aiRoutes } from "../modules/ai/routes";
 import { policyRoutes, policiesCrudRoutes } from "../modules/policy/routes";
+import { caseRoutes } from "../modules/cases/routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -64,6 +65,10 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/policies",
     plugin: policiesCrudRoutes,
+  },
+  {
+    prefix: "/cases",
+    plugin: caseRoutes,
   },
 ];
 

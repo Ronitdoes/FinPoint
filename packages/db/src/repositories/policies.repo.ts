@@ -228,3 +228,22 @@ export async function listPolicyEvaluationsForCase(
     )
     .orderBy(desc(policyEvaluations.evaluatedAt));
 }
+
+export async function findLatestPolicyEvaluationForCase(
+  ctx: RepoContext,
+  { tenantId, caseId }: { tenantId: string; caseId: string },
+): Promise<PolicyEvaluation | null> {
+  const executor = getExecutor(ctx);
+  const [row] = await executor
+    .select()
+    .from(policyEvaluations)
+    .where(
+      and(
+        eq(policyEvaluations.tenantId, tenantId),
+        eq(policyEvaluations.caseId, caseId),
+      ),
+    )
+    .orderBy(desc(policyEvaluations.evaluatedAt))
+    .limit(1);
+  return row ?? null;
+}

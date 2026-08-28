@@ -25,6 +25,7 @@ export const EVENT_TYPES = [
   "customer_promised_to_pay",
   "customer_payment_received",
   "risk.calculated",
+  "case.opened",
   "UNMAPPED",
 ] as const;
 
@@ -52,6 +53,10 @@ export const CUSTOMER_EVENT_TYPES = EVENT_TYPES.filter(
 
 export const RISK_EVENT_TYPES = EVENT_TYPES.filter((type) =>
   type.startsWith("risk."),
+) as readonly (typeof EVENT_TYPES)[number][];
+
+export const CASE_DOMAIN_EVENT_TYPES = EVENT_TYPES.filter((type) =>
+  type.startsWith("case."),
 ) as readonly (typeof EVENT_TYPES)[number][];
 
 export const UNMAPPED_EVENT_TYPES = ["UNMAPPED"] as const;

@@ -49,10 +49,10 @@ MVP scenario items mapped across s-10…s-32. "Verified in" names the step whose
 | 3 | Duplicate event is ignored | s-10 idempotency (+ Redis fast path ADR-007) | s-10 ✅, s-31 concurrency tests, s-32 |
 | 4 | Internal event is created | s-11 | s-11 ✅, s-32 |
 | 5 | Risk is calculated | s-12 | s-12 ✅ (unit + integration suite), s-32 |
-| 6 | Recovery case is created | s-17 | s-17, s-32 |
+| 6 | Recovery case is created | s-17 | s-17 ✅, s-32 |
 | 7 | Context is assembled | s-13 | s-13 ✅ (unit + PII sweep + integration suite), s-32 |
 | 8 | AI returns schema-valid decision | s-14 (schema enforcement, eval harness s-15) | s-14 ✅ (prompts, structured outputs, repair retry, fallback, 9 integration tests), s-15 |
-| 9 | Policy validates decision | s-16 | s-16, s-32 |
+| 9 | Policy validates decision | s-16 | s-16 ✅, s-17 ✅, s-32 |
 | 10 | Temporal workflow starts | s-20 runtime; orchestration trigger s-17 | s-22 workflow harness |
 | 11 | Message is sent | s-19 adapters + ledger; used by s-22 | s-22 |
 | 12 | Payment retry occurs | s-18 adapter; orchestrated in s-22 | s-22 |

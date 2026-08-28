@@ -7,6 +7,7 @@ export const PERMISSION_ACTIONS = [
   "READ_CASES_ANALYTICS",
   "PAUSE_RESUME_CASE",
   "ESCALATE_CASE",
+  "STOP_CASE",
   "APPROVE_HUMAN_TASK",
   "MANAGE_POLICIES",
   "MANAGE_USERS_API_KEYS",
@@ -26,6 +27,7 @@ export const PermissionAction = Object.freeze(
  * read cases/analytics   ✓       ✓         ✓          ✓       ✓
  * pause/resume case      ✗       ✗         ✓          ✓       ✓
  * escalate case          ✗       ✓         ✓          ✓       ✓
+ * stop case              ✗       ✗         ✗          ✓       ✓
  * approve human task     ✗       ✗         ✓          ✓       ✓
  * manage policies        ✗       ✗         ✗          ✓       ✓
  * manage users/api keys  ✗       ✗         ✗          ✗       ✓
@@ -49,6 +51,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<UserRole, ReadonlySet<PermissionA
       "READ_CASES_ANALYTICS",
       "PAUSE_RESUME_CASE",
       "ESCALATE_CASE",
+      "STOP_CASE",
       "APPROVE_HUMAN_TASK",
       "MANAGE_POLICIES",
       "TRIGGER_REPLAY_DEMO",
@@ -57,6 +60,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<UserRole, ReadonlySet<PermissionA
       "READ_CASES_ANALYTICS",
       "PAUSE_RESUME_CASE",
       "ESCALATE_CASE",
+      "STOP_CASE",
       "APPROVE_HUMAN_TASK",
       "MANAGE_POLICIES",
       "MANAGE_USERS_API_KEYS",

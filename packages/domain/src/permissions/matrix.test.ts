@@ -32,6 +32,13 @@ describe("RBAC Permission Matrix", () => {
       FINANCE: true,
       ADMIN: true,
     },
+    STOP_CASE: {
+      VIEWER: false,
+      SUPPORT: false,
+      OPERATIONS: false,
+      FINANCE: true,
+      ADMIN: true,
+    },
     APPROVE_HUMAN_TASK: {
       VIEWER: false,
       SUPPORT: false,
@@ -62,9 +69,9 @@ describe("RBAC Permission Matrix", () => {
     },
   };
 
-  it("covers all 5 roles and all 7 actions in the canonical spec matrix", () => {
+  it("covers all 5 roles and all 8 actions in the canonical spec matrix", () => {
     expect(USER_ROLES).toHaveLength(5);
-    expect(PERMISSION_ACTIONS).toHaveLength(7);
+    expect(PERMISSION_ACTIONS).toHaveLength(8);
   });
 
   describe("Exhaustive Role × Action evaluation", () => {

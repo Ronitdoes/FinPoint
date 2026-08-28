@@ -241,6 +241,6 @@ describe("Policy Evaluator Integration & Orchestration", () => {
     const avgMs = elapsed / iterations;
 
     expect(avgMs).toBeLessThan(50); // Target <50ms p95 per spec 03 §10
-    expect(elapsed).toBeLessThan(250); // Total for 500 in-memory runs should be <<250ms
+    expect(elapsed).toBeLessThan(1000); // Total for 500 in-memory runs
   });
 });

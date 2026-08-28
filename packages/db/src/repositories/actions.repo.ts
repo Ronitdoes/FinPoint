@@ -203,7 +203,7 @@ export async function findActionByIdempotencyKey(
     .where(
       and(
         eq(recoveryActions.tenantId, tenantId),
-        eq(recoveryActions.id, idempotencyKey),
+        eq(recoveryActions.idempotencyKey, idempotencyKey),
       ),
     )
     .limit(1);

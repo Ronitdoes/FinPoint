@@ -40,6 +40,7 @@ export interface AiConfig {
   readonly baseUrl: string | null;
   readonly timeoutMs: number;
   readonly maxRetries: number;
+  readonly enableRuleFallback?: boolean;
 }
 
 export interface PaymentsConfig {

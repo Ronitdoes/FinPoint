@@ -15,6 +15,7 @@ import { authPlugin } from "./plugins/auth";
 import { rbacPlugin } from "./plugins/rbac";
 import { registerRouteModules } from "./lib/routes";
 import { registerRiskConsumer } from "./modules/risk/consumer";
+import { registerCaseConsumer } from "./modules/cases/consumer";
 import type { Database } from "@repo/db";
 import { createEventBus, NullBus, type EventBus } from "@repo/integrations";
 
@@ -181,6 +182,9 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
 
   // 12. Register risk engine event consumer (s-12)
   registerRiskConsumer(app);
+
+  // 13. Register case orchestrator event consumer (s-17)
+  registerCaseConsumer(app);
 
   return app;
 }
