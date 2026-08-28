@@ -1,0 +1,47 @@
+{
+  "name": "@repo/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./activities": "./src/activities/index.ts",
+    "./workflows": "./src/workflows/index.ts",
+    "./client": "./src/client.ts",
+    "./framework": "./src/framework/index.ts"
+  },
+  "scripts": {
+    "dev": "bun --watch src/worker.ts",
+    "start": "bun src/worker.ts",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@repo/config": "workspace:*",
+    "@repo/db": "workspace:*",
+    "@repo/domain": "workspace:*",
+    "@repo/integrations": "workspace:*",
+    "@repo/observability": "workspace:*",
+    "@repo/orchestration": "workspace:*",
+    "@repo/policy": "workspace:*",
+    "@temporalio/activity": "^1.11.4",
+    "@temporalio/client": "^1.11.4",
+    "@temporalio/common": "^1.11.4",
+    "@temporalio/worker": "^1.11.4",
+    "@temporalio/workflow": "^1.11.4",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/testing": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@temporalio/testing": "^1.11.4",
+    "@types/node": "^20",
+    "eslint": "^9",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}

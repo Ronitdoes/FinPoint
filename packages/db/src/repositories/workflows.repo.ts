@@ -53,7 +53,7 @@ export async function createWorkflow(
       closedAt: input.closedAt,
     })
     .returning();
-  return created;
+  return created!;
 }
 
 export async function findWorkflowById(
@@ -149,7 +149,7 @@ export async function recordWorkflowEvent(
       occurredAt: input.occurredAt ?? new Date(),
     })
     .returning();
-  return event;
+  return event!;
 }
 
 /**

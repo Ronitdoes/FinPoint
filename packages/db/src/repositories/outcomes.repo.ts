@@ -63,7 +63,7 @@ export async function recordOutcomeInTx(
     .returning();
 
   if (inserted.length > 0) {
-    return inserted[0];
+    return inserted[0]!;
   }
 
   // Row already existed: query and return the authoritative outcome
@@ -78,7 +78,49 @@ export async function recordOutcomeInTx(
     )
     .limit(1);
 
-  return existing;
+  return existing!;
+}
+
+export async function recordOutcome(
+  ctx: RepoContext,
+  input: RecordOutcomeInput,
+): Promise<RecoveryOutcome> {
+  const executor = getExecutor(ctx);
+  const inserted = await executor
+    .insert(recoveryOutcomes)
+    .values({
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      paymentId: input.paymentId,
+      baselineAmount: input.baselineAmount,
+      recoveredAmount: input.recoveredAmount,
+      recoveryCost: input.recoveryCost ?? 0n,
+      attributionMethod: input.attributionMethod,
+      attributionWindowHours: input.attributionWindowHours,
+      recoveredAt: input.recoveredAt,
+      recordedAt: input.recordedAt ?? new Date(),
+    })
+    .onConflictDoNothing({
+      target: recoveryOutcomes.caseId,
+    })
+    .returning();
+
+  if (inserted.length > 0) {
+    return inserted[0]!;
+  }
+
+  const [existing] = await executor
+    .select()
+    .from(recoveryOutcomes)
+    .where(
+      and(
+        eq(recoveryOutcomes.tenantId, input.tenantId),
+        eq(recoveryOutcomes.caseId, input.caseId),
+      ),
+    )
+    .limit(1);
+
+  return existing!;
 }
 
 export async function findOutcomeByCaseId(
