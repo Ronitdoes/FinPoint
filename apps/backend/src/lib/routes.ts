@@ -16,6 +16,7 @@ import { humanTasksRoutes } from "../modules/human-tasks/routes";
 import { promisesToPayRoutes } from "../modules/promises-to-pay/routes";
 import { auditRoutes } from "../modules/audit/routes";
 import { outcomesRoutes } from "../modules/outcomes/routes";
+import { analyticsRoutes } from "../modules/analytics/routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -51,6 +52,10 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/outcomes",
     plugin: outcomesRoutes,
+  },
+  {
+    prefix: "/analytics",
+    plugin: analyticsRoutes,
   },
   {
     prefix: "/webhooks",

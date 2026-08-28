@@ -23,3 +23,4 @@ export * from "./policies";
 export * from "./audit";
 export * from "./outcomes";
 export * from "./idempotency";
+export * from "./analytics-views";

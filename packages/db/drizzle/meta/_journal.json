@@ -64,6 +64,13 @@
       "when": 1787950153041,
       "tag": "0008_soft_morg",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787951331947,
+      "tag": "0009_wild_bastion",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,10 @@
 import type { Database, Tx } from "@repo/db";
 import type { CaseStatus } from "@repo/domain";
+import type Redis from "ioredis";
 import type { Repositories } from "../../plugins/db";
 import { CaseNotFoundError, NotFoundError } from "../../lib/errors";
 import { recordOutcomeRecorded, getLogger } from "@repo/observability";
+import { invalidateAnalyticsCache } from "../analytics/cache";
 
 const logger = getLogger({ component: "outcomes-record-service" });
 
@@ -32,6 +34,7 @@ export class OutcomeRecordService {
   constructor(
     private readonly db: Database,
     private readonly repos: Repositories,
+    private readonly redisClient?: Redis | null,
   ) {}
 
   public async recordOutcome(
@@ -61,7 +64,7 @@ export class OutcomeRecordService {
     }
 
     // 2. Execute authoritative outcome persistence inside database transaction
-    return await this.repos.withTransaction({ db: this.db }, async (tx: Tx) => {
+    const result = await this.repos.withTransaction({ db: this.db }, async (tx: Tx) => {
       // Re-check existing in tx (concurrency race protection)
       const existingInTx = await this.repos.findOutcomeByCaseId(
         { tx },
@@ -211,5 +214,11 @@ export class OutcomeRecordService {
 
       return { outcome, alreadyRecorded: false };
     });
+
+    if (!result.alreadyRecorded) {
+      await invalidateAnalyticsCache(this.redisClient, tenantId).catch(() => {});
+    }
+
+    return result;
   }
 }

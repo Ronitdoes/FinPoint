@@ -26,3 +26,4 @@ export * from "./audit.repo";
 export * from "./case-events.repo";
 export * from "./outcomes.repo";
 export * from "./idempotency.repo";
+export * from "./analytics.repo";

@@ -35,6 +35,7 @@ export const DomainErrorCodes = {
   POLICY_EVALUATION_FAILED: "POLICY_EVALUATION_FAILED",
   CONFIG_ERROR: "CONFIG_ERROR",
   NO_OUTCOME: "NO_OUTCOME",
+  BAD_REQUEST: "BAD_REQUEST",
   INTERNAL: "INTERNAL",
 } as const;
 
@@ -222,6 +223,12 @@ export class PolicyEvaluationFailedError extends DomainError {
 export class NoOutcomeError extends DomainError {
   constructor(message: string = "No outcome recorded for this case", details: unknown = {}) {
     super(message, DomainErrorCodes.NO_OUTCOME, 404, details);
+  }
+}
+
+export class BadRequestError extends DomainError {
+  constructor(message: string = "Bad request", details: unknown = {}) {
+    super(message, DomainErrorCodes.BAD_REQUEST, 400, details);
   }
 }
 

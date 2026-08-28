@@ -21,9 +21,9 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 
 ```text
 Last updated : 2026-08-29   (update on every change)
-Current step : s-27 Product: Analytics Service & APIs — NOT STARTED
-Next up      : s-28 Product: Dashboard UI — NOT STARTED
-Overall      : 26 / 35 steps complete
+Current step : s-28 Product: Dashboard UI — NOT STARTED
+Next up      : s-29 Product: Demo Mode, Simulation Endpoints & Seed Data — NOT STARTED
+Overall      : 27 / 35 steps complete
 ```
 
 ---
@@ -39,7 +39,7 @@ Overall      : 26 / 35 steps complete
 | Intelligence (AI decision, governance, policy) | s-14–s-16 | 3 / 3 | DONE |
 | Execution (orchestration, adapters, Temporal, approvals) | s-17–s-21 | 5 / 5 | DONE |
 | Workflows (payment, checkout, invoice) | s-22–s-24 | 3 / 3 | DONE |
-| Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 2 / 5 | IN PROGRESS |
+| Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 3 / 5 | IN PROGRESS |
 | Verification & ship (security, chaos, e2e, deploy, ops, release) | s-30–s-35 | 0 / 6 | NOT STARTED |
 
 ---
@@ -72,7 +72,7 @@ Overall      : 26 / 35 steps complete
 | s-23 | Workflow B: Checkout Abandonment | DONE | 2026-08-28 | 2026-08-28 | `checkoutAbandonmentWorkflow` in `services/worker` implementing 2-touch lifecycle (Inactivity Timer -> Confirmation -> Case Qualification -> Touch 1 Reminder [zero discount] -> 4h Wait -> Purchase Check -> Touch 2 Incentive [policy approved] -> 24h Wait -> Final Check -> Stop/Recovered), atomic `completeRaceGuard` on checkouts repository, deferred case creation, `CheckoutCompletedSignalBridge` on `revenue-events.v1`, `CaseConsumerHandler` watch initiation, and 8-scenario matrix test suite all green on time-skipping test server |
 | s-24 | Workflow C: Overdue Invoice & Promise-to-Pay | DONE | 2026-08-28 | 2026-08-28 | `invoiceOverdueWorkflow` (3-touch reminder ladder: Day-0 polite reminder -> +3d follow-up -> +7d final notice w/ payment link; Scenario C POL-HIGHVALUE approval for >₹100k discounts; dispute hard stop; contact caps), child `promiseToPayWorkflow` composition, PTP state machine (`MADE`->`HONORED`\|`BROKEN`\|`EXPIRED`), guarded DB repo methods, `CustomerResponseSignalBridge` on `revenue-events.v1`, daily cron reconcilers (`DailyReconciler`), REST APIs `GET /promises-to-pay` & `POST /promises-to-pay/:id/mark-honored`, 9-scenario matrix test suite all green |
 | s-26 | Outcomes, Attribution & Cost Model | DONE | 2026-08-29 | 2026-08-29 | `OutcomeRecordService` (authoritative persistence, idempotent no-op, competing payment warnings, guarded case transition to `RECOVERED`, cost rollup `SUM(recovery_cost_entries)`), `AttributionSweeper` (hourly sweeper evaluating 4 strict conditions on closed/stopped cases), `CostCompletenessJob` (daily action cost gap audit with messaging unit pricing table 50p/5p/25p), REST APIs `GET /outcomes` (SQL aggregates + cursor pagination) & `GET /cases/:id/outcome` with RBAC, `docs/attribution.md`, 8 integration tests green |
-| s-27 | Analytics Service & APIs | NOT STARTED | | | |
+| s-27 | Analytics Service & APIs | DONE | 2026-08-29 | 2026-08-29 | PostgreSQL `analytics` schema and 6 views (`v_recovery_summary`, `v_recovery_timeseries`, `v_intervention_performance`, `v_funnel`, `v_risk_mix`, `v_ai_performance`), migration `0009_wild_bastion.sql` generated via `db:generate` and applied via `db:migrate`, analytics repo with financial/operational aggregations, 6 REST endpoints (`/summary`, `/recovery`, `/interventions`, `/funnel`, `/risk-mix`, `/ai`), range validation (`<= 370d`, `from <= to` -> 400), RBAC cost-field gating + `x-cost-data-redacted` header, Redis 30s single-flight caching with stampede guard, outcome record cache invalidation, 15 golden snapshot integration tests passing |
 | s-28 | Dashboard UI | NOT STARTED | | | |
 | s-29 | Demo Mode, Simulation Endpoints & Seed Data | NOT STARTED | | | |
 | s-30 | Security Hardening & Compliance Verification | NOT STARTED | | | |
@@ -147,4 +147,5 @@ One line per completed step or notable event. Format: `- YYYY-MM-DD | s-XX | sho
 2026-08-28 | s-23 | Workflow B: Checkout Abandonment complete: checkoutAbandonmentWorkflow in services/worker with inactivity watch timer (30m), confirmed abandonment case creation, Touch 1 reminder (strict zero-discount invariant), 4h wait window, Touch 2 policy-gated incentive offer (<= ₹500 cap), completeRaceGuard atomic check-and-flag pre-touch dispatch, CheckoutCompletedSignalBridge on revenue-events.v1, and 8-scenario matrix test suite | bun run check-types green (12/12 pkgs); bun run lint green (0 errors, 0 warnings); bun run test green (815/815 tests across 56 files); bun run check-docs green
 2026-08-28 | s-25 | Audit Trail & Case Timeline (Completion & Immutability) complete: canonical field contract (docs/audit-field-contract.md), DB triggers prevent_audit_modification disallowing UPDATE/DELETE, app_rw & audit_writer roles, migration 0007, deep PII/secret redaction scanner, unified chronological GET /cases/:id/timeline feed with multi-entity enrichment and cursor pagination, compliance GET /audit endpoint guarded by ADMIN RBAC, lifecycle coverage checker verifyAuditCoverage, orphan backfill tool backfillCaseTimelineGaps, and retention archiving job archiveExpiredAuditLogs | bun run check-types green (12/12 pkgs); bun run lint green (2/2 pkgs); bun run test green (849/849 tests across 60 files incl. 19 Step 25 tests); bun run check-docs green; bun run db:migrate:check green (8/8 applied)
 2026-08-29 | s-26 | Outcomes, Attribution & Cost Model complete: OutcomeRecordService (authoritative persistence, idempotent no-op, competing payment warnings, guarded case transition to RECOVERED, cost rollup SUM(recovery_cost_entries)), AttributionSweeper (hourly sweeper evaluating 4 strict conditions on closed/stopped cases), CostCompletenessJob (daily action cost gap audit with messaging unit pricing table 50p/5p/25p), REST APIs GET /outcomes (SQL aggregates + cursor pagination) & GET /cases/:id/outcome with RBAC, docs/attribution.md, Prometheus metrics | bun run check-types green (12/12 pkgs); bun run lint green (2/2 pkgs); bunx vitest run outcomes-attribution-integration green (8/8 tests); bun run check-docs green
+2026-08-29 | s-27 | Analytics Service & APIs complete: PostgreSQL analytics schema and 6 SQL views (v_recovery_summary, v_recovery_timeseries, v_intervention_performance, v_funnel, v_risk_mix, v_ai_performance), migration 0009_wild_bastion.sql generated via db:generate & applied cleanly via db:migrate, packages/db analytics repository with financial/operational aggregations, 6 REST endpoints (/summary, /recovery, /interventions, /funnel, /risk-mix, /ai), range validation (<= 370d, from <= to -> 400), RBAC cost-field gating + x-cost-data-redacted header, Redis 30s single-flight caching with stampede guard, outcome record cache invalidation, 15 golden snapshot integration tests | bun run check-types green (12/12 pkgs); bun run lint green (2/2 pkgs); bun run test green (872/872 tests across 62 files incl. 15 Step 27 tests); bun run check-docs green; bun run db:migrate:check green (10/10 applied)
 ```
