@@ -41,6 +41,7 @@ export * from "./enums/workflow-status";
 export * from "./events/envelope";
 export * from "./state-machines/recovery-case";
 export * from "./state-machines/revenue-risk";
+export * from "./state-machines/promise-to-pay";
 export * from "./actions/catalog";
 export * from "./policy/limits";
 export * from "./entities/audit-log";

@@ -17,6 +17,9 @@ export * from "./replan-decision";
 export * from "./check-checkout-status";
 export * from "./confirm-abandonment-and-create-case";
 export * from "./checkout-race-guard";
+export * from "./check-invoice-status";
+export * from "./create-promise-to-pay";
+export * from "./resolve-promise-to-pay";
 
 import * as loadCaseSnapshotActivity from "./load-case-snapshot";
 import * as checkPolicyAgainActivity from "./check-policy-again";
@@ -37,6 +40,9 @@ import * as replanDecisionActivity from "./replan-decision";
 import * as checkCheckoutStatusActivity from "./check-checkout-status";
 import * as confirmAbandonmentAndCreateCaseActivity from "./confirm-abandonment-and-create-case";
 import * as checkoutRaceGuardActivity from "./checkout-race-guard";
+import * as checkInvoiceStatusActivity from "./check-invoice-status";
+import * as createPromiseToPayActivityModule from "./create-promise-to-pay";
+import * as resolvePromiseToPayActivityModule from "./resolve-promise-to-pay";
 
 /**
  * Complete activities dictionary for Temporal worker registration and proxyActivities typing.
@@ -61,6 +67,9 @@ export const activities = {
   checkCheckoutStatus: checkCheckoutStatusActivity.checkCheckoutStatus,
   confirmAbandonmentAndCreateCase: confirmAbandonmentAndCreateCaseActivity.confirmAbandonmentAndCreateCase,
   checkoutRaceGuard: checkoutRaceGuardActivity.checkoutRaceGuard,
+  checkInvoiceStatus: checkInvoiceStatusActivity.checkInvoiceStatus,
+  createPromiseToPay: createPromiseToPayActivityModule.createPromiseToPayActivity,
+  resolvePromiseToPay: resolvePromiseToPayActivityModule.resolvePromiseToPayActivity,
 };
 
 export type RecoveryActivities = typeof activities;

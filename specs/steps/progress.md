@@ -21,9 +21,9 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 
 ```text
 Last updated : 2026-08-28   (update on every change)
-Current step : s-23 Workflow B: Checkout Abandonment
-Next up      : s-24 Workflow C: Overdue Invoice & Promise-to-Pay — NOT STARTED
-Overall      : 22 / 35 steps complete
+Current step : s-25 Product: Audit Trail Completion & Immutability — NOT STARTED
+Next up      : s-26 Product: Outcomes, Attribution & Cost Model — NOT STARTED
+Overall      : 24 / 35 steps complete
 ```
 
 ---
@@ -38,7 +38,7 @@ Overall      : 22 / 35 steps complete
 | Ingestion (gateway, bus, risk, context) | s-10–s-13 | 4 / 4 | DONE |
 | Intelligence (AI decision, governance, policy) | s-14–s-16 | 3 / 3 | DONE |
 | Execution (orchestration, adapters, Temporal, approvals) | s-17–s-21 | 5 / 5 | DONE |
-| Workflows (payment, checkout, invoice) | s-22–s-24 | 2 / 3 | IN PROGRESS |
+| Workflows (payment, checkout, invoice) | s-22–s-24 | 3 / 3 | DONE |
 | Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 0 / 5 | NOT STARTED |
 | Verification & ship (security, chaos, e2e, deploy, ops, release) | s-30–s-35 | 0 / 6 | NOT STARTED |
 
@@ -70,7 +70,7 @@ Overall      : 22 / 35 steps complete
 | s-21 | Human Escalation & Approvals | DONE | 2026-08-28 | 2026-08-28 | `human_tasks` schema migration (0006: `overdue_at`, `escalation_count`), `HumanTasksService` with session-only decision security constraint (ADR-012, API key 403), guarded transitions (`WHERE status IN ('PENDING', 'ASSIGNED')`), side-effects (case `ESCALATED`->`IN_PROGRESS`, actions `APPROVAL_REQUIRED`->`APPROVED`/`CANCELLED`), `SlaSweeper` with `human-task.sla-breached` event emission, Temporal `awaitHumanApproval` signal wait with 60s crash-repair heartbeat DB fallback, 1h burst deduplication on `escalateWorkflowFailure`, REST routes at `/human-tasks`, 12 integration + 7 worker tests green |
 | s-22 | Workflow A: Failed Payment Recovery | DONE | 2026-08-28 | 2026-08-28 | `failedPaymentRecoveryWorkflow` with 3-round retry loop, stop condition checks, skippable wait delay with early wakeup on external-payment-succeeded and stop signals, idempotency claim protection, provider UNKNOWN status polling, single bounded AI replan after 3 failed retries with human approval hook and MAX_RETRIES terminal stop, `PaymentSuccessSignalBridge` on `revenue-events.v1`, 12-scenario matrix test harness all green on time-skipping test server |
 | s-23 | Workflow B: Checkout Abandonment | DONE | 2026-08-28 | 2026-08-28 | `checkoutAbandonmentWorkflow` in `services/worker` implementing 2-touch lifecycle (Inactivity Timer -> Confirmation -> Case Qualification -> Touch 1 Reminder [zero discount] -> 4h Wait -> Purchase Check -> Touch 2 Incentive [policy approved] -> 24h Wait -> Final Check -> Stop/Recovered), atomic `completeRaceGuard` on checkouts repository, deferred case creation, `CheckoutCompletedSignalBridge` on `revenue-events.v1`, `CaseConsumerHandler` watch initiation, and 8-scenario matrix test suite all green on time-skipping test server |
-| s-24 | Workflow C: Overdue Invoice & Promise-to-Pay | NOT STARTED | | | |
+| s-24 | Workflow C: Overdue Invoice & Promise-to-Pay | DONE | 2026-08-28 | 2026-08-28 | `invoiceOverdueWorkflow` (3-touch reminder ladder: Day-0 polite reminder -> +3d follow-up -> +7d final notice w/ payment link; Scenario C POL-HIGHVALUE approval for >₹100k discounts; dispute hard stop; contact caps), child `promiseToPayWorkflow` composition, PTP state machine (`MADE`->`HONORED`\|`BROKEN`\|`EXPIRED`), guarded DB repo methods, `CustomerResponseSignalBridge` on `revenue-events.v1`, daily cron reconcilers (`DailyReconciler`), REST APIs `GET /promises-to-pay` & `POST /promises-to-pay/:id/mark-honored`, 9-scenario matrix test suite all green |
 | s-25 | Audit Trail & Case Timeline Completion | NOT STARTED | | | |
 | s-26 | Outcomes, Attribution & Cost Model | NOT STARTED | | | |
 | s-27 | Analytics Service & APIs | NOT STARTED | | | |
@@ -146,4 +146,5 @@ One line per completed step or notable event. Format: `- YYYY-MM-DD | s-XX | sho
 2026-08-28 | s-21 | Human Escalation & Approval Primitives complete: human_tasks schema migration 0006 (overdue_at, escalation_count), HumanTasksService & Fastify routes at /human-tasks, session-only decision constraint (ADR-012, API key 403), guarded transitions (WHERE status IN ('PENDING', 'ASSIGNED')), side-effects on approve (case ESCALATED->IN_PROGRESS, actions APPROVAL_REQUIRED->APPROVED, Temporal signal 'human-decision') and reject (notes mandatory, actions CANCELLED w/ HUMAN_REJECTED), SlaSweeper with typed event human-task.sla-breached, Temporal awaitHumanApproval with 60s condition crash-recovery DB check fallback, 1h burst deduplication guard on escalateWorkflowFailure, Spec 03 §8 high-value invoice approval acceptance test passing | bun run check-types green (12/12 pkgs); bun run lint green; bun run test green (14/14 packages, 138 backend tests + 7 worker tests); bun run check-docs green; bun run db:migrate:check green
 2026-08-28 | s-22 | Workflow A: Failed Payment Recovery complete: failedPaymentRecoveryWorkflow in services/worker with 3-round bounded retry loop, external-payment-succeeded instant wake-up condition, executeRetryPayment with anti-double-charge idempotency keys, provider UNKNOWN status polling loop, single bounded replan step evaluating policy rules with human approval waiting, PaymentSuccessSignalBridge event bus consumer, and 12-scenario matrix test suite | bun run check-types green (12/12 pkgs); bun run lint green (0 errors, 0 warnings); bun run test green (807/807 tests across 55 files); bun run check-docs green
 2026-08-28 | s-23 | Workflow B: Checkout Abandonment complete: checkoutAbandonmentWorkflow in services/worker with inactivity watch timer (30m), confirmed abandonment case creation, Touch 1 reminder (strict zero-discount invariant), 4h wait window, Touch 2 policy-gated incentive offer (<= ₹500 cap), completeRaceGuard atomic check-and-flag pre-touch dispatch, CheckoutCompletedSignalBridge on revenue-events.v1, and 8-scenario matrix test suite | bun run check-types green (12/12 pkgs); bun run lint green (0 errors, 0 warnings); bun run test green (815/815 tests across 56 files); bun run check-docs green
+2026-08-28 | s-24 | Workflow C: Overdue Invoice & Promise-to-Pay complete: invoiceOverdueWorkflow (3-touch reminder ladder: Day-0 polite reminder -> +3d follow-up -> +7d final notice w/ payment link; Scenario C POL-HIGHVALUE approval for >₹100k discounts; dispute hard stop; contact caps), child promiseToPayWorkflow composition, PTP state machine (MADE->HONORED\|BROKEN\|EXPIRED), guarded DB repo methods, CustomerResponseSignalBridge on revenue-events.v1, daily cron reconcilers (DailyReconciler), REST APIs GET /promises-to-pay & POST /promises-to-pay/:id/mark-honored, 9-scenario matrix test suite all green | bun run check-types green (12/12 pkgs); bun run lint green (0 errors, 0 warnings); bun run test green (15/15 Step 24 tests, 830/830 monorepo tests); bun run check-docs green
 ```

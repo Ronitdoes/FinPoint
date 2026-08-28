@@ -32,6 +32,9 @@ export const SIGNAL_STOP = "stop";
 export const SIGNAL_HUMAN_DECISION = "human-decision";
 export const SIGNAL_EXTERNAL_PAYMENT_SUCCEEDED = "external-payment-succeeded";
 export const SIGNAL_EXTERNAL_CHECKOUT_COMPLETED = "external-checkout-completed";
+export const SIGNAL_CUSTOMER_REPLIED = "customer-replied";
+export const SIGNAL_INVOICE_PAID = "invoice-paid";
+export const SIGNAL_DISPUTE_OPENED = "dispute-opened";
 
 /**
  * Payload for external-payment-succeeded signal.
@@ -53,6 +56,43 @@ export interface ExternalCheckoutCompletedPayload {
   paymentId?: string;
   amount?: string | number;
   currency?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Payload for customer-replied signal (Spec 24).
+ */
+export interface CustomerRepliedSignalPayload {
+  type: "REPLY" | "PROMISE_TO_PAY" | "COMPLAINT" | "OPT_OUT" | string;
+  text?: string;
+  channel?: "WHATSAPP" | "EMAIL" | string;
+  promisedByDate?: string;
+  promisedAmountMinor?: string;
+  messageRef?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Payload for invoice-paid signal (Spec 24).
+ */
+export interface InvoicePaidSignalPayload {
+  invoiceId?: string;
+  paymentId?: string;
+  amount?: string | number;
+  currency?: string;
+  paidAt?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Payload for dispute-opened signal (Spec 24).
+ */
+export interface DisputeOpenedSignalPayload {
+  invoiceId?: string;
+  caseId?: string;
+  disputeId?: string;
+  reason?: string;
+  disputedAt?: string;
   [key: string]: unknown;
 }
 
@@ -105,6 +145,9 @@ export const stopSignal = defineSignal<[{ reason?: string }]>(SIGNAL_STOP);
 export const humanDecisionSignal = defineSignal<[HumanDecisionSignalPayload]>(SIGNAL_HUMAN_DECISION);
 export const externalPaymentSucceededSignal = defineSignal<[ExternalPaymentSucceededPayload]>(SIGNAL_EXTERNAL_PAYMENT_SUCCEEDED);
 export const externalCheckoutCompletedSignal = defineSignal<[ExternalCheckoutCompletedPayload]>(SIGNAL_EXTERNAL_CHECKOUT_COMPLETED);
+export const customerRepliedSignal = defineSignal<[CustomerRepliedSignalPayload]>(SIGNAL_CUSTOMER_REPLIED);
+export const invoicePaidSignal = defineSignal<[InvoicePaidSignalPayload]>(SIGNAL_INVOICE_PAID);
+export const disputeOpenedSignal = defineSignal<[DisputeOpenedSignalPayload]>(SIGNAL_DISPUTE_OPENED);
 
 // Query Definitions
 export const workflowStateQuery = defineQuery<WorkflowState>("getState");

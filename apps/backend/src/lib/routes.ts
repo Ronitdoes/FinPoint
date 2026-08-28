@@ -13,6 +13,7 @@ import { caseRoutes } from "../modules/cases/routes";
 import { paymentRoutes, demoMockPaymentRoutes } from "../modules/payments/routes";
 import { messagingRoutes } from "../modules/messaging/routes";
 import { humanTasksRoutes } from "../modules/human-tasks/routes";
+import { promisesToPayRoutes } from "../modules/promises-to-pay/routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -88,6 +89,10 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/human-tasks",
     plugin: humanTasksRoutes,
+  },
+  {
+    prefix: "/promises-to-pay",
+    plugin: promisesToPayRoutes,
   },
 ];
 

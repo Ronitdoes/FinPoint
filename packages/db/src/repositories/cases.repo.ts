@@ -389,3 +389,25 @@ export async function attachWorkflowToCase(
     .returning();
   return updated ?? null;
 }
+
+export async function findLiveCasesForCustomer(
+  ctx: RepoContext,
+  {
+    tenantId,
+    customerId,
+  }: { tenantId: string; customerId: string },
+): Promise<RecoveryCase[]> {
+  const executor = getExecutor(ctx);
+  return await executor
+    .select()
+    .from(recoveryCases)
+    .where(
+      and(
+        eq(recoveryCases.tenantId, tenantId),
+        eq(recoveryCases.customerId, customerId),
+        notInArray(recoveryCases.status, ["RECOVERED", "STOPPED", "FAILED"]),
+      ),
+    )
+    .orderBy(desc(recoveryCases.openedAt));
+}
+

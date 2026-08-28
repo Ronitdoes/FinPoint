@@ -24,6 +24,7 @@ export interface CheckPolicyAgainInput extends ActivityContext {
   customerId?: string;
   amountMinor?: string | bigint;
   currency?: string;
+  counters?: Record<string, number>;
 }
 
 export interface CheckPolicyAgainResult {
@@ -100,7 +101,10 @@ export async function checkPolicyAgain(
               params: input.actionParams ?? {},
             },
           ],
-          counters: {},
+          counters:
+            input.counters ??
+            (input.actionParams?.counters as Record<string, number> | undefined) ??
+            {},
         },
         activeRules,
       );

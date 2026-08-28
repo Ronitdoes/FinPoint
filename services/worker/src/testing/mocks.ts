@@ -261,6 +261,37 @@ export function createActivityMocks(
         status: "STARTED",
       };
     },
+
+    async checkInvoiceStatus() {
+      return {
+        exists: true,
+        status: "OVERDUE",
+        isPaid: false,
+        isDisputed: false,
+        amount: "5000000",
+        amountPaid: "0",
+        currency: "INR",
+        customerId: "cust-1",
+      };
+    },
+
+    async createPromiseToPay(input) {
+      return {
+        promiseId: randomUUID(),
+        status: "MADE",
+        promisedByDate: input.promisedByDate,
+        caseId: input.caseId,
+      };
+    },
+
+    async resolvePromiseToPay(input) {
+      return {
+        promiseId: input.promiseId,
+        status: input.status,
+        resolvedAt: new Date().toISOString(),
+        honoredPaymentId: input.honoredPaymentId,
+      };
+    },
   };
 
   const mockActivities = {} as RecoveryActivities;

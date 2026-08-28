@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   invoices,
   invoiceEvents,
@@ -7,6 +7,7 @@ import {
   type InvoiceEvent,
   type NewInvoiceEvent,
 } from "../schema/invoices";
+import { recoveryCases } from "../schema/cases";
 import { type RepoContext, getExecutor } from "./types";
 
 export interface CreateInvoiceInput {
@@ -195,4 +196,43 @@ export async function listInvoicesForCustomer(
     .limit(limit)
     .offset(offset);
 }
+
+/**
+ * Finds OVERDUE invoices that have no active recovery case (missed webhook safety net / reconciliation).
+ */
+export async function findOrphanedOverdueInvoices(
+  ctx: RepoContext,
+  {
+    tenantId,
+    limit = 50,
+    offset = 0,
+  }: { tenantId: string; limit?: number; offset?: number },
+): Promise<Invoice[]> {
+  const executor = getExecutor(ctx);
+  const rows = await executor
+    .select({ invoice: invoices })
+    .from(invoices)
+    .leftJoin(
+      recoveryCases,
+      and(
+        eq(recoveryCases.tenantId, invoices.tenantId),
+        eq(recoveryCases.sourceEntityType, "INVOICE"),
+        eq(recoveryCases.sourceEntityId, invoices.id),
+        sql`${recoveryCases.status} NOT IN ('RECOVERED', 'STOPPED', 'FAILED')`,
+      ),
+    )
+    .where(
+      and(
+        eq(invoices.tenantId, tenantId),
+        eq(invoices.status, "OVERDUE"),
+        sql`${recoveryCases.id} IS NULL`,
+      ),
+    )
+    .orderBy(invoices.dueAt)
+    .limit(limit)
+    .offset(offset);
+
+  return rows.map((r) => r.invoice);
+}
+
 
