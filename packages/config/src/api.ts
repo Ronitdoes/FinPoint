@@ -25,6 +25,7 @@ export interface RedisConfig {
 export interface TemporalConfig {
   readonly address: string;
   readonly namespace: string;
+  readonly taskQueue: string;
 }
 
 export interface BusConfig {
@@ -115,6 +116,7 @@ function fromRaw(raw: RawServerEnv): ServerConfig {
     temporal: Object.freeze({
       address: raw.TEMPORAL_ADDRESS,
       namespace: raw.TEMPORAL_NAMESPACE,
+      taskQueue: raw.TEMPORAL_TASK_QUEUE,
     }),
     bus: Object.freeze({
       driver: raw.EVENT_BUS_DRIVER,

@@ -51,6 +51,7 @@ describe("apiConfig", () => {
     delete env.AI_MODEL;
     const minimal = apiConfig(env);
     expect(minimal.temporal.namespace).toBe("revenue-recovery");
+    expect(minimal.temporal.taskQueue).toBe("recovery-main");
     expect(minimal.app.port).toBe(8000);
     expect(minimal.app.logLevel).toBe("info");
     expect(minimal.ai.model).toBe("gpt-4o");

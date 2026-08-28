@@ -44,6 +44,7 @@ export const redisSchema = z.object({
 export const temporalSchema = z.object({
   TEMPORAL_ADDRESS: z.string().min(1, "TEMPORAL_ADDRESS is required"),
   TEMPORAL_NAMESPACE: z.string().min(1).default("revenue-recovery"),
+  TEMPORAL_TASK_QUEUE: z.string().min(1).default("recovery-main"),
 });
 
 export const busSchema = z.object({
