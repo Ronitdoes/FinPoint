@@ -101,3 +101,53 @@ export const caseEvents = pgTable(
 
 export type CaseEvent = typeof caseEvents.$inferSelect;
 export type NewCaseEvent = typeof caseEvents.$inferInsert;
+
+/**
+ * Audit Archive table — cold storage partition for archived compliance audit logs (Spec 01 §5, Step 25).
+ * Holds audit rows pruned by retention jobs (>N months).
+ */
+export const auditArchive = pgTable(
+  "audit_archive",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "restrict" }),
+    caseId: uuid("case_id").references(() => recoveryCases.id, {
+      onDelete: "set null",
+    }),
+    actorType: actorTypeEnum("actor_type").notNull(),
+    actorId: text("actor_id"),
+    event: text("event").notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    correlationId: uuid("correlation_id"),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    archivedAt: timestamp("archived_at", {
+      withTimezone: true,
+      mode: "date",
+    })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("audit_archive_case_created_at_idx").on(
+      table.caseId,
+      table.createdAt,
+    ),
+    index("audit_archive_tenant_created_at_idx").on(
+      table.tenantId,
+      table.createdAt.desc(),
+    ),
+    index("audit_archive_archived_at_idx").on(table.archivedAt),
+  ],
+);
+
+export type AuditArchive = typeof auditArchive.$inferSelect;
+export type NewAuditArchive = typeof auditArchive.$inferInsert;
+

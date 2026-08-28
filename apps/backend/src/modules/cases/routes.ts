@@ -10,6 +10,7 @@ import {
 } from "../../lib/errors";
 import { CaseControlService } from "./control.service";
 import { toCanonicalCaseDetail, toCaseSummary } from "./case-mapper";
+import { TimelineService } from "../audit/timeline.service";
 
 const listCasesQuerySchema = z.object({
   status: z.enum(CASE_STATUSES).optional(),
@@ -20,6 +21,15 @@ const listCasesQuerySchema = z.object({
   opened_to: z.string().datetime({ offset: true }).or(z.string().datetime()).optional(),
   limit: z.coerce.number().min(1).max(100).default(50),
   cursor: z.string().optional(),
+});
+
+const timelineQuerySchema = z.object({
+  types: z.string().optional(),
+  from: z.string().datetime({ offset: true }).or(z.string().datetime()).optional(),
+  to: z.string().datetime({ offset: true }).or(z.string().datetime()).optional(),
+  limit: z.coerce.number().min(1).max(100).default(100),
+  cursor: z.string().optional(),
+  order: z.enum(["asc", "desc"]).default("asc"),
 });
 
 const caseParamsSchema = z.object({
@@ -35,10 +45,11 @@ const stopBodySchema = z.object({
 });
 
 /**
- * Fastify routes for Recovery Cases (Spec 02 §13, Step 17).
+ * Fastify routes for Recovery Cases (Spec 02 §13, Step 17, Step 25).
  */
 export const caseRoutes: FastifyPluginAsync = async (app) => {
   const controlService = new CaseControlService(app.db, app.repos);
+  const timelineService = new TimelineService(app.db, app.repos);
 
   /**
    * GET /cases — Filtered list of recovery cases with cursor pagination (VIEWER+)
@@ -162,7 +173,7 @@ export const caseRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /**
-   * GET /cases/:id/timeline — Chronological timeline of case events (VIEWER+)
+   * GET /cases/:id/timeline — Unified chronological timeline of enriched case events (VIEWER+)
    */
   app.get(
     "/:id/timeline",
@@ -180,8 +191,16 @@ export const caseRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
+      const parseQuery = timelineQuerySchema.safeParse(request.query);
+      if (!parseQuery.success) {
+        throw new ValidationError("Invalid query parameters", {
+          issues: parseQuery.error.issues,
+        });
+      }
+
       const tenantScope = app.getTenantScope(request);
       const { id } = parseParams.data;
+      const query = parseQuery.data;
 
       const caseRow = await app.repos.findCaseById(
         { db: app.db },
@@ -192,12 +211,28 @@ export const caseRoutes: FastifyPluginAsync = async (app) => {
         throw new NotFoundError("Recovery case not found");
       }
 
-      const events = await app.repos.listCaseEvents(
-        { db: app.db },
-        { tenantId: tenantScope.tenantId, caseId: id, limit: 100 },
-      );
+      const types = query.types
+        ? query.types
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : undefined;
 
-      return reply.status(200).send({ items: events });
+      const result = await timelineService.getCaseTimeline({
+        tenantId: tenantScope.tenantId,
+        caseId: id,
+        types,
+        from: query.from ? new Date(query.from) : undefined,
+        to: query.to ? new Date(query.to) : undefined,
+        limit: query.limit,
+        cursor: query.cursor,
+        order: query.order,
+      });
+
+      return reply.status(200).send({
+        items: result.items,
+        nextCursor: result.nextCursor,
+      });
     },
   );
 

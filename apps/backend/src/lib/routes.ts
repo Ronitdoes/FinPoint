@@ -14,6 +14,7 @@ import { paymentRoutes, demoMockPaymentRoutes } from "../modules/payments/routes
 import { messagingRoutes } from "../modules/messaging/routes";
 import { humanTasksRoutes } from "../modules/human-tasks/routes";
 import { promisesToPayRoutes } from "../modules/promises-to-pay/routes";
+import { auditRoutes } from "../modules/audit/routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -41,6 +42,10 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/admin",
     plugin: adminApiKeysRoutes,
+  },
+  {
+    prefix: "/audit",
+    plugin: auditRoutes,
   },
   {
     prefix: "/webhooks",

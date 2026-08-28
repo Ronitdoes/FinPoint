@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, lt, gt, or } from "drizzle-orm";
 import {
   caseEvents,
   type CaseEvent,
@@ -15,6 +15,22 @@ export interface RecordCaseEventInput {
   description?: string;
   payload?: Record<string, unknown>;
   occurredAt?: Date;
+}
+
+export interface ListCaseEventsQuery {
+  tenantId: string;
+  caseId: string;
+  types?: string[];
+  from?: Date;
+  to?: Date;
+  limit?: number;
+  cursor?: string;
+  order?: "asc" | "desc";
+}
+
+export interface ListCaseEventsResult {
+  items: CaseEvent[];
+  nextCursor: string | null;
 }
 
 /**
@@ -70,7 +86,95 @@ export async function listCaseEvents(
     .where(
       and(eq(caseEvents.tenantId, tenantId), eq(caseEvents.caseId, caseId)),
     )
-    .orderBy(desc(caseEvents.occurredAt))
+    .orderBy(asc(caseEvents.occurredAt), asc(caseEvents.id))
     .limit(limit)
     .offset(offset);
+}
+
+/**
+ * Lists case timeline events with filtering and cursor pagination.
+ */
+export async function listCaseEventsWithCursor(
+  ctx: RepoContext,
+  query: ListCaseEventsQuery,
+): Promise<ListCaseEventsResult> {
+  const executor = getExecutor(ctx);
+  const limit = Math.min(Math.max(query.limit ?? 100, 1), 100);
+  const isDesc = query.order === "desc";
+
+  const conditions = [
+    eq(caseEvents.tenantId, query.tenantId),
+    eq(caseEvents.caseId, query.caseId),
+  ];
+
+  if (query.types && query.types.length > 0) {
+    conditions.push(inArray(caseEvents.eventType, query.types));
+  }
+  if (query.from) {
+    conditions.push(gte(caseEvents.occurredAt, query.from));
+  }
+  if (query.to) {
+    conditions.push(lte(caseEvents.occurredAt, query.to));
+  }
+
+  if (query.cursor) {
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(query.cursor, "base64url").toString("utf8"),
+      );
+      if (decoded.occurredAt && decoded.id) {
+        const cursorDate = new Date(decoded.occurredAt);
+        if (isDesc) {
+          conditions.push(
+            or(
+              lt(caseEvents.occurredAt, cursorDate),
+              and(
+                eq(caseEvents.occurredAt, cursorDate),
+                lt(caseEvents.id, decoded.id),
+              ),
+            )!,
+          );
+        } else {
+          conditions.push(
+            or(
+              gt(caseEvents.occurredAt, cursorDate),
+              and(
+                eq(caseEvents.occurredAt, cursorDate),
+                gt(caseEvents.id, decoded.id),
+              ),
+            )!,
+          );
+        }
+      }
+    } catch {
+      // Invalid cursor ignored
+    }
+  }
+
+  const orderByClauses = isDesc
+    ? [desc(caseEvents.occurredAt), desc(caseEvents.id)]
+    : [asc(caseEvents.occurredAt), asc(caseEvents.id)];
+
+  const rows = await executor
+    .select()
+    .from(caseEvents)
+    .where(and(...conditions))
+    .orderBy(...orderByClauses)
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+
+  let nextCursor: string | null = null;
+  if (hasMore && items.length > 0) {
+    const lastItem = items[items.length - 1]!;
+    nextCursor = Buffer.from(
+      JSON.stringify({
+        occurredAt: lastItem.occurredAt.toISOString(),
+        id: lastItem.id,
+      }),
+    ).toString("base64url");
+  }
+
+  return { items, nextCursor };
 }

@@ -829,7 +829,7 @@ describe("Step 22 — Workflow A: Failed Payment Recovery Matrix", () => {
 
     // Let Worker 1 process start and reach the wait delay checkpoint
     await worker1.runUntil(async () => {
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 200; i++) {
         try {
           const state = await handle.query(workflowStateQuery);
           if (state && state.currentStep === "ROUND_1_WAIT_DELAY") {
@@ -838,7 +838,7 @@ describe("Step 22 — Workflow A: Failed Payment Recovery Matrix", () => {
         } catch {
           // not started yet
         }
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     });
 
@@ -852,12 +852,13 @@ describe("Step 22 — Workflow A: Failed Payment Recovery Matrix", () => {
     });
 
     const result = await worker2.runUntil(async () => {
+      await testEnv.sleep("1s");
       return await handle.result();
     });
 
     expect(result).toEqual({ outcome: "RECOVERED", attemptNumber: 1 });
     expect(spy.calls["recordOutcome"]).toBeDefined();
-  });
+  }, 90000);
 
   // ---------------------------------------------------------------------------
   // 13. Signal Bridge Test

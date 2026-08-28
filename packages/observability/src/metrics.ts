@@ -479,6 +479,17 @@ export function recordSlaBreach(type: string): void {
   slaBreachTotal.inc({ type });
 }
 
+// 17. Audit Subsystem Metrics (Step 25 — Spec 01 §18, Step 25)
+export const auditWriteFailuresTotal = new Counter({
+  name: "audit_write_failures_total",
+  help: "Total number of failed audit/case-event write attempts (structural or role violations)",
+  registers: [metricsRegistry],
+});
+
+export function recordAuditWriteFailure(): void {
+  auditWriteFailuresTotal.inc();
+}
+
 /**
  * Returns the Prometheus exposition text format.
  */
