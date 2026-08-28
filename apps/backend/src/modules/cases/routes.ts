@@ -7,6 +7,7 @@ import {
 import {
   ValidationError,
   NotFoundError,
+  NoOutcomeError,
 } from "../../lib/errors";
 import { CaseControlService } from "./control.service";
 import { toCanonicalCaseDetail, toCaseSummary } from "./case-mapper";
@@ -232,6 +233,84 @@ export const caseRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(200).send({
         items: result.items,
         nextCursor: result.nextCursor,
+      });
+    },
+  );
+
+  /**
+   * GET /cases/:id/outcome — Authoritative outcome record for case (VIEWER+)
+   */
+  app.get(
+    "/:id/outcome",
+    {
+      preHandler: [
+        app.requireAuth,
+        app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
+      ],
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parseParams = caseParamsSchema.safeParse(request.params);
+      if (!parseParams.success) {
+        throw new ValidationError("Invalid case ID format", {
+          issues: parseParams.error.issues,
+        });
+      }
+
+      const tenantScope = app.getTenantScope(request);
+      const { id } = parseParams.data;
+
+      // Verify case exists in tenant
+      const caseRow = await app.repos.findCaseById(
+        { db: app.db },
+        { tenantId: tenantScope.tenantId, caseId: id },
+      );
+      if (!caseRow) {
+        throw new NotFoundError("Recovery case not found");
+      }
+
+      const outcome = await app.repos.findOutcomeByCaseId(
+        { db: app.db },
+        { tenantId: tenantScope.tenantId, caseId: id },
+      );
+
+      if (!outcome) {
+        throw new NoOutcomeError();
+      }
+
+      const recoveredAmount = BigInt(outcome.recoveredAmount ?? 0);
+      const recoveryCost = BigInt(outcome.recoveryCost ?? 0);
+      const netRecovered =
+        outcome.netRecovered !== null && outcome.netRecovered !== undefined
+          ? BigInt(outcome.netRecovered)
+          : recoveredAmount - recoveryCost;
+
+      return reply.status(200).send({
+        id: outcome.id,
+        tenant_id: outcome.tenantId,
+        case_id: outcome.caseId,
+        payment_id: outcome.paymentId,
+        baseline_amount: outcome.baselineAmount.toString(),
+        recovered_amount: recoveredAmount.toString(),
+        recovery_cost: recoveryCost.toString(),
+        net_recovered: netRecovered.toString(),
+        attribution_method: outcome.attributionMethod,
+        attribution_window_hours: outcome.attributionWindowHours,
+        recovered_at:
+          outcome.recoveredAt instanceof Date
+            ? outcome.recoveredAt.toISOString()
+            : outcome.recoveredAt,
+        recorded_at:
+          outcome.recordedAt instanceof Date
+            ? outcome.recordedAt.toISOString()
+            : outcome.recordedAt,
+        created_at:
+          outcome.createdAt instanceof Date
+            ? outcome.createdAt.toISOString()
+            : outcome.createdAt,
+        updated_at:
+          outcome.updatedAt instanceof Date
+            ? outcome.updatedAt.toISOString()
+            : outcome.updatedAt,
       });
     },
   );

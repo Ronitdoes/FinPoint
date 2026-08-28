@@ -57,6 +57,13 @@
       "when": 1787920000000,
       "tag": "0007_audit_roles_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787950153041,
+      "tag": "0008_soft_morg",
+      "breakpoints": true
     }
   ]
 }

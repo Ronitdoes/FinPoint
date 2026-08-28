@@ -490,6 +490,39 @@ export function recordAuditWriteFailure(): void {
   auditWriteFailuresTotal.inc();
 }
 
+// 18. Outcomes, Attribution & Cost Model Metrics (Step 26 — Spec 01 §25, Spec 02 §8/§9)
+export const outcomeRecordedTotal = new Counter({
+  name: "outcome_recorded_total",
+  help: "Total number of authoritative recovery outcomes recorded by attribution method",
+  labelNames: ["method"] as const,
+  registers: [metricsRegistry],
+});
+
+export const attributionSweeperMatchesTotal = new Counter({
+  name: "attribution_sweeper_matches_total",
+  help: "Total number of late payments successfully attributed to closed cases by the attribution sweeper",
+  registers: [metricsRegistry],
+});
+
+export const costEntryGapsTotal = new Counter({
+  name: "cost_entry_gaps_total",
+  help: "Total number of cost entry gaps detected and remediated by the cost completeness audit job",
+  labelNames: ["category"] as const,
+  registers: [metricsRegistry],
+});
+
+export function recordOutcomeRecorded(method: string, count = 1): void {
+  outcomeRecordedTotal.inc({ method }, count);
+}
+
+export function recordAttributionSweeperMatch(count = 1): void {
+  attributionSweeperMatchesTotal.inc(count);
+}
+
+export function recordCostEntryGap(category: string, count = 1): void {
+  costEntryGapsTotal.inc({ category }, count);
+}
+
 /**
  * Returns the Prometheus exposition text format.
  */

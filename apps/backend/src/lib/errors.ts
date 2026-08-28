@@ -34,6 +34,7 @@ export const DomainErrorCodes = {
   CONCURRENT_VERSION: "CONCURRENT_VERSION",
   POLICY_EVALUATION_FAILED: "POLICY_EVALUATION_FAILED",
   CONFIG_ERROR: "CONFIG_ERROR",
+  NO_OUTCOME: "NO_OUTCOME",
   INTERNAL: "INTERNAL",
 } as const;
 
@@ -215,6 +216,12 @@ export class ConcurrentVersionError extends DomainError {
 export class PolicyEvaluationFailedError extends DomainError {
   constructor(message: string = "Policy evaluation failed internally (fail-closed activated)", details: unknown = {}) {
     super(message, DomainErrorCodes.POLICY_EVALUATION_FAILED, 500, details);
+  }
+}
+
+export class NoOutcomeError extends DomainError {
+  constructor(message: string = "No outcome recorded for this case", details: unknown = {}) {
+    super(message, DomainErrorCodes.NO_OUTCOME, 404, details);
   }
 }
 

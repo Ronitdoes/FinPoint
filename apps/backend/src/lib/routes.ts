@@ -15,6 +15,7 @@ import { messagingRoutes } from "../modules/messaging/routes";
 import { humanTasksRoutes } from "../modules/human-tasks/routes";
 import { promisesToPayRoutes } from "../modules/promises-to-pay/routes";
 import { auditRoutes } from "../modules/audit/routes";
+import { outcomesRoutes } from "../modules/outcomes/routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -46,6 +47,10 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/audit",
     plugin: auditRoutes,
+  },
+  {
+    prefix: "/outcomes",
+    plugin: outcomesRoutes,
   },
   {
     prefix: "/webhooks",

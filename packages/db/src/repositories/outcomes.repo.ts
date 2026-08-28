@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import {
   recoveryOutcomes,
   recoveryCostEntries,
@@ -7,6 +7,9 @@ import {
   type RecoveryCostEntry,
   type NewRecoveryCostEntry,
 } from "../schema/outcomes";
+import { recoveryCases, type RecoveryCase } from "../schema/cases";
+import { payments, type Payment } from "../schema/payments";
+import { recoveryActions, type RecoveryAction } from "../schema/actions";
 import { type RepoContext, getExecutor } from "./types";
 import type { Tx } from "./tx";
 
@@ -32,6 +35,36 @@ export interface RecordCostEntryInput {
   metadata?: Record<string, unknown>;
   incurredAt: Date;
   createdAt?: Date;
+}
+
+export interface ListOutcomesQuery {
+  tenantId: string;
+  from?: Date;
+  to?: Date;
+  surface?: string;
+  method?: string;
+  customerId?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface OutcomeAggregates {
+  recovered_minor: bigint;
+  cost_minor: bigint;
+  net_minor: bigint;
+  count: number;
+}
+
+export interface EnrichedOutcomeRow extends RecoveryOutcome {
+  caseNumber?: number | null;
+  riskType?: string | null;
+  customerId?: string | null;
+}
+
+export interface ListOutcomesResult {
+  items: EnrichedOutcomeRow[];
+  aggregates: OutcomeAggregates;
+  nextCursor?: string;
 }
 
 /**
@@ -142,6 +175,22 @@ export async function findOutcomeByCaseId(
 }
 
 /**
+ * Computes the authoritative sum of all recovery cost entries for a case.
+ * Returns 0n if no cost entries exist.
+ */
+export async function getRecoveryCostSumForCase(
+  ctx: RepoContext,
+  { tenantId, caseId }: { tenantId: string; caseId: string },
+): Promise<bigint> {
+  const executor = getExecutor(ctx);
+  const result = await executor.execute<{ total_cost: string }>(
+    sql`SELECT COALESCE(SUM(amount), 0)::text AS total_cost FROM recovery_cost_entries WHERE tenant_id = ${tenantId} AND case_id = ${caseId}`,
+  );
+  const total = result[0]?.total_cost ?? "0";
+  return BigInt(total);
+}
+
+/**
  * Appends a recovery cost entry to the immutable ledger (append-only).
  */
 export async function recordCostEntry(
@@ -201,5 +250,268 @@ export async function findOutcomesByCaseIds(
       ),
     )
     .orderBy(desc(recoveryOutcomes.recoveredAt));
+}
+
+/**
+ * Finds candidate closed/stopped cases without an outcome for the attribution sweeper (Spec 02 §9).
+ */
+export async function findCandidateCasesForAttributionSweep(
+  ctx: RepoContext,
+  { tenantId, limit = 100 }: { tenantId?: string; limit?: number },
+): Promise<RecoveryCase[]> {
+  const executor = getExecutor(ctx);
+  const conditions = [
+    inArray(recoveryCases.status, ["STOPPED", "FAILED"]),
+    sql`NOT EXISTS (SELECT 1 FROM recovery_outcomes ro WHERE ro.case_id = ${recoveryCases.id})`,
+  ];
+  if (tenantId) {
+    conditions.push(eq(recoveryCases.tenantId, tenantId));
+  }
+
+  return await executor
+    .select()
+    .from(recoveryCases)
+    .where(and(...conditions))
+    .orderBy(desc(recoveryCases.openedAt))
+    .limit(limit);
+}
+
+/**
+ * Evaluates the 4 attribution conditions for a candidate case against payments (Spec 02 §9):
+ * 1. Same customer AND same financial obligation (payment ID, subscription ID, or source entity link)
+ * 2. P.paid_at / occurredAt >= case.openedAt
+ * 3. P.paid_at / occurredAt <= case.openedAt + attribution_window_hours
+ * 4. No OTHER live case owns that obligation at attribution time
+ */
+export async function findMatchingPaymentForAttribution(
+  ctx: RepoContext,
+  { tenantId, caseRecord }: { tenantId: string; caseRecord: RecoveryCase },
+): Promise<Payment | null> {
+  const executor = getExecutor(ctx);
+  const windowMs = caseRecord.attributionWindowHours * 60 * 60 * 1000;
+  const windowEnd = new Date(caseRecord.openedAt.getTime() + windowMs);
+
+  // Condition 4 check: verify no OTHER live case owns that obligation
+  const otherLiveCases = await executor
+    .select({ id: recoveryCases.id })
+    .from(recoveryCases)
+    .where(
+      and(
+        eq(recoveryCases.tenantId, tenantId),
+        eq(recoveryCases.sourceEntityType, caseRecord.sourceEntityType),
+        eq(recoveryCases.sourceEntityId, caseRecord.sourceEntityId),
+        notInArray(recoveryCases.status, ["RECOVERED", "STOPPED", "FAILED"]),
+        sql`${recoveryCases.id} != ${caseRecord.id}`,
+      ),
+    )
+    .limit(1);
+
+  if (otherLiveCases.length > 0) {
+    // Condition 4 violated: newer or other live case owns the obligation
+    return null;
+  }
+
+  // Find candidate succeeded payments for customer within window
+  const baseConditions = [
+    eq(payments.tenantId, tenantId),
+    eq(payments.customerId, caseRecord.customerId),
+    eq(payments.status, "SUCCEEDED"),
+    gte(payments.occurredAt, caseRecord.openedAt),
+    lte(payments.occurredAt, windowEnd),
+  ];
+
+  // Specific obligation linking (Condition 1)
+  if (caseRecord.sourceEntityType === "PAYMENT") {
+    // Succeeded payment is either the source payment itself or shares the same subscription
+    const candidatePayments = await executor
+      .select()
+      .from(payments)
+      .where(
+        and(
+          ...baseConditions,
+          or(
+            eq(payments.id, caseRecord.sourceEntityId),
+            sql`${payments.subscriptionId} IS NOT NULL AND ${payments.subscriptionId} = (
+              SELECT subscription_id FROM payments WHERE id = ${caseRecord.sourceEntityId} LIMIT 1
+            )`,
+          ),
+        ),
+      )
+      .orderBy(desc(payments.occurredAt))
+      .limit(1);
+
+    return candidatePayments[0] ?? null;
+  }
+
+  if (caseRecord.sourceEntityType === "SUBSCRIPTION") {
+    const candidatePayments = await executor
+      .select()
+      .from(payments)
+      .where(
+        and(...baseConditions, eq(payments.subscriptionId, caseRecord.sourceEntityId)),
+      )
+      .orderBy(desc(payments.occurredAt))
+      .limit(1);
+
+    return candidatePayments[0] ?? null;
+  }
+
+  // For INVOICE or CHECKOUT or other source types, matching payment for same customer
+  const candidatePayments = await executor
+    .select()
+    .from(payments)
+    .where(and(...baseConditions))
+    .orderBy(desc(payments.occurredAt))
+    .limit(1);
+
+  return candidatePayments[0] ?? null;
+}
+
+/**
+ * Filtered list of recovery outcomes with server-side SQL aggregates and cursor pagination (Spec 01 §25, Step 26).
+ */
+export async function listOutcomesWithAggregates(
+  ctx: RepoContext,
+  query: ListOutcomesQuery,
+): Promise<ListOutcomesResult> {
+  const executor = getExecutor(ctx);
+  const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
+
+  const baseFilterConditions = [eq(recoveryOutcomes.tenantId, query.tenantId)];
+
+  if (query.from) {
+    baseFilterConditions.push(gte(recoveryOutcomes.recoveredAt, query.from));
+  }
+  if (query.to) {
+    baseFilterConditions.push(lte(recoveryOutcomes.recoveredAt, query.to));
+  }
+  if (query.method) {
+    baseFilterConditions.push(eq(recoveryOutcomes.attributionMethod, query.method));
+  }
+  if (query.surface) {
+    baseFilterConditions.push(eq(recoveryCases.riskType, query.surface as any));
+  }
+  if (query.customerId) {
+    baseFilterConditions.push(eq(recoveryCases.customerId, query.customerId));
+  }
+
+  // 1. Authoritative Aggregates Query strictly from stored database columns
+  const [agg] = await executor
+    .select({
+      recovered_minor: sql<string>`COALESCE(SUM(${recoveryOutcomes.recoveredAmount}), 0)::text`,
+      cost_minor: sql<string>`COALESCE(SUM(${recoveryOutcomes.recoveryCost}), 0)::text`,
+      net_minor: sql<string>`COALESCE(SUM(${recoveryOutcomes.netRecovered}), 0)::text`,
+      count: sql<string>`COUNT(*)::text`,
+    })
+    .from(recoveryOutcomes)
+    .leftJoin(recoveryCases, eq(recoveryOutcomes.caseId, recoveryCases.id))
+    .where(and(...baseFilterConditions));
+
+  const aggregates: OutcomeAggregates = {
+    recovered_minor: BigInt(agg?.recovered_minor ?? "0"),
+    cost_minor: BigInt(agg?.cost_minor ?? "0"),
+    net_minor: BigInt(agg?.net_minor ?? "0"),
+    count: Number(agg?.count ?? 0),
+  };
+
+  // 2. Cursor Pagination Query
+  const itemsConditions = [...baseFilterConditions];
+
+  if (query.cursor) {
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(query.cursor, "base64url").toString("utf8"),
+      );
+      if (decoded.recoveredAt && decoded.id) {
+        const cursorDate = new Date(decoded.recoveredAt);
+        itemsConditions.push(
+          or(
+            lt(recoveryOutcomes.recoveredAt, cursorDate),
+            and(
+              eq(recoveryOutcomes.recoveredAt, cursorDate),
+              lt(recoveryOutcomes.id, decoded.id),
+            ),
+          )!,
+        );
+      }
+    } catch {
+      // Ignore invalid cursor
+    }
+  }
+
+  const rows = await executor
+    .select({
+      id: recoveryOutcomes.id,
+      tenantId: recoveryOutcomes.tenantId,
+      caseId: recoveryOutcomes.caseId,
+      paymentId: recoveryOutcomes.paymentId,
+      baselineAmount: recoveryOutcomes.baselineAmount,
+      recoveredAmount: recoveryOutcomes.recoveredAmount,
+      recoveryCost: recoveryOutcomes.recoveryCost,
+      netRecovered: recoveryOutcomes.netRecovered,
+      attributionMethod: recoveryOutcomes.attributionMethod,
+      attributionWindowHours: recoveryOutcomes.attributionWindowHours,
+      recoveredAt: recoveryOutcomes.recoveredAt,
+      recordedAt: recoveryOutcomes.recordedAt,
+      createdAt: recoveryOutcomes.createdAt,
+      updatedAt: recoveryOutcomes.updatedAt,
+      caseNumber: recoveryCases.caseNumber,
+      riskType: recoveryCases.riskType,
+      customerId: recoveryCases.customerId,
+    })
+    .from(recoveryOutcomes)
+    .leftJoin(recoveryCases, eq(recoveryOutcomes.caseId, recoveryCases.id))
+    .where(and(...itemsConditions))
+    .orderBy(desc(recoveryOutcomes.recoveredAt), desc(recoveryOutcomes.id))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+
+  let nextCursor: string | undefined;
+  if (hasMore && items.length > 0) {
+    const lastItem = items[items.length - 1]!;
+    nextCursor = Buffer.from(
+      JSON.stringify({
+        recoveredAt: lastItem.recoveredAt.toISOString(),
+        id: lastItem.id,
+      }),
+      "utf8",
+    ).toString("base64url");
+  }
+
+  return { items, aggregates, nextCursor };
+}
+
+/**
+ * Audits executed recovery actions lacking corresponding cost entries (Spec 02 §8, Step 26).
+ */
+export async function findMissingActionCosts(
+  ctx: RepoContext,
+  { tenantId, limit = 100 }: { tenantId?: string; limit?: number },
+): Promise<RecoveryAction[]> {
+  const executor = getExecutor(ctx);
+  const conditions = [
+    eq(recoveryActions.status, "EXECUTED"),
+    sql`NOT EXISTS (
+      SELECT 1 FROM recovery_cost_entries rce 
+      WHERE rce.case_id = ${recoveryActions.caseId}
+      AND (
+        (rce.metadata->>'action_id') = ${recoveryActions.id}::text
+        OR (rce.category = 'MESSAGING' AND ${recoveryActions.type} IN ('SEND_WHATSAPP', 'SEND_EMAIL', 'SEND_SMS'))
+      )
+    )`,
+  ];
+
+  if (tenantId) {
+    conditions.push(eq(recoveryActions.tenantId, tenantId));
+  }
+
+  return await executor
+    .select()
+    .from(recoveryActions)
+    .where(and(...conditions))
+    .orderBy(desc(recoveryActions.completedAt))
+    .limit(limit);
 }
 

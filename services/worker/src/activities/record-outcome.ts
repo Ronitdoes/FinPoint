@@ -8,6 +8,7 @@ import {
   findPaymentById,
   createPayment,
   recordCaseEvent,
+  getRecoveryCostSumForCase,
 } from "@repo/db";
 import {
   type ActivityContext,
@@ -35,7 +36,7 @@ export interface RecordOutcomeResult {
 /**
  * Activity: recordOutcome
  * Authoritatively persists the case recovery outcome in the ledger, resolves the case,
- * and completes the workflow record (Spec 01 §25, Spec 20 §Requirements 6).
+ * and completes the workflow record (Spec 01 §25, Spec 20 §Requirements 6, Spec 26).
  */
 export async function recordOutcome(
   input: RecordOutcomeInput,
@@ -82,6 +83,12 @@ export async function recordOutcome(
         }
       }
 
+      // Roll up total recovery costs for case
+      const recoveryCost = await getRecoveryCostSumForCase(
+        { db, tx },
+        { tenantId: input.tenantId, caseId: input.caseId },
+      );
+
       // 1. Create recovery outcome ledger entry
       const outcomeRecord = await dbRecordOutcome(
         { db, tx },
@@ -91,9 +98,9 @@ export async function recordOutcome(
           paymentId,
           baselineAmount: recoveredAmount,
           recoveredAmount,
-          recoveryCost: 0n,
-          attributionMethod: "WORKFLOW",
-          attributionWindowHours: 72,
+          recoveryCost,
+          attributionMethod: "WORKFLOW_LINKED",
+          attributionWindowHours: caseRecord?.attributionWindowHours ?? 72,
           recoveredAt: now,
           recordedAt: now,
         },
