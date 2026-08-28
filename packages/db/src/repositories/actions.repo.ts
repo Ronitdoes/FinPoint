@@ -226,3 +226,45 @@ export async function listActionsForCase(
     )
     .orderBy(desc(recoveryActions.createdAt));
 }
+
+export interface UpdateActionsStatusForCaseInput {
+  tenantId: string;
+  caseId: string;
+  fromStatuses: Array<RecoveryAction["status"]>;
+  toStatus: RecoveryAction["status"];
+  reason?: string;
+}
+
+/**
+ * Updates status of actions for a case matching fromStatuses.
+ * Used when approving or rejecting human tasks (e.g. APPROVAL_REQUIRED -> APPROVED / CANCELLED).
+ */
+export async function updateActionsStatusForCase(
+  ctx: RepoContext,
+  input: UpdateActionsStatusForCaseInput,
+): Promise<RecoveryAction[]> {
+  const executor = getExecutor(ctx);
+  const now = new Date();
+
+  const updateSet: Record<string, unknown> = {
+    status: input.toStatus,
+    updatedAt: now,
+  };
+
+  if (input.reason) {
+    updateSet.result = { reason: input.reason };
+  }
+
+  return await executor
+    .update(recoveryActions)
+    .set(updateSet)
+    .where(
+      and(
+        eq(recoveryActions.tenantId, input.tenantId),
+        eq(recoveryActions.caseId, input.caseId),
+        inArray(recoveryActions.status, input.fromStatuses),
+      ),
+    )
+    .returning();
+}
+

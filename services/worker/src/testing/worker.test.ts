@@ -22,6 +22,7 @@ import {
   pauseSignal,
   resumeSignal,
   stopSignal,
+  humanDecisionSignal,
   workflowStateQuery,
   type RecoveryWorkflowInput,
 } from "../workflows/shared";
@@ -225,5 +226,193 @@ describe("Step 20 — Temporal Recovery Worker & Workflow Harness", () => {
     });
 
     expect(spy.calls["escalateWorkflowFailure"]).toBeDefined();
+  });
+
+  it("resumes execution when human approval signal is received (Step 21)", async () => {
+    let capturedTaskId = "";
+    const { mockActivities, spy } = createActivityMocks({
+      async createHumanTask() {
+        capturedTaskId = `task_${randomUUID()}`;
+        return {
+          taskId: capturedTaskId,
+          status: "PENDING",
+          createdAt: new Date().toISOString(),
+        };
+      },
+    });
+
+    const taskQueue = `test-queue-${randomUUID()}`;
+    const workflowsPath = path.resolve(__dirname, "../workflows/index.ts");
+
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      namespace: testEnv.client.options.namespace,
+      taskQueue,
+      workflowsPath,
+      activities: mockActivities,
+    });
+
+    const tenantId = `tenant_${randomUUID()}`;
+    const caseId = randomUUID();
+    const workflowId = WORKFLOW_ID(caseId);
+
+    const input: RecoveryWorkflowInput = {
+      tenantId,
+      caseId,
+      workflowType: "recoveryWorkflowTemplate",
+      metadata: {
+        requireApproval: true,
+      },
+    };
+
+    const result = await worker.runUntil(async () => {
+      const handle = await testEnv.client.workflow.start(recoveryWorkflowTemplate, {
+        workflowId,
+        taskQueue,
+        args: [input],
+      });
+
+      // Allow workflow to advance to HUMAN_APPROVAL_WAIT
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Signal human approval
+      await handle.signal(humanDecisionSignal, {
+        taskId: capturedTaskId,
+        approved: true,
+        notes: "Approved by test operator",
+        decidedBy: "ops-user-1",
+        decidedAt: new Date().toISOString(),
+      });
+
+      return await handle.result();
+    });
+
+    expect(result).toEqual({ outcome: "RECOVERED" });
+    expect(spy.calls["createHumanTask"]).toBeDefined();
+    expect(spy.calls["recordOutcome"]).toBeDefined();
+  });
+
+  it("unwinds cleanly and stops when human rejection signal is received (Step 21)", async () => {
+    let capturedTaskId = "";
+    const { mockActivities, spy } = createActivityMocks({
+      async createHumanTask() {
+        capturedTaskId = `task_${randomUUID()}`;
+        return {
+          taskId: capturedTaskId,
+          status: "PENDING",
+          createdAt: new Date().toISOString(),
+        };
+      },
+    });
+
+    const taskQueue = `test-queue-${randomUUID()}`;
+    const workflowsPath = path.resolve(__dirname, "../workflows/index.ts");
+
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      namespace: testEnv.client.options.namespace,
+      taskQueue,
+      workflowsPath,
+      activities: mockActivities,
+    });
+
+    const tenantId = `tenant_${randomUUID()}`;
+    const caseId = randomUUID();
+    const workflowId = WORKFLOW_ID(caseId);
+
+    const input: RecoveryWorkflowInput = {
+      tenantId,
+      caseId,
+      workflowType: "recoveryWorkflowTemplate",
+      metadata: {
+        requireApproval: true,
+      },
+    };
+
+    const result = await worker.runUntil(async () => {
+      const handle = await testEnv.client.workflow.start(recoveryWorkflowTemplate, {
+        workflowId,
+        taskQueue,
+        args: [input],
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Signal rejection
+      await handle.signal(humanDecisionSignal, {
+        taskId: capturedTaskId,
+        approved: false,
+        notes: "Rejected due to high credit risk",
+      });
+
+      return await handle.result();
+    });
+
+    expect(result).toEqual({ outcome: "STOPPED", stopReason: "HUMAN_REJECTED" });
+    expect(spy.calls["stopCaseWithReason"]).toBeDefined();
+  });
+
+  it("recovers via condition heartbeat DB fallback when signal is dropped / worker restarts (Step 21)", async () => {
+    let capturedTaskId = "";
+    const { mockActivities, spy } = createActivityMocks({
+      async createHumanTask() {
+        capturedTaskId = `task_${randomUUID()}`;
+        return {
+          taskId: capturedTaskId,
+          status: "PENDING",
+          createdAt: new Date().toISOString(),
+        };
+      },
+      async waitForHumanDecision(input) {
+        // Mock DB status returned as APPROVED via crash repair polling fallback
+        return {
+          taskId: input.taskId,
+          status: "APPROVED",
+          approved: true,
+          decidedBy: "recovery-operator",
+          decisionNotes: "Approved in DB while worker was down",
+        };
+      },
+    });
+
+    const taskQueue = `test-queue-${randomUUID()}`;
+    const workflowsPath = path.resolve(__dirname, "../workflows/index.ts");
+
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      namespace: testEnv.client.options.namespace,
+      taskQueue,
+      workflowsPath,
+      activities: mockActivities,
+    });
+
+    const tenantId = `tenant_${randomUUID()}`;
+    const caseId = randomUUID();
+    const workflowId = WORKFLOW_ID(caseId);
+
+    const input: RecoveryWorkflowInput = {
+      tenantId,
+      caseId,
+      workflowType: "recoveryWorkflowTemplate",
+      metadata: {
+        requireApproval: true,
+        heartbeatInterval: "50ms", // short heartbeat for testing fallback
+      },
+    };
+
+    const result = await worker.runUntil(async () => {
+      const handle = await testEnv.client.workflow.start(recoveryWorkflowTemplate, {
+        workflowId,
+        taskQueue,
+        args: [input],
+      });
+
+      // DO NOT send signal; let condition timeout trigger the heartbeat activity check
+      return await handle.result();
+    });
+
+    expect(result).toEqual({ outcome: "RECOVERED" });
+    expect(spy.calls["waitForHumanDecision"]).toBeDefined();
+    expect(spy.calls["recordOutcome"]).toBeDefined();
   });
 });

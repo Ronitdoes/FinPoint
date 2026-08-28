@@ -1,0 +1,2 @@
+ALTER TABLE "human_tasks" ADD COLUMN IF NOT EXISTS "overdue_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "human_tasks" ADD COLUMN IF NOT EXISTS "escalation_count" integer DEFAULT 0 NOT NULL;

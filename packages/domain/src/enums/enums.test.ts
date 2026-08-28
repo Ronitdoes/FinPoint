@@ -20,6 +20,7 @@ import {
   RISK_EVENT_TYPES,
   SUBSCRIPTION_EVENT_TYPES,
   CASE_DOMAIN_EVENT_TYPES,
+  HUMAN_TASK_EVENT_TYPES,
 } from "./event-type";
 import { HUMAN_TASK_PRIORITIES } from "./human-task-priority";
 import { HUMAN_TASK_STATUSES } from "./human-task-status";
@@ -287,6 +288,7 @@ describe("enum parity with specs (drift guard)", () => {
       ...CUSTOMER_EVENT_TYPES,
       ...RISK_EVENT_TYPES,
       ...CASE_DOMAIN_EVENT_TYPES,
+      ...HUMAN_TASK_EVENT_TYPES,
       "UNMAPPED",
     ];
     expect(partition).toHaveLength(new Set(partition).size);

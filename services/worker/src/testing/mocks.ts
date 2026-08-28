@@ -193,8 +193,7 @@ export function createActivityMocks(
       };
     },
 
-    async escalateWorkflowFailure(input) {
-      recordCall("escalateWorkflowFailure", [input]);
+    async escalateWorkflowFailure() {
       return {
         success: true,
         taskId: randomUUID(),
@@ -202,10 +201,15 @@ export function createActivityMocks(
     },
   };
 
-  const mockActivities: RecoveryActivities = {
-    ...defaultMocks,
-    ...customOverrides,
-  };
+  const mockActivities = {} as RecoveryActivities;
+  for (const [key, fn] of Object.entries(defaultMocks) as [keyof RecoveryActivities, (args: unknown) => Promise<unknown>][]) {
+    const overrideFn = customOverrides[key] as ((args: unknown) => Promise<unknown>) | undefined;
+    const targetFn = overrideFn ?? fn;
+    (mockActivities as Record<string, unknown>)[key] = async (args: unknown) => {
+      recordCall(key, [args]);
+      return await targetFn(args);
+    };
+  }
 
   return { mockActivities, spy };
 }

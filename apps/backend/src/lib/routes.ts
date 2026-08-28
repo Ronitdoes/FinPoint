@@ -12,6 +12,7 @@ import { policyRoutes, policiesCrudRoutes } from "../modules/policy/routes";
 import { caseRoutes } from "../modules/cases/routes";
 import { paymentRoutes, demoMockPaymentRoutes } from "../modules/payments/routes";
 import { messagingRoutes } from "../modules/messaging/routes";
+import { humanTasksRoutes } from "../modules/human-tasks/routes";
 
 export interface RouteModuleEntry {
   prefix: string;
@@ -83,6 +84,10 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/messages",
     plugin: messagingRoutes,
+  },
+  {
+    prefix: "/human-tasks",
+    plugin: humanTasksRoutes,
   },
 ];
 

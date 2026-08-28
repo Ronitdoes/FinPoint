@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -42,6 +43,11 @@ export const humanTasks = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    overdueAt: timestamp("overdue_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    escalationCount: integer("escalation_count").notNull().default(0),
     decidedBy: uuid("decided_by").references(() => users.id, {
       onDelete: "set null",
     }),

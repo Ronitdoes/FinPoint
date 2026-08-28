@@ -43,6 +43,13 @@
       "when": 1787857000000,
       "tag": "0005_add_case_opened_event_type",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787916810711,
+      "tag": "0006_soft_mad_thinker",
+      "breakpoints": true
     }
   ]
 }

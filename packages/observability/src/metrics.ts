@@ -2,6 +2,7 @@ import {
   Registry,
   Counter,
   Histogram,
+  Gauge,
   collectDefaultMetrics,
   type DefaultMetricsCollectorConfiguration,
 } from "prom-client";
@@ -429,6 +430,53 @@ export function recordCaseFunnel(
   stage: "opened" | "qualified" | "decided" | "allowed" | "started" | string,
 ): void {
   caseFunnelTotal.inc({ stage });
+}
+
+// 16. Human-in-the-Loop & Approval Metrics (Step 21 — Spec 01 §19/§20)
+export const humanTasksOpen = new Gauge({
+  name: "human_tasks_open",
+  help: "Current number of open/pending human escalation tasks partitioned by task type",
+  labelNames: ["type"] as const,
+  registers: [metricsRegistry],
+});
+
+export const approvalLatencyMs = new Histogram({
+  name: "approval_latency_ms",
+  help: "Time elapsed from human task creation to operator decision in milliseconds",
+  labelNames: ["type", "decision"] as const,
+  buckets: [1000, 5000, 15000, 60000, 300000, 900000, 3600000, 14400000, 86400000],
+  registers: [metricsRegistry],
+});
+
+export const slaBreachTotal = new Counter({
+  name: "sla_breach_total",
+  help: "Total number of human escalation tasks that breached their SLA target",
+  labelNames: ["type"] as const,
+  registers: [metricsRegistry],
+});
+
+export function recordHumanTasksOpen(type: string, count: number): void {
+  humanTasksOpen.set({ type }, count);
+}
+
+export function incHumanTasksOpen(type: string, value = 1): void {
+  humanTasksOpen.inc({ type }, value);
+}
+
+export function decHumanTasksOpen(type: string, value = 1): void {
+  humanTasksOpen.dec({ type }, value);
+}
+
+export function recordApprovalLatency(
+  type: string,
+  decision: "APPROVED" | "REJECTED" | string,
+  latencyMs: number,
+): void {
+  approvalLatencyMs.observe({ type, decision }, latencyMs);
+}
+
+export function recordSlaBreach(type: string): void {
+  slaBreachTotal.inc({ type });
 }
 
 /**

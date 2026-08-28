@@ -26,6 +26,7 @@ export const EVENT_TYPES = [
   "customer_payment_received",
   "risk.calculated",
   "case.opened",
+  "human-task.sla-breached",
   "UNMAPPED",
 ] as const;
 
@@ -57,6 +58,10 @@ export const RISK_EVENT_TYPES = EVENT_TYPES.filter((type) =>
 
 export const CASE_DOMAIN_EVENT_TYPES = EVENT_TYPES.filter((type) =>
   type.startsWith("case."),
+) as readonly (typeof EVENT_TYPES)[number][];
+
+export const HUMAN_TASK_EVENT_TYPES = EVENT_TYPES.filter((type) =>
+  type.startsWith("human-task."),
 ) as readonly (typeof EVENT_TYPES)[number][];
 
 export const UNMAPPED_EVENT_TYPES = ["UNMAPPED"] as const;

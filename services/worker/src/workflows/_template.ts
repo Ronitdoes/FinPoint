@@ -18,6 +18,7 @@ import {
   stopSignal,
   humanDecisionSignal,
   workflowStateQuery,
+  awaitHumanApproval,
 } from "./shared";
 
 // Proxy typed activities with standard retry options
@@ -138,7 +139,37 @@ export async function recoveryWorkflowTemplate(
       currency: input.currency,
     });
 
-    if (!policyResult.allowed) {
+    if (
+      policyResult.requiresApproval ||
+      input.metadata?.requireApproval
+    ) {
+      currentStep = "HUMAN_APPROVAL_WAIT";
+      const createdTask = await activities.createHumanTask({
+        ...actCtx,
+        taskType: "APPROVAL",
+        title: "High-value incentive approval required",
+        description: "Policy requires operator approval before proceeding",
+        priority: "HIGH",
+      });
+
+      const heartbeat = (input.metadata?.heartbeatInterval as string) ?? "60s";
+      const approval = await awaitHumanApproval(
+        actCtx,
+        createdTask.taskId,
+        activities,
+        () => lastHumanDecision,
+        heartbeat,
+      );
+
+      if (!approval.approved) {
+        await activities.stopCaseWithReason({
+          ...actCtx,
+          stopReason: "HUMAN_REJECTED",
+          notes: approval.notes,
+        });
+        return { outcome: "STOPPED", stopReason: "HUMAN_REJECTED" };
+      }
+    } else if (!policyResult.allowed) {
       await activities.stopCaseWithReason({
         ...actCtx,
         stopReason: "POLICY_REJECTED",
