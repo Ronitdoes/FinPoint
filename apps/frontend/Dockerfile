@@ -21,6 +21,7 @@ ENV NODE_ENV=production
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
+RUN mkdir -p /app/apps/frontend/public
 RUN bun run --cwd apps/frontend build
 
 # Slim production runner

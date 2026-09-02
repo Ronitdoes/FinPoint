@@ -150,28 +150,40 @@ export default function PoliciesPage() {
       </div>
 
       {/* Policy Rules Grid */}
-      <div ref={gridRef} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {policies.map((p) => (
-          <div
-            key={p.id}
-            className={`rounded-2xl border p-5 shadow-lg shadow-black/40 backdrop-blur-xl transition-all ${
-              p.enabled
-                ? "border-white/[0.08] bg-[#0d111a]/85"
-                : "border-white/[0.04] bg-[#090c13]/40 opacity-70"
-            }`}
-          >
-            <div className="flex items-start justify-between gap-3 pb-3 mb-3 border-b border-white/[0.06]">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xs font-semibold text-slate-100">{p.name}</h3>
-                  <Badge variant={p.enabled ? "success" : "default"} size="sm">
-                    {p.enabled ? "ACTIVE" : "DISABLED"}
-                  </Badge>
+      {loading && policies.length === 0 ? (
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-16 shadow-lg shadow-black/40 backdrop-blur-xl flex flex-col items-center justify-center gap-2.5 text-xs text-slate-400">
+          <Loader2 className="h-5 w-5 text-emerald-400 animate-spin" />
+          <span className="text-[11px] font-medium text-slate-400">Loading policy rules...</span>
+        </div>
+      ) : policies.length === 0 ? (
+        <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-16 text-center text-xs text-slate-500 shadow-lg shadow-black/40 backdrop-blur-xl">
+          <ShieldCheck className="mx-auto h-8 w-8 mb-2 opacity-30 text-emerald-400" />
+          <p className="font-semibold text-slate-300">No policy rules configured</p>
+          <p className="text-[11px] text-slate-500 mt-1">Platform safety guardrails will appear here once loaded.</p>
+        </div>
+      ) : (
+        <div ref={gridRef} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {policies.map((p) => (
+            <div
+              key={p.id}
+              className={`rounded-2xl border p-5 shadow-lg shadow-black/40 backdrop-blur-xl transition-all ${
+                p.enabled
+                  ? "border-white/[0.08] bg-[#0d111a]/85"
+                  : "border-white/[0.04] bg-[#090c13]/40 opacity-70"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3 pb-3 mb-3 border-b border-white/[0.06]">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-semibold text-slate-100">{p.name}</h3>
+                    <Badge variant={p.enabled ? "success" : "default"} size="sm">
+                      {p.enabled ? "ACTIVE" : "DISABLED"}
+                    </Badge>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    {p.code ? `${p.code} • ` : ""}Type: {p.rule_type} • Category: {p.category} • v{p.version}
+                  </p>
                 </div>
-                <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                  Type: {p.rule_type} • Category: {p.category} • v{p.version}
-                </p>
-              </div>
 
               {isFinance && (
                 <button
@@ -217,6 +229,7 @@ export default function PoliciesPage() {
           </div>
         ))}
       </div>
+      )}
 
       {/* Create Policy Modal */}
       <CreatePolicyModal

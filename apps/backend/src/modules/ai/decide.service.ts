@@ -4,6 +4,7 @@ import type { Repositories } from "../../plugins/db";
 import type { ServerConfig } from "@repo/config";
 import type { RiskType } from "@repo/domain";
 import { getLogger, recordLlmCall, recordFallback } from "@repo/observability";
+import { getDemoInjections } from "../demo/injections";
 import {
   CaseNotFoundError,
   ConflictError,
@@ -207,13 +208,18 @@ export class AiDecideService {
     const prompt = getPrompt(recoveryCase.riskType as RiskType);
 
     // 7. Setup LLM Client and Structured Transport
+    const demoInjections = await getDemoInjections(redis ?? null, config.demo);
+    const effectiveSimulateLlmFailure =
+      demoInjections.injections.simulate_llm_failure ??
+      config.demo.simulateLlmFailure;
+
     const llmClient = new LlmClient({
       baseUrl: config.ai.baseUrl,
       apiKey: config.ai.apiKey,
       model: configuredModel,
       timeoutMs: config.ai.timeoutMs,
       maxRetries: config.ai.maxRetries,
-      simulateLlmFailure: config.demo.simulateLlmFailure,
+      simulateLlmFailure: effectiveSimulateLlmFailure,
       circuitBreaker: defaultCircuitBreaker,
     });
 

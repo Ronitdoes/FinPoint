@@ -20,10 +20,10 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 ## Current position
 
 ```text
-Last updated : 2026-08-29   (update on every change)
-Current step : s-29 Product: Demo Mode, Simulation Endpoints & Seed Data — NOT STARTED
-Next up      : s-30 Verification: Security Hardening & Compliance Verification — NOT STARTED
-Overall      : 28 / 35 steps complete
+Last updated : 2026-09-02   (update on every change)
+Current step : s-30 Verification: Security Hardening & Compliance Verification — NOT STARTED
+Next up      : s-31 Resilience, Chaos & Concurrency Testing — NOT STARTED
+Overall      : 29 / 35 steps complete
 ```
 
 ---
@@ -39,7 +39,7 @@ Overall      : 28 / 35 steps complete
 | Intelligence (AI decision, governance, policy) | s-14–s-16 | 3 / 3 | DONE |
 | Execution (orchestration, adapters, Temporal, approvals) | s-17–s-21 | 5 / 5 | DONE |
 | Workflows (payment, checkout, invoice) | s-22–s-24 | 3 / 3 | DONE |
-| Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 4 / 5 | IN PROGRESS |
+| Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 5 / 5 | DONE |
 | Verification & ship (security, chaos, e2e, deploy, ops, release) | s-30–s-35 | 0 / 6 | NOT STARTED |
 
 ---
@@ -74,7 +74,7 @@ Overall      : 28 / 35 steps complete
 | s-26 | Outcomes, Attribution & Cost Model | DONE | 2026-08-29 | 2026-08-29 | `OutcomeRecordService` (authoritative persistence, idempotent no-op, competing payment warnings, guarded case transition to `RECOVERED`, cost rollup `SUM(recovery_cost_entries)`), `AttributionSweeper` (hourly sweeper evaluating 4 strict conditions on closed/stopped cases), `CostCompletenessJob` (daily action cost gap audit with messaging unit pricing table 50p/5p/25p), REST APIs `GET /outcomes` (SQL aggregates + cursor pagination) & `GET /cases/:id/outcome` with RBAC, `docs/attribution.md`, 8 integration tests green |
 | s-27 | Analytics Service & APIs | DONE | 2026-08-29 | 2026-08-29 | PostgreSQL `analytics` schema and 6 views (`v_recovery_summary`, `v_recovery_timeseries`, `v_intervention_performance`, `v_funnel`, `v_risk_mix`, `v_ai_performance`), migration `0009_wild_bastion.sql` generated via `db:generate` and applied via `db:migrate`, analytics repo with financial/operational aggregations, 6 REST endpoints (`/summary`, `/recovery`, `/interventions`, `/funnel`, `/risk-mix`, `/ai`), range validation (`<= 370d`, `from <= to` -> 400), RBAC cost-field gating + `x-cost-data-redacted` header, Redis 30s single-flight caching with stampede guard, outcome record cache invalidation, 15 golden snapshot integration tests passing |
 | s-28 | Dashboard UI | DONE | 2026-08-29 | 2026-08-29 | Complete Next.js financial control plane dashboard in `apps/frontend` (Next 16, Tailwind, Lucide, Recharts); authenticated shell + `rr_session` cookie middleware guard; 8 full pages (`/dashboard`, `/cases`, `/cases/[id]`, `/risk`, `/recovery`, `/policies`, `/audit`, `/tasks`, `/settings`) + `/login`; case timeline with 30s auto-refresh polling & `?demo=1` screen-share scaling; minor unit money formatting with ₹ Lakh/Crore grouping; 5-stage funnel chart; intervention success bars; interactive approve/reject modals (mandatory notes on reject); client RBAC matrix mirroring server; 19 frontend unit/component tests green; next build static/dynamic export verified |
-| s-29 | Demo Mode, Simulation Endpoints & Seed Data | NOT STARTED | | | |
+| s-29 | Demo Mode, Simulation Endpoints & Seed Data | DONE | 2026-09-02 | 2026-09-02 | Simulation endpoints (/demo/payment-fail, /demo/payment-succeed, /demo/checkout-abandon, /demo/invoice-overdue), Redis failure injection store /demo/injections with 15m sliding TTL, dynamic LLM failure injection override without restart, deterministic seed factories (1k customers, 2.5k payments, 400 checkouts, 180 invoices, 100 cases, 45 outcomes, 90 cost entries), pristine pre-trigger Scenarios A/B/C fixtures, safe tenant-scoped reset with strict tenant slug validation, 9-scene live demo script in docs/demo-script.md, production route omission & 410 guard, demo scope guard, 15 integration tests green |
 | s-30 | Security Hardening & Compliance Verification | NOT STARTED | | | |
 | s-31 | Resilience, Chaos & Concurrency Testing | NOT STARTED | | | |
 | s-32 | End-to-End Acceptance Tests | NOT STARTED | | | |
@@ -90,9 +90,9 @@ Tick when the gate becomes verifiable (these are the moments the system changes 
 
 - [x] **G1 — Data layer standing** (after s-06): migrations apply from empty DB; repositories race-tested
 - [x] **G2 — Events flow** (after s-11): signed webhook → dedupe → bus → consumer, proven under both bus drivers
-- [ ] **G3 — Loop closed headlessly** (after s-17): event produces an IN_PROGRESS case via risk→AI→policy without human touch
-- [ ] **G4 — Durable execution live** (after s-24): all three workflows pass their harness suites incl. approval paths
-- [ ] **G5 — Demoable product** (after s-29): fresh clone → compose → seed → dashboard populated → simulator drives real recovery end-to-end
+- [x] **G3 — Loop closed headlessly** (after s-17): event produces an IN_PROGRESS case via risk→AI→policy without human touch
+- [x] **G4 — Durable execution live** (after s-24): all three workflows pass their harness suites incl. approval paths
+- [x] **G5 — Demoable product** (after s-29): fresh clone → compose → seed → dashboard populated → simulator drives real recovery end-to-end
 - [ ] **G6 — Release gate green** (after s-32): full E2E journey + acceptance blocks pass against composed stack
 - [ ] **G7 — Shipped** (after s-35): v0.1.0 tagged, deployed, smoke green, demo rehearsed
 
@@ -149,4 +149,5 @@ One line per completed step or notable event. Format: `- YYYY-MM-DD | s-XX | sho
 2026-08-29 | s-26 | Outcomes, Attribution & Cost Model complete: OutcomeRecordService (authoritative persistence, idempotent no-op, competing payment warnings, guarded case transition to RECOVERED, cost rollup SUM(recovery_cost_entries)), AttributionSweeper (hourly sweeper evaluating 4 strict conditions on closed/stopped cases), CostCompletenessJob (daily action cost gap audit with messaging unit pricing table 50p/5p/25p), REST APIs GET /outcomes (SQL aggregates + cursor pagination) & GET /cases/:id/outcome with RBAC, docs/attribution.md, Prometheus metrics | bun run check-types green (12/12 pkgs); bun run lint green (2/2 pkgs); bunx vitest run outcomes-attribution-integration green (8/8 tests); bun run check-docs green
 2026-08-29 | s-27 | Analytics Service & APIs complete: PostgreSQL analytics schema and 6 SQL views (v_recovery_summary, v_recovery_timeseries, v_intervention_performance, v_funnel, v_risk_mix, v_ai_performance), migration 0009_wild_bastion.sql generated via db:generate & applied cleanly via db:migrate, packages/db analytics repository with financial/operational aggregations, 6 REST endpoints (/summary, /recovery, /interventions, /funnel, /risk-mix, /ai), range validation (<= 370d, from <= to -> 400), RBAC cost-field gating + x-cost-data-redacted header, Redis 30s single-flight caching with stampede guard, outcome record cache invalidation, 15 golden snapshot integration tests | bun run check-types green (12/12 pkgs); bun run lint green (2/2 pkgs); bun run test green (872/872 tests across 62 files incl. 15 Step 27 tests); bun run check-docs green; bun run db:migrate:check green (10/10 applied)
 2026-08-29 | s-28 | Dashboard UI (Next.js Financial Control Plane) complete: apps/frontend operator dashboard with Next.js 16 App Router, authenticated shell, rr_session cookie middleware guard, 8 pages (/dashboard, /cases, /cases/[id], /risk, /recovery, /policies, /audit, /tasks, /settings) + /login, case timeline with 30s auto-refresh polling and ?demo=1 scaling, minor unit Indian money formatting (₹ Lakh/Crore grouping), Recharts visualizations, client RBAC matrix mirroring server, overview cards reconciliation fixture snapshot test | bun run check-types green (12/12 pkgs); bun run lint green (2/2 pkgs, 0 errors, 0 warnings); bun vitest run apps/frontend green (7 files, 23 tests); bun run check-docs green (31 links OK); next build production bundle compiled cleanly (13 routes)
+2026-09-02 | s-29 | Demo Mode, Simulation Endpoints & Seed Data complete: simulation service & endpoints (/demo/payment-fail, /demo/payment-succeed, /demo/checkout-abandon, /demo/invoice-overdue) driving full production pipelines via signed HMAC loopbacks and Temporal signals; Redis injection switches (/demo/injections) with 15m sliding TTL; dynamic LLM failure injection in AiDecideService; deterministic Mulberry32 seed factories generating full volume per Spec 01 §24 (1,000 customers, 2,500 payments, 400 checkouts, 180 invoices, 100 cases with outcomes and costs) with SHA-256 content hash determinism; pristine pre-trigger Scenarios A (CUS-001), B (CUS-002), C (CUS-003) fixtures; safe tenant-scoped reset guarding non-demo tenants; 9-scene live demonstration walkthrough script in docs/demo-script.md; production omit guard (404) and runtime guard (410 MOCK_DISABLED); Milestone Gate G5 unlocked | bun run check-types green (12/12 pkgs); bun run lint green (2/2 pkgs); bunx vitest run demo-simulation.test.ts green (15/15 tests); bun run db:seed --reset verified; bun run check-docs green
 ```

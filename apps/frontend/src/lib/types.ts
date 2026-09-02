@@ -227,9 +227,10 @@ export interface HumanTask {
 export interface PolicyRule {
   id: string;
   tenant_id: string;
+  code?: string;
   name: string;
   description: string;
-  category: "SPENDING" | "COMMUNICATION" | "APPROVAL" | "STOP_CONDITION";
+  category: "SPENDING" | "COMMUNICATION" | "APPROVAL" | "STOP_CONDITION" | string;
   rule_type: string;
   parameters: Record<string, unknown>;
   enabled: boolean;

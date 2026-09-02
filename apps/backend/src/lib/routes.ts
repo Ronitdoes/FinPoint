@@ -10,7 +10,8 @@ import { customersRoutes } from "../modules/customers/routes";
 import { aiRoutes } from "../modules/ai/routes";
 import { policyRoutes, policiesCrudRoutes } from "../modules/policy/routes";
 import { caseRoutes } from "../modules/cases/routes";
-import { paymentRoutes, demoMockPaymentRoutes } from "../modules/payments/routes";
+import { paymentRoutes } from "../modules/payments/routes";
+import { demoRoutes } from "../modules/demo/routes";
 import { messagingRoutes } from "../modules/messaging/routes";
 import { humanTasksRoutes } from "../modules/human-tasks/routes";
 import { promisesToPayRoutes } from "../modules/promises-to-pay/routes";
@@ -95,7 +96,7 @@ export const routeModules: RouteModuleEntry[] = [
   },
   {
     prefix: "/demo",
-    plugin: demoMockPaymentRoutes,
+    plugin: demoRoutes,
   },
   {
     prefix: "/messages",
@@ -112,7 +113,15 @@ export const routeModules: RouteModuleEntry[] = [
 ];
 
 export async function registerRouteModules(app: FastifyInstance): Promise<void> {
+  const isProdWithoutMock =
+    app.config.app.env === "production" &&
+    app.config.demo?.mockProviders === false;
+
   for (const mod of routeModules) {
+    if (mod.prefix === "/demo" && isProdWithoutMock) {
+      app.log.info("Demo routes disabled and omitted in production without mock providers");
+      continue;
+    }
     await app.register(mod.plugin, {
       prefix: mod.prefix,
       ...mod.options,

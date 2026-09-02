@@ -142,8 +142,8 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Analytics Service & Views (PostgreSQL analytics schema and 6 views v_recovery_summary, v_recovery_timeseries, v_intervention_performance, v_funnel, v_risk_mix, v_ai_performance, repository aggregations, 6 REST endpoints under /analytics, Redis 30s single-flight caching with stampede protection, cache bust on outcome record, <= 370d range validation, and RBAC cost-field gating) | spec 00 §6, §9; spec 01 §25; spec 02 §13; spec 03 §7 | s-27 ✅ (packages/db schema views & repo, apps/backend analytics module & cache, 15 integration tests) |
 | Local infrastructure stack (postgres, redis, temporal, temporal-ui, redpanda, redpanda-console) with healthchecks + named volumes | spec 01 §4 | s-02 |
 | `.env.example` + typed/validated config (`@repo/config`, fail-fast, frozen) consumed by apps/services instead of raw `process.env` | spec 01 §3, §4; CONVENTIONS §1, §12 | s-02 |
-| Mock-mode & failure-injection env switches declared (`MOCK_PROVIDERS`, `SIMULATE_*`) | spec 03 §2, §9 | s-02 (declaration only; adapters honor them s-18/s-19/s-29) |
-| Demo narrative & checklist readiness | spec 01 §27, spec 03 §12 | s-29 seed/demo mode, s-35 rehearsal |
+| Demo narrative & checklist readiness | spec 01 §27, spec 03 §12 | s-29 ✅ seed/demo mode, s-35 rehearsal |
+| Demo Mode, Simulation Endpoints & Seed Data (simulation endpoints /demo/payment-fail, /demo/payment-succeed, /demo/checkout-abandon, /demo/invoice-overdue, Redis failure injection store /demo/injections with 15m sliding TTL, dynamic LLM failure injection, deterministic seed factories, pristine pre-trigger Scenarios A/B/C fixtures, safe tenant-scoped reset, 9-scene live demo walkthrough script in docs/demo-script.md, production route omission & 410 guard, demo scope guard) | spec 01 §24, §27; spec 03 §2, §9, §12 | s-29 ✅ (@repo/db/seeds, apps/backend demo module, docs/demo-script.md, 15 integration tests) |
 
 ## 7. Explicitly out of scope for the MVP
 

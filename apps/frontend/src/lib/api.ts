@@ -141,18 +141,86 @@ export const api = {
 
   // Analytics
   analytics: {
-    getSummary: (params?: { from?: string; to?: string }) =>
-      apiClient<AnalyticsSummary>("/analytics/summary", { params }),
-    getRecoveryTimeseries: (params?: { from?: string; to?: string; bucket?: "day" | "week" }) =>
-      apiClient<{ points: RecoveryTimeseriesPoint[] }>("/analytics/recovery", { params }),
-    getFunnel: (params?: { from?: string; to?: string }) =>
-      apiClient<{ stages: FunnelStage[] }>("/analytics/funnel", { params }),
+    getSummary: async (params?: { from?: string; to?: string }): Promise<AnalyticsSummary> => {
+      const raw = await apiClient<any>("/analytics/summary", { params });
+      if (!raw) return raw;
+      if (raw.financial || raw.operational) {
+        return {
+          revenueAtRisk: raw.financial?.revenue_at_risk_minor?.toString() ?? "0",
+          revenueRecovered: raw.financial?.revenue_recovered_minor?.toString() ?? "0",
+          recoveryRate: raw.financial?.recovery_rate_bps != null ? raw.financial.recovery_rate_bps / 100 : 0,
+          recoveryCost: raw.financial?.recovery_cost_minor?.toString() ?? null,
+          netRecovered: raw.financial?.net_recovered_minor?.toString() ?? null,
+          activeCases: raw.operational?.active_cases ?? 0,
+          escalatedCases: raw.operational?.escalations ?? 0,
+          recoveredCases: raw.operational?.recovered_cases ?? 0,
+          stoppedCases: raw.operational?.stopped_cases ?? 0,
+          failedCases: raw.operational?.failed_cases ?? 0,
+          timeRange: {
+            from: params?.from ?? "",
+            to: params?.to ?? "",
+          },
+        };
+      }
+      return raw as AnalyticsSummary;
+    },
+    getRecoveryTimeseries: async (params?: { from?: string; to?: string; bucket?: "day" | "week" }): Promise<{ points: RecoveryTimeseriesPoint[] }> => {
+      const raw = await apiClient<any>("/analytics/recovery", { params });
+      if (!raw?.points) return { points: [] };
+      const points = raw.points.map((p: any) => ({
+        bucket: p.bucket || p.date || "",
+        revenueAtRisk: (p.revenueAtRisk ?? p.at_risk_minor ?? "0").toString(),
+        revenueRecovered: (p.revenueRecovered ?? p.recovered_minor ?? "0").toString(),
+        casesCount: p.casesCount ?? 0,
+        recoveredCasesCount: p.recoveredCasesCount ?? 0,
+      }));
+      return { points };
+    },
+    getFunnel: async (params?: { from?: string; to?: string }): Promise<{ stages: FunnelStage[] }> => {
+      const raw = await apiClient<any>("/analytics/funnel", { params });
+      if (!raw?.stages) return { stages: [] };
+      const stages = raw.stages.map((s: any) => ({
+        stage: s.stage,
+        count: s.count,
+        value: (s.value ?? s.amount_minor ?? "0").toString(),
+        conversionRate: s.conversionRate ?? (s.conversion_rate_bps != null ? s.conversion_rate_bps / 100 : 0),
+      }));
+      return { stages };
+    },
     getInterventions: (params?: { from?: string; to?: string }) =>
       apiClient<{ stats: InterventionStat[] }>("/analytics/interventions", { params }),
-    getRiskMix: (params?: { from?: string; to?: string }) =>
-      apiClient<{ mix: RiskMixItem[] }>("/analytics/risk-mix", { params }),
-    getAiPerformance: (params?: { from?: string; to?: string }) =>
-      apiClient<AiPerformanceMetrics>("/analytics/ai", { params }),
+    getRiskMix: async (params?: { from?: string; to?: string }): Promise<{ mix: RiskMixItem[] }> => {
+      const raw = await apiClient<any>("/analytics/risk-mix", { params });
+      const items = raw?.mix || raw?.items || [];
+      const mix = items.map((m: any) => ({
+        riskType: m.riskType || m.risk_type,
+        band: m.band || m.risk_band,
+        count: m.count,
+        value: (m.value ?? m.amount_at_risk_minor ?? "0").toString(),
+      }));
+      return { mix };
+    },
+    getAiPerformance: async (params?: { from?: string; to?: string }): Promise<AiPerformanceMetrics> => {
+      const raw = await apiClient<any>("/analytics/ai", { params });
+      if (!raw) return raw;
+      if (raw.decisions !== undefined || raw.autonomy_rate_bps !== undefined) {
+        const autonomyRate = raw.autonomyRate ?? (
+          raw.decisions > 0
+            ? Math.round(((raw.decisions - (raw.policy_rejections || 0) - (raw.approvals_required || 0)) / raw.decisions) * 1000) / 10
+            : 100
+        );
+        return {
+          totalRecommendations: raw.totalRecommendations ?? raw.decisions ?? 0,
+          policyRejections: raw.policyRejections ?? raw.policy_rejections ?? 0,
+          humanApprovals: raw.humanApprovals ?? raw.approvals_required ?? 0,
+          averageDecisionLatencyMs: raw.averageDecisionLatencyMs ?? raw.avg_decision_ms ?? 0,
+          fallbackCount: raw.fallbackCount ?? 0,
+          autonomyRate: typeof raw.autonomyRate === "number" ? raw.autonomyRate : Math.max(0, autonomyRate),
+          aiCostPerRecoveredRupee: raw.aiCostPerRecoveredRupee ?? (raw.cost_per_recovered_bps != null ? raw.cost_per_recovered_bps / 10000 : null),
+        };
+      }
+      return raw as AiPerformanceMetrics;
+    },
   },
 
   // Cases
@@ -229,7 +297,24 @@ export const api = {
 
   // Policies
   policies: {
-    list: () => apiClient<{ policies: PolicyRule[] }>("/policies"),
+    list: async (): Promise<{ policies: PolicyRule[] }> => {
+      const res = await apiClient<{ policies: any[] }>("/policies");
+      const policies = (res.policies || []).map((p) => ({
+        id: p.id,
+        tenant_id: p.tenantId || p.tenant_id,
+        code: p.code,
+        name: p.name,
+        description: p.description,
+        category: p.category || (p.code?.startsWith("POL-EM") || p.code?.startsWith("POL-WA") ? "COMMUNICATION" : p.code?.includes("APPROVAL") || p.code?.includes("HIGHVALUE") ? "APPROVAL" : p.code?.includes("DISCOUNT") ? "SPENDING" : "STOP_CONDITION"),
+        rule_type: p.rule_type || p.ruleKind || "REJECT",
+        parameters: p.parameters || p.definition || {},
+        enabled: p.enabled,
+        version: p.version || p.activeVersion || 1,
+        created_at: p.createdAt || p.created_at,
+        updated_at: p.updatedAt || p.updated_at,
+      }));
+      return { policies };
+    },
     create: (body: {
       name: string;
       description?: string;

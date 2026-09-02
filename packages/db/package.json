@@ -10,12 +10,14 @@
     "./schema": "./src/schema/index.ts",
     "./client": "./src/client.ts",
     "./migrate": "./src/migrate.ts",
-    "./repositories": "./src/repositories/index.ts"
+    "./repositories": "./src/repositories/index.ts",
+    "./seeds": "./src/seeds/demo.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun run src/migrate.ts",
     "db:migrate:check": "bun run src/migrate.ts --check",
+    "db:seed": "bun run src/seeds/demo.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "check-types": "tsc --noEmit"

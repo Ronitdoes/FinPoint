@@ -163,24 +163,24 @@ export default function DashboardPage() {
       <div ref={metricsRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="Revenue at Risk"
-          value={formatMoney(summary?.revenueAtRisk ?? "128000000", "INR", { compact: true })}
-          subValue={formatMoney(summary?.revenueAtRisk ?? "128000000", "INR")}
+          value={formatMoney(summary?.revenueAtRisk ?? "0", "INR", { compact: true })}
+          subValue={formatMoney(summary?.revenueAtRisk ?? "0", "INR")}
           icon={<AlertTriangle className="h-4 w-4" />}
           variant="warning"
         />
 
         <MetricCard
           title="Recovered Revenue"
-          value={formatMoney(summary?.revenueRecovered ?? "84000000", "INR", { compact: true })}
-          subValue={formatMoney(summary?.revenueRecovered ?? "84000000", "INR")}
+          value={formatMoney(summary?.revenueRecovered ?? "0", "INR", { compact: true })}
+          subValue={formatMoney(summary?.revenueRecovered ?? "0", "INR")}
           icon={<TrendingUp className="h-4 w-4" />}
           variant="success"
         />
 
         <MetricCard
           title="Recovery Rate"
-          value={formatPercent(summary?.recoveryRate ?? 65.4)}
-          subValue={`${summary?.recoveredCases ?? 64} cases recovered`}
+          value={formatPercent(summary?.recoveryRate ?? 0)}
+          subValue={`${summary?.recoveredCases ?? 0} cases recovered`}
           icon={<DollarSign className="h-4 w-4" />}
           variant="info"
         />
@@ -221,7 +221,7 @@ export default function DashboardPage() {
 
         <MetricCard
           title="Active Cases"
-          value={(summary?.activeCases ?? 182).toLocaleString()}
+          value={(summary?.activeCases ?? 0).toLocaleString()}
           subValue="In recovery pipeline"
           icon={<Activity className="h-4 w-4" />}
           variant="info"
@@ -229,7 +229,7 @@ export default function DashboardPage() {
 
         <MetricCard
           title="Escalations"
-          value={(summary?.escalatedCases ?? 21).toLocaleString()}
+          value={(summary?.escalatedCases ?? 0).toLocaleString()}
           subValue="Requiring human action"
           icon={<AlertTriangle className="h-4 w-4" />}
           variant={summary?.escalatedCases && summary.escalatedCases > 0 ? "danger" : "default"}
@@ -237,7 +237,7 @@ export default function DashboardPage() {
 
         <MetricCard
           title="Autonomy Rate"
-          value={formatPercent(aiMetrics?.autonomyRate ?? 88.5)}
+          value={formatPercent(aiMetrics?.autonomyRate ?? 0)}
           subValue="Zero-touch recoveries"
           icon={<Sparkles className="h-4 w-4" />}
           variant="success"
@@ -295,19 +295,19 @@ export default function DashboardPage() {
         stats={[
           {
             label: "AI Recommendations",
-            value: (aiMetrics?.totalRecommendations ?? 1284).toLocaleString(),
+            value: (aiMetrics?.totalRecommendations ?? 0).toLocaleString(),
             subtext: "Structured action plans generated",
           },
           {
             label: "Policy Rejections",
-            value: (aiMetrics?.policyRejections ?? 86).toLocaleString(),
+            value: (aiMetrics?.policyRejections ?? 0).toLocaleString(),
             subtext: "Blocked by deterministic policy guardrails",
             badge: "Enforced",
             badgeVariant: "danger",
           },
           {
             label: "Human Approvals",
-            value: (aiMetrics?.humanApprovals ?? 31).toLocaleString(),
+            value: (aiMetrics?.humanApprovals ?? 0).toLocaleString(),
             subtext: "High-value approvals confirmed",
             badge: "Audited",
             badgeVariant: "info",
@@ -316,7 +316,7 @@ export default function DashboardPage() {
             label: "Avg Decision Latency",
             value: aiMetrics?.averageDecisionLatencyMs
               ? `${(aiMetrics.averageDecisionLatencyMs / 1000).toFixed(2)}s`
-              : "1.8s",
+              : "—",
             subtext: "Structured inference + policy evaluation",
           },
         ]}

@@ -31,6 +31,15 @@ export const adminApiKeysRoutes: FastifyPluginAsync = async (
         throw new ValidationError("Invalid create API key payload", parseResult.error.issues);
       }
 
+      if (
+        parseResult.data.scopes?.includes("demo") &&
+        fastify.config?.demo?.mockProviders === false
+      ) {
+        throw new ValidationError(
+          "Demo API key scope cannot be granted when mock providers are disabled (MOCK_PROVIDERS=false)",
+        );
+      }
+
       const apiKey = await createTenantApiKey({
         db: fastify.db,
         repos: fastify.repos,

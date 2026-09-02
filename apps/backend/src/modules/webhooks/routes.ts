@@ -4,6 +4,8 @@ import { NotAcceptableError } from "../../lib/errors";
 import { whatsappWebhookRoutes } from "../messaging/webhooks/whatsapp.routes";
 import { emailWebhookRoutes } from "../messaging/webhooks/email.routes";
 
+import { DEV_MOCK_STRIPE_WEBHOOK_SECRET, DEV_MOCK_RAZORPAY_WEBHOOK_SECRET } from "../demo/simulator.service";
+
 export interface WebhookRouteOptions {
   stripeWebhookSecret?: string | null;
   razorpayWebhookSecret?: string | null;
@@ -52,10 +54,18 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
       const rawBody = getRawBody(request);
       const query = request.query as Record<string, string | undefined>;
 
-      const stripeSecret =
-        opts.stripeWebhookSecret ??
-        (fastify as any).config?.payments?.stripeWebhookSecret ??
+      const isMockMode = (fastify as any).config?.demo?.mockProviders === true;
+      const rawStripeSecret =
+        opts.stripeWebhookSecret ||
+        (fastify as any).config?.payments?.stripeWebhookSecret ||
         process.env.STRIPE_WEBHOOK_SECRET;
+
+      const stripeSecret =
+        rawStripeSecret && rawStripeSecret.trim() !== ""
+          ? rawStripeSecret
+          : isMockMode
+            ? DEV_MOCK_STRIPE_WEBHOOK_SECRET
+            : undefined;
 
       const result = await processInboundWebhook(
         {
@@ -95,10 +105,18 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
       const rawBody = getRawBody(request);
       const query = request.query as Record<string, string | undefined>;
 
-      const razorpaySecret =
-        opts.razorpayWebhookSecret ??
-        (fastify as any).config?.payments?.razorpayWebhookSecret ??
+      const isMockMode = (fastify as any).config?.demo?.mockProviders === true;
+      const rawRazorpaySecret =
+        opts.razorpayWebhookSecret ||
+        (fastify as any).config?.payments?.razorpayWebhookSecret ||
         process.env.RAZORPAY_WEBHOOK_SECRET;
+
+      const razorpaySecret =
+        rawRazorpaySecret && rawRazorpaySecret.trim() !== ""
+          ? rawRazorpaySecret
+          : isMockMode
+            ? DEV_MOCK_RAZORPAY_WEBHOOK_SECRET
+            : undefined;
 
       const result = await processInboundWebhook(
         {
