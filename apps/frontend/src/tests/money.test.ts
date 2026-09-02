@@ -16,9 +16,11 @@ describe("Frontend Money Formatting (Spec 00 §6, Spec 03 §7, ADR-009)", () => 
   it("formats executive compact notation (Lakh and Crore grouping)", () => {
     // ₹12.8L (128000000 minor units = 12.8 Lakh)
     expect(formatMoney(128000000, "INR", { compact: true })).toBe("₹12.8L");
+    expect(formatCompactNumber(1280000, "INR")).toBe("12.8L");
 
     // ₹8.4L (84000000 minor units)
     expect(formatMoney(84000000, "INR", { compact: true })).toBe("₹8.4L");
+    expect(formatCompactNumber(840000, "INR")).toBe("8.4L");
 
     // ₹72K (7200000 minor units)
     expect(formatMoney(7200000, "INR", { compact: true })).toBe("₹72K");

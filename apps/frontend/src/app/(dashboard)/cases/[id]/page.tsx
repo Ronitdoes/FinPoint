@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useRef, use } from "react";
+import React, { useEffect, useState, useRef, use, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Pause,
@@ -36,7 +35,6 @@ export default function CaseDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const router = useRouter();
 
   const [caseDetail, setCaseDetail] = useState<CanonicalCaseDetail | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthMeResponse | null>(null);
@@ -48,7 +46,7 @@ export default function CaseDetailPage({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const fetchCaseDetail = async () => {
+  const fetchCaseDetail = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -58,16 +56,17 @@ export default function CaseDetailPage({
       ]);
       setCaseDetail(detail);
       if (me) setCurrentUser(me);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load case detail");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load case detail";
+      setError(message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     fetchCaseDetail();
-  }, [id]);
+  }, [fetchCaseDetail]);
 
   useGSAP(
     () => {

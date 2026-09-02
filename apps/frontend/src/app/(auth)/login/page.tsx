@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Shield, Sparkles, Lock, Mail, ArrowRight } from "lucide-react";
+import { Shield, Lock, Mail, ArrowRight } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Button } from "../../../components/ui/Button";
@@ -57,8 +57,9 @@ function LoginForm() {
       await api.auth.login({ email, password });
       router.push(from);
       router.refresh();
-    } catch (err: any) {
-      setError(err?.message || "Invalid email or password");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Invalid email or password";
+      setError(message);
     } finally {
       setLoading(false);
     }

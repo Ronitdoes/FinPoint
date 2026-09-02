@@ -19,6 +19,50 @@ export interface RecoveryTimeseriesChartProps {
   height?: number;
 }
 
+interface TooltipPayloadItem {
+  value: number;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayloadItem[];
+  label?: string;
+  currency?: string;
+}
+
+function CustomTooltip({ active, payload, label, currency = "INR" }: CustomTooltipProps) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="rounded-xl border border-white/[0.1] bg-[#0c1018]/95 p-3 shadow-2xl backdrop-blur-xl text-xs">
+        <p className="font-semibold text-slate-300 mb-2 border-b border-white/[0.06] pb-1 text-[11px]">
+          {label}
+        </p>
+        <div className="space-y-1.5 font-mono text-[11px]">
+          <div className="flex items-center justify-between gap-4 text-cyan-400">
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+              At Risk:
+            </span>
+            <span className="font-bold tabular-nums">
+              {formatMoney((payload[0]?.value ?? 0) * 100, currency)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-4 text-emerald-400">
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              Recovered:
+            </span>
+            <span className="font-bold tabular-nums">
+              {formatMoney((payload[1]?.value ?? 0) * 100, currency)}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
 export function RecoveryTimeseriesChart({
   data,
   currency = "INR",
@@ -45,9 +89,9 @@ export function RecoveryTimeseriesChart({
     return (
       <div
         style={{ height }}
-        className="flex items-center justify-center rounded-2xl border border-dashed border-white/[0.08] bg-[#090c13]/30 text-xs text-slate-500"
+        className="w-full rounded-2xl bg-[#090c13]/30 flex flex-col items-center justify-center text-xs text-slate-500 border border-white/[0.04]"
       >
-        No timeseries data available for selected period
+        <p>No timeseries data available for this range</p>
       </div>
     );
   }
@@ -63,39 +107,6 @@ export function RecoveryTimeseriesChart({
       recoveredCases: point.recoveredCasesCount,
     };
   });
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="rounded-xl border border-white/[0.1] bg-[#0c1018]/95 p-3 shadow-2xl backdrop-blur-xl text-xs">
-          <p className="font-semibold text-slate-300 mb-2 border-b border-white/[0.06] pb-1 text-[11px]">
-            {label}
-          </p>
-          <div className="space-y-1.5 font-mono text-[11px]">
-            <div className="flex items-center justify-between gap-4 text-cyan-400">
-              <span className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-                At Risk:
-              </span>
-              <span className="font-bold tabular-nums">
-                {formatMoney(payload[0]?.value * 100, currency)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-4 text-emerald-400">
-              <span className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Recovered:
-              </span>
-              <span className="font-bold tabular-nums">
-                {formatMoney(payload[1]?.value * 100, currency)}
-              </span>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <div style={{ width: "100%", height }}>
@@ -129,7 +140,7 @@ export function RecoveryTimeseriesChart({
             axisLine={{ stroke: "#1e293b" }}
             tickFormatter={(val) => formatMoney(val * 100, currency, { compact: true })}
           />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip currency={currency} />} />
           <Area
             type="monotone"
             dataKey="atRisk"

@@ -85,8 +85,9 @@ export default function PoliciesPage() {
     try {
       await api.policies.update(policy.id, { enabled: !policy.enabled });
       await fetchPolicies();
-    } catch (err: any) {
-      alert(err?.message || "Failed to update policy");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to update policy";
+      alert(message);
     }
   };
 

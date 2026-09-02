@@ -45,8 +45,9 @@ export function CreateApiKeyModal({
 
       setRawKey(res.rawKey);
       onSuccess();
-    } catch (err: any) {
-      setError(err?.message || "Failed to create API key");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create API key";
+      setError(message);
     } finally {
       setLoading(false);
     }

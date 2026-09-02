@@ -18,7 +18,6 @@ export interface CaseActionModalProps {
 export function CaseControlModal({
   isOpen,
   onClose,
-  caseId,
   caseNumber,
   action,
   onConfirm,
@@ -45,8 +44,9 @@ export function CaseControlModal({
       }
       setInput("");
       onClose();
-    } catch (err: any) {
-      setError(err?.message || `Failed to ${action.toLowerCase()} case`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : `Failed to ${action.toLowerCase()} case`;
+      setError(message);
     } finally {
       setLoading(false);
     }

@@ -80,12 +80,19 @@ export function PolicyVerdictCard({ policyEvaluation }: PolicyVerdictCardProps) 
               Policy Violations / Rejection Reasons
             </h4>
             <ul className="space-y-1 text-rose-200 font-mono text-[11px]">
-              {policyEvaluation.rejections.map((rej: any, idx) => (
-                <li key={idx} className="flex items-start gap-2">
-                  <span className="text-rose-400">•</span>
-                  <span>{typeof rej === "string" ? rej : rej.reason || JSON.stringify(rej)}</span>
-                </li>
-              ))}
+              {policyEvaluation.rejections.map((rej: unknown, idx) => {
+                const text = typeof rej === "string"
+                  ? rej
+                  : typeof rej === "object" && rej !== null && "reason" in rej && typeof (rej as { reason: unknown }).reason === "string"
+                    ? (rej as { reason: string }).reason
+                    : JSON.stringify(rej);
+                return (
+                  <li key={idx} className="flex items-start gap-2">
+                    <span className="text-rose-400">•</span>
+                    <span>{text}</span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
@@ -96,14 +103,19 @@ export function PolicyVerdictCard({ policyEvaluation }: PolicyVerdictCardProps) 
               Effective Actions Permitted to Execute
             </h4>
             <div className="space-y-1.5 font-mono text-xs">
-              {policyEvaluation.effective_actions.map((act: any, idx) => (
-                <div
-                  key={idx}
-                  className="rounded-xl border border-white/[0.06] bg-[#090c13]/70 px-3 py-2 text-slate-200"
-                >
-                  {act.type || JSON.stringify(act)}
-                </div>
-              ))}
+              {policyEvaluation.effective_actions.map((act: unknown, idx) => {
+                const label = typeof act === "object" && act !== null && "type" in act && typeof (act as { type: unknown }).type === "string"
+                  ? (act as { type: string }).type
+                  : JSON.stringify(act);
+                return (
+                  <div
+                    key={idx}
+                    className="rounded-xl border border-white/[0.06] bg-[#090c13]/70 px-3 py-2 text-slate-200"
+                  >
+                    {label}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

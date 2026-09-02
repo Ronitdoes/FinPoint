@@ -14,9 +14,6 @@ import {
   Settings,
   LogOut,
   Shield,
-  Activity,
-  User,
-  Sparkles,
 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";

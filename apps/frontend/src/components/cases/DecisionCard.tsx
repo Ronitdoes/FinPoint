@@ -2,6 +2,13 @@ import React from "react";
 import { Sparkles, BrainCircuit, ShieldAlert, CheckCircle2 } from "lucide-react";
 import { Badge } from "../ui/Badge";
 
+export interface RecommendedActionItem {
+  type?: string;
+  delay_hours?: number;
+  template?: string;
+  [key: string]: unknown;
+}
+
 export interface DecisionCardProps {
   decision: {
     id: string;
@@ -13,7 +20,7 @@ export interface DecisionCardProps {
       confidence: number;
       rationale?: string;
     };
-    recommended_actions: unknown[];
+    recommended_actions: (RecommendedActionItem | unknown)[];
     stop_conditions: string[];
     created_at: string;
   } | null;
@@ -98,27 +105,30 @@ export function DecisionCard({ decision }: DecisionCardProps) {
           </h4>
           <div className="space-y-2">
             {decision.recommended_actions && decision.recommended_actions.length > 0 ? (
-              decision.recommended_actions.map((act: any, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-start gap-2.5 rounded-xl border border-white/[0.06] bg-[#090c13]/70 p-2.5 font-mono text-xs"
-                >
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <span className="font-bold text-slate-200">{act.type || JSON.stringify(act)}</span>
+              decision.recommended_actions.map((rawAct, idx) => {
+                const act = (typeof rawAct === "object" && rawAct !== null ? rawAct : {}) as RecommendedActionItem;
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-start gap-2.5 rounded-xl border border-white/[0.06] bg-[#090c13]/70 p-2.5 font-mono text-xs"
+                  >
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="font-bold text-slate-200">{act.type || JSON.stringify(act)}</span>
                     {act.delay_hours && (
                       <span className="ml-2 text-slate-400 text-[11px]">
                         (delay: {act.delay_hours}h)
                       </span>
                     )}
-                    {act.template && (
-                      <span className="ml-2 text-cyan-400 text-[11px]">
-                        [template: {act.template}]
-                      </span>
-                    )}
+                      {act.template && (
+                        <span className="ml-2 text-cyan-400 text-[11px]">
+                          [template: {act.template}]
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <p className="text-slate-500 italic">No specific actions recommended</p>
             )}

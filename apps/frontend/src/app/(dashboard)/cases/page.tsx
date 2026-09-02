@@ -21,7 +21,19 @@ import type { CaseSummary } from "../../../lib/types";
 
 gsap.registerPlugin(useGSAP);
 
-const SAVED_FILTERS = [
+interface CaseFilterDef {
+  status?: string;
+  risk_type?: string;
+  min_amount?: number;
+}
+
+interface SavedFilterItem {
+  id: string;
+  label: string;
+  filter: CaseFilterDef;
+}
+
+const SAVED_FILTERS: SavedFilterItem[] = [
   { id: "all", label: "All Cases", filter: {} },
   { id: "active", label: "Active Pipelines", filter: { status: "IN_PROGRESS" } },
   { id: "escalated", label: "Escalated to Human", filter: { status: "ESCALATED" } },
@@ -111,11 +123,11 @@ export default function CasesPage() {
     { dependencies: [], scope: containerRef }
   );
 
-  const handleApplySavedFilter = (saved: (typeof SAVED_FILTERS)[0]) => {
+  const handleApplySavedFilter = (saved: SavedFilterItem) => {
     setActiveSavedFilter(saved.id);
-    setStatusFilter((saved.filter as any).status || "");
-    setRiskTypeFilter((saved.filter as any).risk_type || "");
-    setMinAmount((saved.filter as any).min_amount ? String((saved.filter as any).min_amount / 100) : "");
+    setStatusFilter(saved.filter.status || "");
+    setRiskTypeFilter(saved.filter.risk_type || "");
+    setMinAmount(saved.filter.min_amount ? String(saved.filter.min_amount / 100) : "");
   };
 
   return (

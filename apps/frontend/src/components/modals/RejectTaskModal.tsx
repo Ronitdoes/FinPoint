@@ -36,8 +36,9 @@ export function RejectTaskModal({
       await onConfirm(notes.trim());
       setNotes("");
       onClose();
-    } catch (err: any) {
-      setError(err?.message || "Failed to reject task");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to reject task";
+      setError(message);
     } finally {
       setLoading(false);
     }

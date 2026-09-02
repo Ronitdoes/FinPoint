@@ -204,18 +204,24 @@ Test suites located in `apps/frontend/src/tests/`:
    - Validates 5-stage funnel progression and intervention success math.
 6. `route-guard.test.ts`:
    - Validates protected vs public routes.
+7. `overview-cards.test.ts`:
+   - Reconciles all 7 overview cards (Revenue at Risk, Recovered Revenue, Recovery Rate, Net Recovered, Recovery Cost, Active Cases, Escalated Cases) exactly against Spec 00 §6 targets.
+   - Verifies net recovered arithmetic (`Recovered - Cost = Net`).
+   - Validates VIEWER role cost data redaction handling (`recoveryCost: null` -> `"—"`).
+   - Snapshot test of reconciled presentation data.
 
 **Test Run Output:**
 ```text
+ ✓  unit  apps/frontend/src/tests/timeline.test.ts (2 tests)
  ✓  unit  apps/frontend/src/tests/funnel.test.ts (2 tests)
  ✓  unit  apps/frontend/src/tests/route-guard.test.ts (2 tests)
- ✓  unit  apps/frontend/src/tests/timeline.test.ts (2 tests)
+ ✓  unit  apps/frontend/src/tests/rbac.test.ts (5 tests)
  ✓  unit  apps/frontend/src/tests/money.test.ts (5 tests)
  ✓  unit  apps/frontend/src/tests/decision-card.test.ts (3 tests)
- ✓  unit  apps/frontend/src/tests/rbac.test.ts (5 tests)
+ ✓  unit  apps/frontend/src/tests/overview-cards.test.ts (4 tests)
 
- Test Files  6 passed (6)
-      Tests  19 passed (19)
+ Test Files  7 passed (7)
+      Tests  23 passed (23)
 ```
 
 ---
@@ -226,7 +232,7 @@ Test suites located in `apps/frontend/src/tests/`:
 |---|---|---|
 | All eight pages + login implemented per spec layouts | ✅ COMPLIANT | Implemented `/login`, `/dashboard`, `/cases`, `/cases/[id]`, `/risk`, `/recovery`, `/policies`, `/audit`, `/tasks`, `/settings`. |
 | Timeline matches spec 00 §6 example content for seeded Scenario A case | ✅ COMPLIANT | `CaseTimeline.tsx` and `timeline.test.ts` verify full 9-step event flow. |
-| Overview cards reconcile exactly with `/analytics/summary` | ✅ COMPLIANT | Metric cards map to minor unit schema from Step 27. |
+| Overview cards reconcile exactly with `/analytics/summary` (fixture snapshot test) | ✅ COMPLIANT | `overview-cards.test.ts` validates exact card metrics reconciliation against `/analytics/summary` fixture and snapshot. |
 | Role gating matrix mirrored correctly; server remains authority | ✅ COMPLIANT | `rbac.ts` mirrors matrix and tested in `rbac.test.ts`. |
 | No dangerouslySetInnerHTML / no secrets in bundle | ✅ COMPLIANT | Grep audit confirmed 0 instances; only `NEXT_PUBLIC_API_URL` referenced. |
-| Lint/typecheck/build green; smoke test passes locally | ✅ COMPLIANT | `bun run check-types` green, `bun vitest run` green, `next build` production bundle compiled successfully. |
+| Lint/typecheck/build green; smoke test passes locally | ✅ COMPLIANT | `bun run check-types` green, `bun run lint` green (0 errors, 0 warnings), `bun vitest run apps/frontend` green (23/23 tests), `next build` production bundle compiled successfully (13 routes). |

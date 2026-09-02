@@ -16,6 +16,7 @@ import type {
   ApiKey,
   AuditLogItem,
   AiPerformanceMetrics,
+  UserRole,
 } from "./types";
 
 export const API_BASE_URL =
@@ -74,12 +75,13 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
 
   if (response.status === 401) {
     if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
     }
     throw new ApiError(401, "UNAUTHENTICATED", "Session expired or unauthorized");
   }
 
-  let data: any;
+  let data: unknown;
   const contentType = response.headers.get("content-type");
   if (contentType && contentType.includes("application/json")) {
     data = await response.json().catch(() => ({}));
@@ -88,9 +90,16 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
   }
 
   if (!response.ok) {
-    const errCode = data?.error?.code || data?.code || "API_ERROR";
-    const errMessage = data?.error?.message || data?.message || response.statusText || "An error occurred";
-    const errDetails = data?.error?.details || data?.details;
+    const errorEnvelope = (typeof data === "object" && data !== null ? data : {}) as {
+      error?: { code?: string; message?: string; details?: unknown };
+      code?: string;
+      message?: string;
+      details?: unknown;
+    };
+    const errCode = errorEnvelope.error?.code || errorEnvelope.code || "API_ERROR";
+    const errMessage =
+      errorEnvelope.error?.message || errorEnvelope.message || response.statusText || "An error occurred";
+    const errDetails = errorEnvelope.error?.details || errorEnvelope.details;
     throw new ApiError(response.status, errCode, errMessage, errDetails);
   }
 
@@ -108,11 +117,11 @@ export const api = {
     logout: () => apiClient<void>("/auth/logout", { method: "POST" }),
     me: async (): Promise<AuthMeResponse> => {
       const res = await apiClient<{
-        user?: { id: string; email: string; name: string; role: any; tenantId: string; status: string };
-        auth?: { kind: "session" | "api_key"; userId?: string; tenantId: string; role: any; scopes?: string[] };
+        user?: { id: string; email: string; name: string; role: UserRole; tenantId: string; status: string };
+        auth?: { kind: "session" | "api_key"; userId?: string; tenantId: string; role: UserRole; scopes?: string[] };
         userId?: string;
         tenantId?: string;
-        role?: any;
+        role?: UserRole;
         email?: string;
         name?: string;
       }>("/auth/me");

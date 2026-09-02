@@ -58,8 +58,9 @@ export function CreatePolicyModal({
       setDescription("");
       onSuccess();
       onClose();
-    } catch (err: any) {
-      setError(err?.message || "Failed to create policy rule");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create policy rule";
+      setError(message);
     } finally {
       setLoading(false);
     }

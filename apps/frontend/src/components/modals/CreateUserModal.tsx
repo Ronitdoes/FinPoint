@@ -40,8 +40,9 @@ export function CreateUserModal({
       setEmail("");
       setName("");
       onClose();
-    } catch (err: any) {
-      setError(err?.message || "Failed to provision user");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to provision user";
+      setError(message);
     } finally {
       setLoading(false);
     }

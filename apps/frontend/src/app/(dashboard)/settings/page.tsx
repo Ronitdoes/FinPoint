@@ -3,7 +3,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Settings as SettingsIcon,
-  Users,
   Key,
   UserPlus,
   Trash2,
@@ -113,8 +112,9 @@ export default function SettingsPage() {
         failureMessage: demoOutcome === "FAILED" ? "Simulated test failure" : undefined,
       });
       setSimResult(`Override configured: Next attempt for ${demoKey} will return ${demoOutcome}`);
-    } catch (err: any) {
-      setSimResult(`Error: ${err?.message || "Failed to configure simulation"}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to configure simulation";
+      setSimResult(`Error: ${message}`);
     } finally {
       setSimulating(false);
     }
