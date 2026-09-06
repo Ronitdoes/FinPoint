@@ -7,7 +7,6 @@ import {
   Search,
   ArrowUpRight,
   RefreshCw,
-  Loader2,
 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -18,6 +17,7 @@ import { formatMoney } from "../../../lib/money";
 import { formatDate, getCaseStatusColor } from "../../../lib/format";
 import { api } from "../../../lib/api";
 import type { CaseSummary } from "../../../lib/types";
+import { SkeletonTable } from "../../../components/ui/Skeleton";
 
 gsap.registerPlugin(useGSAP);
 
@@ -33,11 +33,16 @@ interface SavedFilterItem {
   filter: CaseFilterDef;
 }
 
+// ₹50,000 in minor units — keep in sync with backend
+// DEFAULT_AMOUNT_HIGH_MINOR_UNITS (apps/backend/src/modules/risk/engine/rules.ts).
+const HIGH_VALUE_THRESHOLD_MINOR = 5_000_000;
+
 const SAVED_FILTERS: SavedFilterItem[] = [
   { id: "all", label: "All Cases", filter: {} },
   { id: "active", label: "Active Pipelines", filter: { status: "IN_PROGRESS" } },
   { id: "escalated", label: "Escalated to Human", filter: { status: "ESCALATED" } },
-  { id: "high_value", label: "High Value (≥ ₹50,000)", filter: { min_amount: 5000000 } },
+  // High-value preset mirrors backend DEFAULT_AMOUNT_HIGH_MINOR_UNITS (₹50,000).
+  { id: "high_value", label: "High Value (≥ ₹50,000)", filter: { min_amount: HIGH_VALUE_THRESHOLD_MINOR } },
   { id: "invoices", label: "Overdue Invoices", filter: { risk_type: "OVERDUE_INVOICE" } },
   { id: "recovered", label: "Recovered Cases", filter: { status: "RECOVERED" } },
 ];
@@ -104,23 +109,46 @@ export default function CasesPage() {
 
   useGSAP(
     () => {
-      if (containerRef.current) {
-        const sections = Array.from(containerRef.current.children);
-        gsap.fromTo(
-          sections,
-          { opacity: 0, y: 12 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.35,
-            stagger: 0.05,
-            ease: "power2.out",
-            clearProps: "opacity,transform",
-          }
-        );
-      }
+      const mm = gsap.matchMedia();
+
+      mm.add(
+        {
+          full: "(prefers-reduced-motion: no-preference)",
+          reduced: "(prefers-reduced-motion: reduce)",
+        },
+        (ctx) => {
+          if (ctx.conditions?.reduced) return;
+          const q = gsap.utils.selector(containerRef);
+
+          // Frame -> header -> panels. Transforms + autoAlpha only.
+          const tl = gsap.timeline({
+            defaults: { duration: 0.55, ease: "power3.out" },
+          });
+          tl.addLabel("frame", 0);
+          tl.fromTo(
+            q(".fp-frame"),
+            { y: 14, autoAlpha: 0 },
+            { y: 0, autoAlpha: 1, duration: 0.5, clearProps: "transform" },
+            "frame"
+          );
+          tl.fromTo(
+            q(".fp-rise"),
+            { y: 18, autoAlpha: 0 },
+            {
+              y: 0,
+              autoAlpha: 1,
+              duration: 0.5,
+              stagger: { each: 0.07, from: "start" },
+              clearProps: "transform",
+            },
+            "frame+=0.1"
+          );
+        }
+      );
+
+      return () => mm.revert();
     },
-    { dependencies: [], scope: containerRef }
+    { scope: containerRef }
   );
 
   const handleApplySavedFilter = (saved: SavedFilterItem) => {
@@ -131,19 +159,23 @@ export default function CasesPage() {
   };
 
   return (
-    <div ref={containerRef} className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-            <FolderKanban className="h-5 w-5 text-emerald-400" />
+    <div ref={containerRef}>
+      {/* Outer frame */}
+      <div className="fp-frame rounded-[26px] border border-white/10 bg-[#0c0c0e]/85 p-3 shadow-[0_32px_80px_-32px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:p-4">
+        <div className="space-y-3">
+      {/* Header bar */}
+      <div className="fp-rise flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl px-2 pt-1">
+        <div className="min-w-52">
+          <h1 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-white">
+            <FolderKanban className="h-4 w-4 text-white/60" />
             Active Recovery Cases & In-Flight Interventions
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5 font-normal">
+          <p className="mt-0.5 text-[11px] font-normal text-white/45">
             Real-time pipeline of open financial leakage cases, AI decision paths, and recovery statuses
           </p>
         </div>
 
+        <div className="ml-auto flex items-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -153,23 +185,24 @@ export default function CasesPage() {
         >
           Refresh Cases
         </Button>
+        </div>
       </div>
 
       {/* Filter / Search Bar */}
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-4 shadow-lg shadow-black/40 backdrop-blur-xl space-y-3.5">
+      <div className="fp-rise space-y-3.5 rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
         {/* Saved preset quick chips */}
-        <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-white/[0.05]">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mr-1">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-white/[0.06] pb-3.5">
+          <span className="mr-1 text-[10px] font-medium uppercase tracking-wider text-white/45">
             Quick Views:
           </span>
           {SAVED_FILTERS.map((filter) => (
             <button
               key={filter.id}
               onClick={() => handleApplySavedFilter(filter)}
-              className={`rounded-xl px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
+              className={`cursor-pointer rounded-full px-3 py-1 text-[11px] font-medium transition-colors ${
                 activeSavedFilter === filter.id
-                  ? "bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 shadow-sm"
-                  : "bg-white/[0.03] border border-white/[0.06] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]"
+                  ? "bg-white font-semibold text-black"
+                  : "border border-white/[0.09] text-white/55 hover:bg-white/[0.06] hover:text-white"
               }`}
             >
               {filter.label}
@@ -179,7 +212,7 @@ export default function CasesPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <Input
-            placeholder="Search by Customer ID (e.g. cus_...)"
+            placeholder="Filter by Customer UUID"
             icon={<Search className="h-3.5 w-3.5" />}
             value={searchCustomer}
             onChange={(e) => {
@@ -239,46 +272,43 @@ export default function CasesPage() {
       </div>
 
       {/* Cases Table */}
-      <div ref={tableRef} className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 shadow-lg shadow-black/40 overflow-hidden backdrop-blur-xl min-h-[320px] flex flex-col justify-center">
+      <div ref={tableRef} className="fp-rise flex min-h-[320px] flex-col justify-center overflow-hidden rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
         {loading && cases.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-2.5 text-xs text-slate-400">
-            <Loader2 className="h-5 w-5 text-emerald-400 animate-spin" />
-            <span className="text-[11px] font-medium text-slate-400">Loading cases pipeline...</span>
-          </div>
+          <SkeletonTable rows={8} cols={7} />
         ) : cases.length === 0 ? (
-          <div className="py-16 text-center text-xs text-slate-500">
-            <FolderKanban className="mx-auto h-7 w-7 mb-2 opacity-30 text-emerald-400" />
+          <div className="py-16 text-center text-xs text-white/40">
+            <FolderKanban className="mx-auto mb-2 h-7 w-7 text-white/60 opacity-30" />
             No recovery cases match the current filter criteria
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-white/[0.06] bg-[#090c13]/50 text-slate-400 font-semibold uppercase text-[10px]">
+              <thead className="border-b border-white/[0.06] text-[10px] font-semibold uppercase text-white/45">
                 <tr>
-                  <th className="py-3 px-4">Case #</th>
-                  <th className="py-3 px-4">Customer</th>
-                  <th className="py-3 px-4">Risk Surface</th>
-                  <th className="py-3 px-4 text-right">Amount at Risk</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Opened At</th>
-                  <th className="py-3 px-4 text-right">Action</th>
+                  <th className="py-2.5 pr-4">Case #</th>
+                  <th className="py-2.5 px-4">Customer</th>
+                  <th className="py-2.5 px-4">Risk Surface</th>
+                  <th className="py-2.5 px-4 text-right">Amount at Risk</th>
+                  <th className="py-2.5 px-4">Status</th>
+                  <th className="py-2.5 px-4">Opened At</th>
+                  <th className="py-2.5 pl-4 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04] font-mono text-xs">
+              <tbody className="divide-y divide-white/[0.05] font-mono text-xs">
                 {cases.map((c) => {
                   const statusStyle = getCaseStatusColor(c.status);
                   return (
-                    <tr key={c.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="py-3 px-4 font-bold text-slate-100">
+                    <tr key={c.id} className="transition-colors hover:bg-white/[0.04]">
+                      <td className="py-3 pr-4 font-bold text-white">
                         {c.case_number}
                       </td>
-                      <td className="py-3 px-4 text-slate-400 font-sans truncate max-w-[140px] text-[11px]" title={c.customer_id}>
+                      <td className="max-w-[140px] truncate py-3 px-4 font-sans text-[11px] text-white/45" title={c.customer_id}>
                         {c.customer_id}
                       </td>
-                      <td className="py-3 px-4 font-sans font-medium text-slate-200 text-xs">
+                      <td className="py-3 px-4 font-sans text-xs font-medium text-white/75">
                         {c.risk_type.replace(/_/g, " ")}
                       </td>
-                      <td className="py-3 px-4 text-right font-bold text-slate-100 tabular-nums">
+                      <td className="py-3 px-4 text-right font-bold text-white tabular-nums">
                         {formatMoney(c.amount_at_risk, c.currency)}
                       </td>
                       <td className="py-3 px-4">
@@ -289,13 +319,13 @@ export default function CasesPage() {
                           {c.status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-slate-400 text-[11px]">
+                      <td className="py-3 px-4 text-[11px] text-white/45">
                         {formatDate(c.opened_at)}
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3 pl-4 text-right">
                         <Link
                           href={`/cases/${c.id}`}
-                          className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+                          className="inline-flex items-center gap-1 font-sans text-xs font-semibold text-cyan-300 hover:text-cyan-200"
                         >
                           <span>Inspect</span>
                           <ArrowUpRight className="h-3.5 w-3.5" />
@@ -311,7 +341,7 @@ export default function CasesPage() {
 
         {/* Cursor Pagination Button */}
         {nextCursor && (
-          <div className="p-4 border-t border-white/[0.06] text-center">
+          <div className="border-t border-white/[0.06] p-4 text-center">
             <Button
               variant="outline"
               size="sm"
@@ -322,6 +352,8 @@ export default function CasesPage() {
             </Button>
           </div>
         )}
+      </div>
+        </div>
       </div>
     </div>
   );

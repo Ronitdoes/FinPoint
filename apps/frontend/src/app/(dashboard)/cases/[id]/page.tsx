@@ -9,7 +9,6 @@ import {
   ArrowUpRight,
   Octagon,
   AlertTriangle,
-  RefreshCw,
 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -26,6 +25,7 @@ import { formatDate, getCaseStatusColor } from "../../../../lib/format";
 import { canPauseResume, canEscalate, canStop } from "../../../../lib/rbac";
 import { api } from "../../../../lib/api";
 import type { CanonicalCaseDetail, AuthMeResponse } from "../../../../lib/types";
+import { Skeleton, SkeletonCards } from "../../../../components/ui/Skeleton";
 
 gsap.registerPlugin(useGSAP);
 
@@ -70,21 +70,44 @@ export default function CaseDetailPage({
 
   useGSAP(
     () => {
-      if (caseDetail && containerRef.current) {
-        const sections = Array.from(containerRef.current.children);
-        gsap.fromTo(
-          sections,
-          { opacity: 0, y: 14 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.35,
-            stagger: 0.05,
-            ease: "power2.out",
-            clearProps: "opacity,transform",
-          }
-        );
-      }
+      const mm = gsap.matchMedia();
+
+      mm.add(
+        {
+          full: "(prefers-reduced-motion: no-preference)",
+          reduced: "(prefers-reduced-motion: reduce)",
+        },
+        (ctx) => {
+          if (ctx.conditions?.reduced) return;
+          const q = gsap.utils.selector(containerRef);
+
+          // Frame -> header -> panels. Transforms + autoAlpha only.
+          const tl = gsap.timeline({
+            defaults: { duration: 0.55, ease: "power3.out" },
+          });
+          tl.addLabel("frame", 0);
+          tl.fromTo(
+            q(".fp-frame"),
+            { y: 14, autoAlpha: 0 },
+            { y: 0, autoAlpha: 1, duration: 0.5, clearProps: "transform" },
+            "frame"
+          );
+          tl.fromTo(
+            q(".fp-rise"),
+            { y: 18, autoAlpha: 0 },
+            {
+              y: 0,
+              autoAlpha: 1,
+              duration: 0.5,
+              stagger: { each: 0.07, from: "start" },
+              clearProps: "transform",
+            },
+            "frame+=0.1"
+          );
+        }
+      );
+
+      return () => mm.revert();
     },
     { dependencies: [!!caseDetail], scope: containerRef }
   );
@@ -109,19 +132,73 @@ export default function CaseDetailPage({
 
   if (loading && !caseDetail) {
     return (
-      <div className="py-24 text-center text-xs text-slate-500">
-        <RefreshCw className="mx-auto h-7 w-7 mb-3 animate-spin text-emerald-400" />
-        Loading canonical case state and relations...
+      <div ref={containerRef}>
+        {/* Outer frame */}
+        <div className="fp-frame rounded-[26px] border border-white/10 bg-[#0c0c0e]/85 p-3 shadow-[0_32px_80px_-32px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:p-4">
+          <div className="space-y-3">
+            {/* Top Breadcrumb & Control Action Bar skeleton */}
+            <div className="fp-rise flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl px-2 pt-1">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                <div>
+                  <Skeleton className="h-4 w-48 max-w-full" />
+                  <Skeleton className="mt-2 h-3 w-64 max-w-full" />
+                </div>
+              </div>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <Skeleton className="h-8 w-28 rounded-full" />
+                <Skeleton className="h-8 w-28 rounded-full" />
+              </div>
+            </div>
+
+            {/* Financial Obligation Summary Card skeleton */}
+            <div className="fp-rise rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
+              <SkeletonCards count={4} />
+            </div>
+
+            {/* Detail Grid: AI Decision, Policy Clearance & Risk skeleton */}
+            <div className="fp-rise grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
+                <Skeleton className="h-3 w-1/3" />
+                <Skeleton className="mt-3 h-5 w-2/3" />
+                <Skeleton className="mt-2 h-3 w-full" />
+                <Skeleton className="mt-2 h-3 w-5/6" />
+              </div>
+              <div className="rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
+                <Skeleton className="h-3 w-1/3" />
+                <Skeleton className="mt-3 h-5 w-1/2" />
+                <Skeleton className="mt-2 h-3 w-full" />
+                <Skeleton className="mt-2 h-3 w-4/6" />
+              </div>
+            </div>
+
+            {/* Risk Factors Breakdown & Actions Ledger Grid skeleton */}
+            <div className="fp-rise grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
+                <Skeleton className="h-3 w-1/4" />
+                <Skeleton className="mt-3 h-3 w-full" />
+                <Skeleton className="mt-2 h-3 w-full" />
+                <Skeleton className="mt-2 h-3 w-3/5" />
+              </div>
+              <div className="rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
+                <Skeleton className="h-3 w-1/4" />
+                <Skeleton className="mt-3 h-3 w-full" />
+                <Skeleton className="mt-2 h-3 w-full" />
+                <Skeleton className="mt-2 h-3 w-2/5" />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error || !caseDetail) {
     return (
-      <div className="py-16 text-center space-y-4">
-        <AlertTriangle className="mx-auto h-10 w-10 text-rose-500" />
-        <h2 className="text-base font-bold text-slate-100">Failed to Load Case</h2>
-        <p className="text-xs text-slate-400 max-w-md mx-auto">{error || "Case record not found"}</p>
+      <div className="space-y-4 py-16 text-center">
+        <AlertTriangle className="mx-auto h-10 w-10 text-rose-400" />
+        <h2 className="text-base font-bold text-white">Failed to Load Case</h2>
+        <p className="mx-auto max-w-md text-xs text-white/45">{error || "Case record not found"}</p>
         <Link href="/cases">
           <Button variant="outline" size="sm">
             Back to Case List
@@ -135,19 +212,22 @@ export default function CaseDetailPage({
   const statusStyle = getCaseStatusColor(caseDetail.status);
 
   return (
-    <div ref={containerRef} className="space-y-6">
+    <div ref={containerRef}>
+      {/* Outer frame */}
+      <div className="fp-frame rounded-[26px] border border-white/10 bg-[#0c0c0e]/85 p-3 shadow-[0_32px_80px_-32px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:p-4">
+        <div className="space-y-3">
       {/* Top Breadcrumb & Control Action Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/[0.06]">
+      <div className="fp-rise flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl px-2 pt-1">
         <div className="flex items-center gap-3">
           <Link
             href="/cases"
-            className="p-2 rounded-xl border border-white/[0.08] bg-[#0c1018] text-slate-400 hover:text-slate-200 hover:border-white/[0.16] transition-colors cursor-pointer"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.03] text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-lg font-bold text-slate-100 font-mono tracking-tight">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="font-mono text-[15px] font-semibold tracking-tight text-white">
                 Case {caseDetail.case_number}
               </h1>
               <span
@@ -157,14 +237,14 @@ export default function CaseDetailPage({
                 {caseDetail.status}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5 font-normal">
-              Customer: <span className="font-mono text-slate-300">{caseDetail.customer_id}</span> • Opened: {formatDate(caseDetail.opened_at)}
+            <p className="mt-0.5 text-[11px] font-normal text-white/45">
+              Customer: <span className="font-mono text-white/75">{caseDetail.customer_id}</span> • Opened: {formatDate(caseDetail.opened_at)}
             </p>
           </div>
         </div>
 
         {/* Action Controls with RBAC check */}
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {canPauseResume(role) && (
             caseDetail.status === "PAUSED" ? (
               <Button
@@ -212,40 +292,40 @@ export default function CaseDetailPage({
       </div>
 
       {/* Financial Obligation Summary Card */}
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-5 shadow-lg shadow-black/40 backdrop-blur-xl">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
-          <div className="p-3.5 rounded-xl border border-white/[0.06] bg-[#090c13]/70">
-            <span className="text-[10px] text-slate-400 font-sans block mb-1 uppercase tracking-wider">
+      <div className="fp-rise rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
+        <div className="grid grid-cols-2 gap-3 font-mono text-xs sm:grid-cols-4">
+          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5">
+            <span className="mb-1 block font-sans text-[10px] uppercase tracking-wider text-white/45">
               Amount at Risk
             </span>
-            <span className="text-xl font-bold text-slate-100 tabular-nums">
+            <span className="text-xl font-bold text-white tabular-nums">
               {formatMoney(caseDetail.amount_at_risk, caseDetail.currency)}
             </span>
           </div>
 
-          <div className="p-3.5 rounded-xl border border-white/[0.06] bg-[#090c13]/70">
-            <span className="text-[10px] text-slate-400 font-sans block mb-1 uppercase tracking-wider">
+          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5">
+            <span className="mb-1 block font-sans text-[10px] uppercase tracking-wider text-white/45">
               Risk Surface
             </span>
-            <span className="text-xs font-semibold text-cyan-400 font-sans block">
+            <span className="block font-sans text-xs font-semibold text-white">
               {caseDetail.risk_type.replace(/_/g, " ")}
             </span>
           </div>
 
-          <div className="p-3.5 rounded-xl border border-white/[0.06] bg-[#090c13]/70">
-            <span className="text-[10px] text-slate-400 font-sans block mb-1 uppercase tracking-wider">
+          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5">
+            <span className="mb-1 block font-sans text-[10px] uppercase tracking-wider text-white/45">
               Source Entity
             </span>
-            <span className="text-xs text-slate-300 truncate block text-[11px]" title={caseDetail.source_entity_id}>
+            <span className="block truncate text-[11px] text-white/75" title={caseDetail.source_entity_id}>
               {caseDetail.source_entity_type}: {caseDetail.source_entity_id}
             </span>
           </div>
 
-          <div className="p-3.5 rounded-xl border border-white/[0.06] bg-[#090c13]/70">
-            <span className="text-[10px] text-slate-400 font-sans block mb-1 uppercase tracking-wider">
+          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5">
+            <span className="mb-1 block font-sans text-[10px] uppercase tracking-wider text-white/45">
               Workflow Status
             </span>
-            <span className="text-xs font-semibold text-emerald-400 block">
+            <span className="block text-xs font-semibold text-white">
               {caseDetail.workflow ? caseDetail.workflow.status : (caseDetail.workflow_id ? "ATTACHED" : "UNATTACHED")}
             </span>
           </div>
@@ -253,24 +333,28 @@ export default function CaseDetailPage({
       </div>
 
       {/* Detail Grid: AI Decision, Policy Clearance & Risk */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="fp-rise grid grid-cols-1 gap-3 lg:grid-cols-2">
         <DecisionCard decision={caseDetail.decision} />
         <PolicyVerdictCard policyEvaluation={caseDetail.policy_evaluation} />
       </div>
 
       {/* Outcome Card (if recovered/resolved) */}
       {caseDetail.outcome && (
+        <div className="fp-rise">
         <OutcomeCard outcome={caseDetail.outcome} currency={caseDetail.currency} />
+        </div>
       )}
 
       {/* Risk Factors Breakdown & Actions Ledger Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="fp-rise grid grid-cols-1 gap-3 lg:grid-cols-2">
         <RiskFactorsCard risk={caseDetail.risk} />
         <ActionsLedger actions={caseDetail.actions} />
       </div>
 
       {/* Interactive Live Case Event Timeline */}
+      <div className="fp-rise">
       <CaseTimeline caseId={caseDetail.id} />
+      </div>
 
       {/* Action Confirmation Modal */}
       {modalAction && (
@@ -283,6 +367,8 @@ export default function CaseDetailPage({
           onConfirm={handleModalConfirm}
         />
       )}
+        </div>
+      </div>
     </div>
   );
 }

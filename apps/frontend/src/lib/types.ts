@@ -154,6 +154,7 @@ export interface AnalyticsSummary {
   recoveryRate: number; // percentage (0..100)
   recoveryCost: string | null; // minor units or null if redacted
   netRecovered: string | null; // minor units or null if redacted
+  currency?: string; // ISO-4217 from /analytics/summary financial.currency (default INR)
   activeCases: number;
   escalatedCases: number;
   recoveredCases: number;

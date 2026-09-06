@@ -19,16 +19,20 @@ export function CreatePolicyModal({
   onClose,
   onSuccess,
 }: CreatePolicyModalProps) {
+  const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("SPENDING");
-  const [ruleType, setRuleType] = useState("MAX_RETRIES");
+  const [ruleKind, setRuleKind] = useState("REJECT");
   const [parametersJson, setParametersJson] = useState('{\n  "max_attempts": 3\n}');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!code.trim()) {
+      setError("Policy code is required (e.g. CUSTOM-MAX-RETRY)");
+      return;
+    }
     if (!name) {
       setError("Policy name is required");
       return;
@@ -46,14 +50,15 @@ export function CreatePolicyModal({
       setLoading(true);
       setError("");
       await api.policies.create({
+        code: code.trim(),
         name,
         description: description || undefined,
-        category,
-        rule_type: ruleType,
-        parameters: parsedParams,
+        ruleKind,
+        definition: parsedParams,
         enabled: true,
       });
 
+      setCode("");
       setName("");
       setDescription("");
       onSuccess();
@@ -96,6 +101,14 @@ export function CreatePolicyModal({
         )}
 
         <Input
+          label="Rule Code (unique)"
+          placeholder="e.g. CUSTOM-MAX-RETRY"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          required
+        />
+
+        <Input
           label="Rule Name"
           placeholder="e.g. Max Payment Retries Guardrail"
           value={name}
@@ -103,29 +116,15 @@ export function CreatePolicyModal({
           required
         />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <Select
-            label="Category"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            label="Rule Kind (backend enforcement)"
+            value={ruleKind}
+            onChange={(e) => setRuleKind(e.target.value)}
             options={[
-              { value: "SPENDING", label: "Spending Limits" },
-              { value: "COMMUNICATION", label: "Communication Cadence" },
-              { value: "APPROVAL", label: "Approval Thresholds" },
-              { value: "STOP_CONDITION", label: "Stop Conditions" },
-            ]}
-          />
-
-          <Select
-            label="Rule Type"
-            value={ruleType}
-            onChange={(e) => setRuleType(e.target.value)}
-            options={[
-              { value: "MAX_RETRIES", label: "Max Retries (Count)" },
-              { value: "CADENCE_LIMIT", label: "Cadence Limit (Days)" },
-              { value: "HIGH_VALUE_THRESHOLD", label: "High Value Threshold (₹)" },
-              { value: "MAX_DISCOUNT", label: "Max Discount (₹ / %)" },
-              { value: "OPT_OUT_GUARD", label: "Opt-Out Enforcement" },
+              { value: "REJECT", label: "REJECT — block violating actions" },
+              { value: "REQUIRE_APPROVAL", label: "REQUIRE_APPROVAL — route to human" },
+              { value: "LIMIT", label: "LIMIT — cap spending / discounts" },
             ]}
           />
         </div>

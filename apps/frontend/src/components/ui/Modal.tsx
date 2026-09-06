@@ -88,39 +88,43 @@ export function Modal({
     >
       <div
         ref={overlayRef}
-        className="fixed inset-0 bg-[#040508]/80 backdrop-blur-md"
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
         aria-hidden="true"
       />
       <div
         ref={modalBoxRef}
-        className={`relative z-10 w-full ${maxWidthClasses[maxWidth]} rounded-2xl border border-white/[0.1] bg-[#0c1018] p-6 shadow-2xl shadow-black/80 backdrop-blur-2xl`}
+        className={`relative z-10 w-full ${maxWidthClasses[maxWidth]} rounded-3xl border border-white/10 bg-[#131316] p-6 shadow-[0_40px_100px_-24px_rgba(0,0,0,0.9)]`}
       >
-        <div className="flex items-start justify-between gap-4 pb-4 border-b border-white/[0.06]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
+        />
+        <div className="flex items-start justify-between gap-4 pb-4 border-b border-white/[0.07]">
           <div>
             <h2
               id="modal-title"
-              className="text-base font-semibold text-slate-100 tracking-tight"
+              className="text-[15px] font-semibold text-white tracking-tight"
             >
               {title}
             </h2>
             {description && (
-              <p className="mt-1 text-xs text-slate-400 font-normal">{description}</p>
+              <p className="mt-1 text-xs text-white/45 font-normal">{description}</p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="rounded-xl p-1.5 text-slate-400 hover:bg-white/[0.06] hover:text-slate-200 transition-colors cursor-pointer"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.12] text-white/60 transition-colors hover:border-white/25 hover:text-white cursor-pointer"
             aria-label="Close modal"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="py-5 text-xs text-slate-300 leading-relaxed">{children}</div>
+        <div className="py-5 text-xs text-white/75 leading-relaxed">{children}</div>
 
         {footer && (
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-white/[0.06]">
+          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-white/[0.07]">
             {footer}
           </div>
         )}

@@ -16,10 +16,10 @@ export function Alert({
   ...props
 }: AlertProps) {
   const variantStyles = {
-    info: "bg-cyan-500/10 border-cyan-500/25 text-cyan-200",
-    success: "bg-emerald-500/10 border-emerald-500/25 text-emerald-200",
-    warning: "bg-amber-500/10 border-amber-500/25 text-amber-200",
-    error: "bg-rose-500/10 border-rose-500/25 text-rose-200",
+    info: "bg-cyan-400/10 border-cyan-400/20 text-cyan-200",
+    success: "bg-emerald-400/10 border-emerald-400/20 text-emerald-200",
+    warning: "bg-amber-400/10 border-amber-400/20 text-amber-200",
+    error: "bg-rose-400/10 border-rose-400/20 text-rose-200",
   };
 
   const icons = {
@@ -32,7 +32,7 @@ export function Alert({
   return (
     <div
       role="alert"
-      className={`relative flex items-start gap-3 rounded-2xl border p-4 text-xs backdrop-blur-md transition-all ${variantStyles[variant]} ${className}`}
+      className={`relative flex items-start gap-3 rounded-2xl border p-4 text-xs backdrop-blur-xl bg-gradient-to-br from-white/[0.06] to-transparent shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] transition-[transform,background-color,border-color] ${variantStyles[variant]} ${className}`}
       {...props}
     >
       {icons[variant]}

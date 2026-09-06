@@ -69,11 +69,11 @@ export function OutcomeCard({ outcome, currency = "INR" }: OutcomeCardProps) {
 
         <div className="rounded-xl border border-white/[0.06] bg-[#090c13]/70 p-3">
           <span className="text-[10px] text-slate-500 font-sans block mb-0.5 uppercase tracking-wider">
-            Attribution
+            Attribution Method
           </span>
           <span className="text-emerald-400 font-bold flex items-center gap-1 text-xs">
             <TrendingUp className="h-3 w-3" />
-            100% Attributed
+            {outcome.attribution_method}
           </span>
         </div>
       </div>

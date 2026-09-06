@@ -33,8 +33,12 @@ export function StatGroup({
 
   return (
     <div
-      className={`rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-5 shadow-lg shadow-black/40 backdrop-blur-xl ${className}`}
+      className={`relative overflow-hidden rounded-[20px] border border-white/[0.07] bg-[#131316] p-5 ${className}`}
     >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent"
+      />
       <div className="mb-4">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-300">{title}</h3>
         {description && (
@@ -46,7 +50,7 @@ export function StatGroup({
         {stats.map((stat, idx) => (
           <div
             key={idx}
-            className="rounded-xl border border-white/[0.06] bg-[#090c13]/70 p-3.5 transition-all hover:border-white/[0.12] hover:bg-[#0e131e]"
+            className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-3.5 transition-[border-color,background-color,transform] hover:border-white/15 hover:bg-white/[0.06]"
           >
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-medium text-slate-400">

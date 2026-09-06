@@ -9,7 +9,6 @@ import {
   ArrowUpRight,
   RefreshCw,
   Lock,
-  Loader2,
 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -18,6 +17,7 @@ import { Badge } from "../../../components/ui/Badge";
 import { Select } from "../../../components/ui/Select";
 import { ApproveTaskModal } from "../../../components/modals/ApproveTaskModal";
 import { RejectTaskModal } from "../../../components/modals/RejectTaskModal";
+import { SkeletonTable } from "../../../components/ui/Skeleton";
 import { formatRelativeTime } from "../../../lib/format";
 import { canApproveTasks } from "../../../lib/rbac";
 import { api } from "../../../lib/api";
@@ -59,21 +59,34 @@ export default function TasksPage() {
 
   useGSAP(
     () => {
-      if (containerRef.current) {
-        const sections = Array.from(containerRef.current.children);
-        gsap.fromTo(
-          sections,
-          { opacity: 0, y: 12 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.35,
-            stagger: 0.05,
-            ease: "power2.out",
-            clearProps: "opacity,transform",
-          }
-        );
-      }
+      const mm = gsap.matchMedia();
+
+      mm.add(
+        {
+          full: "(prefers-reduced-motion: no-preference)",
+          reduced: "(prefers-reduced-motion: reduce)",
+        },
+        (ctx) => {
+          if (ctx.conditions?.reduced) return;
+          const q = gsap.utils.selector(containerRef);
+
+          // Section entrance — transforms + autoAlpha only.
+          gsap.fromTo(
+            q(".fp-rise"),
+            { y: 12, autoAlpha: 0 },
+            {
+              y: 0,
+              autoAlpha: 1,
+              duration: 0.35,
+              stagger: 0.05,
+              ease: "power2.out",
+              clearProps: "transform",
+            }
+          );
+        }
+      );
+
+      return () => mm.revert();
     },
     { dependencies: [], scope: containerRef }
   );
@@ -107,15 +120,18 @@ export default function TasksPage() {
   };
 
   return (
-    <div ref={containerRef} className="space-y-6">
+    <div ref={containerRef}>
+      {/* Outer FinPoint frame */}
+      <div className="fp-frame rounded-[26px] border border-white/10 bg-[#0c0c0e]/85 p-3 shadow-[0_32px_80px_-32px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:p-4">
+        <div className="space-y-3">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="fp-rise flex flex-wrap items-center justify-between gap-4 rounded-2xl px-2 pt-1">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-            <ClipboardList className="h-5 w-5 text-cyan-400" />
+          <h1 className="text-[15px] font-semibold tracking-tight text-white flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-white/60" />
             Human Escalation & Approvals Desk
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5 font-normal">
+          <p className="mt-0.5 text-[11px] font-normal text-white/45">
             Review cases requiring operator intervention, high-value sign-off, or dispute resolution
           </p>
         </div>
@@ -132,7 +148,7 @@ export default function TasksPage() {
       </div>
 
       {/* Filter Bar */}
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-4 shadow-lg shadow-black/40 backdrop-blur-xl">
+      <div className="fp-rise rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
         <div className="max-w-xs">
           <Select
             label="Task Status"
@@ -150,33 +166,30 @@ export default function TasksPage() {
       </div>
 
       {/* Tasks Table */}
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 shadow-lg shadow-black/40 overflow-hidden backdrop-blur-xl min-h-[320px] flex flex-col justify-center">
+      <div className="fp-rise rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5 min-h-[320px] flex flex-col justify-center">
         {loading && tasks.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-2.5 text-xs text-slate-400">
-            <Loader2 className="h-5 w-5 text-emerald-400 animate-spin" />
-            <span className="text-[11px] font-medium text-slate-400">Loading escalation inbox...</span>
-          </div>
+          <SkeletonTable rows={6} cols={6} />
         ) : tasks.length === 0 ? (
-          <div className="py-16 text-center text-xs text-slate-500">
-            <CheckCircle2 className="mx-auto h-7 w-7 mb-2 opacity-30 text-emerald-400" />
+          <div className="py-16 text-center text-xs text-white/40">
+            <CheckCircle2 className="mx-auto h-7 w-7 mb-2 opacity-30 text-white/60" />
             Inbox clean! No tasks match the selected status filter.
           </div>
         ) : (
           <div className="overflow-x-auto self-stretch">
             <table className={`w-full text-left text-xs transition-opacity duration-200 ${loading ? "opacity-60" : "opacity-100"}`}>
-              <thead className="border-b border-white/[0.06] bg-[#090c13]/50 text-slate-400 font-semibold uppercase text-[10px]">
+              <thead className="border-b border-white/[0.06] font-semibold uppercase text-[10px] text-white/45">
                 <tr>
-                  <th className="py-3 px-4">Priority</th>
-                  <th className="py-3 px-4">Trigger Reason</th>
-                  <th className="py-3 px-4">Case Link</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Created</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th className="py-2.5 pr-4">Priority</th>
+                  <th className="py-2.5 px-4">Trigger Reason</th>
+                  <th className="py-2.5 px-4">Case Link</th>
+                  <th className="py-2.5 px-4">Status</th>
+                  <th className="py-2.5 px-4">Created</th>
+                  <th className="py-2.5 pl-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04] font-mono text-xs">
+              <tbody className="divide-y divide-white/[0.05] font-mono text-xs">
                 {tasks.map((task) => (
-                  <tr key={task.id} className="hover:bg-white/[0.02] transition-colors">
+                  <tr key={task.id} className="transition-colors hover:bg-white/[0.04]">
                     <td className="py-3.5 px-4">
                       <Badge
                         variant={priorityBadges[task.priority] || "default"}
@@ -185,16 +198,16 @@ export default function TasksPage() {
                         {task.priority}
                       </Badge>
                     </td>
-                    <td className="py-3.5 px-4 font-sans text-slate-200">
+                    <td className="py-3.5 px-4 font-sans text-white/75">
                       <div className="font-semibold text-xs">{task.reason}</div>
                       {task.notes && (
-                        <p className="text-[11px] text-slate-400 mt-0.5 font-normal">{task.notes}</p>
+                        <p className="text-[11px] text-white/45 mt-0.5 font-normal">{task.notes}</p>
                       )}
                     </td>
                     <td className="py-3.5 px-4">
                       <Link
                         href={`/cases/${task.case_id}`}
-                        className="inline-flex items-center gap-1 font-sans text-xs font-semibold text-cyan-400 hover:text-cyan-300"
+                        className="inline-flex items-center gap-1 font-sans text-xs font-semibold text-cyan-300 hover:text-cyan-200"
                       >
                         <span>Inspect Case</span>
                         <ArrowUpRight className="h-3.5 w-3.5" />
@@ -208,7 +221,7 @@ export default function TasksPage() {
                         {task.status}
                       </Badge>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-400 text-[11px]">
+                    <td className="py-3.5 px-4 text-white/45 text-[11px]">
                       {formatRelativeTime(task.created_at)}
                     </td>
                     <td className="py-3.5 px-4 text-right">
@@ -233,13 +246,13 @@ export default function TasksPage() {
                             </Button>
                           </div>
                         ) : (
-                          <span className="text-slate-500 font-sans text-[11px] flex items-center justify-end gap-1">
+                          <span className="text-white/40 font-sans text-[11px] flex items-center justify-end gap-1">
                             <Lock className="h-3 w-3" />
                             Operations+ Required
                           </span>
                         )
                       ) : (
-                        <span className="text-slate-500 font-sans text-[11px]">
+                        <span className="text-white/40 font-sans text-[11px]">
                           Resolved
                         </span>
                       )}
@@ -267,6 +280,8 @@ export default function TasksPage() {
         task={rejectTask}
         onConfirm={handleRejectConfirm}
       />
+        </div>
+      </div>
     </div>
   );
 }

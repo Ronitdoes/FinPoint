@@ -37,7 +37,7 @@ export function Select({
       <div className="relative">
         <select
           id={selectId}
-          className={`w-full rounded-xl border border-white/[0.08] bg-[#0c1018]/80 px-3.5 py-2 text-xs text-slate-100 shadow-inner backdrop-blur-md transition-all focus:border-emerald-500/60 focus:bg-[#111622] focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 appearance-none pr-8 ${
+          className={`w-full rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs text-slate-100 shadow-inner backdrop-blur-xl transition-[border-color,background-color,box-shadow] focus:border-emerald-300/50 focus:bg-white/[0.06] focus:outline-none focus:ring-2 focus:ring-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-50 appearance-none pr-8 ${
             error ? "border-rose-500/60 focus:border-rose-500 focus:ring-rose-500/20" : ""
           } ${className}`}
           {...props}

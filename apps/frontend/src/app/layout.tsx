@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Revenue Recovery",
-  description: "Smart, automated revenue recovery and churn prevention platform",
+  title: "FinPoint",
+  description: "FinPoint — smart, automated revenue recovery and churn prevention platform",
 };
 
 export default function RootLayout({

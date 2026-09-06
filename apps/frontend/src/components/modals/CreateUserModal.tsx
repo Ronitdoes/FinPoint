@@ -11,7 +11,7 @@ import type { UserRole } from "../../lib/types";
 export interface CreateUserModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (user: { email: string; role: UserRole; name?: string }) => Promise<void>;
+  onSuccess: (user: { email: string; role: UserRole; name: string; password: string }) => Promise<void>;
 }
 
 export function CreateUserModal({
@@ -22,7 +22,7 @@ export function CreateUserModal({
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<UserRole>("OPERATIONS");
-  const [password, setPassword] = useState("Password123!");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -32,13 +32,22 @@ export function CreateUserModal({
       setError("Email is required");
       return;
     }
+    if (!name.trim()) {
+      setError("Full name is required");
+      return;
+    }
+    if (!password || password.length < 8) {
+      setError("Initial password must be at least 8 characters");
+      return;
+    }
 
     try {
       setLoading(true);
       setError("");
-      await onSuccess({ email, role, name });
+      await onSuccess({ email, role, name: name.trim(), password });
       setEmail("");
       setName("");
+      setPassword("");
       onClose();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to provision user";
@@ -109,9 +118,11 @@ export function CreateUserModal({
         <Input
           label="Initial Temporary Password"
           type="password"
+          placeholder="Minimum 8 characters"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          helperText="User can update their password on first login."
+          helperText="Share securely — user can update it after first login."
+          required
         />
       </form>
     </Modal>

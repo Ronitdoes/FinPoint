@@ -31,13 +31,13 @@ export function Input({
       )}
       <div className="relative">
         {icon && (
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-3 text-white/40">
             {icon}
           </div>
         )}
         <input
           id={inputId}
-          className={`w-full rounded-xl border border-white/[0.08] bg-[#0c1018]/80 px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 shadow-inner backdrop-blur-md transition-all focus:border-emerald-500/60 focus:bg-[#111622] focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 ${
+          className={`w-full rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 shadow-inner backdrop-blur-xl transition-[border-color,background-color,box-shadow] focus:border-emerald-300/50 focus:bg-white/[0.06] focus:outline-none focus:ring-2 focus:ring-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-50 ${
             icon ? "pl-9" : ""
           } ${error ? "border-rose-500/60 focus:border-rose-500 focus:ring-rose-500/20" : ""} ${className}`}
           {...props}
@@ -80,7 +80,7 @@ export function Textarea({
       )}
       <textarea
         id={textareaId}
-        className={`w-full rounded-xl border border-white/[0.08] bg-[#0c1018]/80 px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 shadow-inner backdrop-blur-md transition-all focus:border-emerald-500/60 focus:bg-[#111622] focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 ${
+        className={`w-full rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 shadow-inner backdrop-blur-xl transition-[border-color,background-color,box-shadow] focus:border-emerald-300/50 focus:bg-white/[0.06] focus:outline-none focus:ring-2 focus:ring-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-50 ${
           error ? "border-rose-500/60 focus:border-rose-500 focus:ring-rose-500/20" : ""
         } ${className}`}
         {...props}

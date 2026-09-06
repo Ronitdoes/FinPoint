@@ -20,7 +20,6 @@ export function CreateApiKeyModal({
 }: CreateApiKeyModalProps) {
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState("worker,policy:evaluate,cases:read");
-  const [expiresInDays, setExpiresInDays] = useState("90");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [rawKey, setRawKey] = useState<string | null>(null);
@@ -37,10 +36,10 @@ export function CreateApiKeyModal({
       setLoading(true);
       setError("");
       const scopeList = scopes.split(",").map((s) => s.trim()).filter(Boolean);
+      // Backend stores no expiry; keys remain valid until manually revoked.
       const res = await api.admin.createApiKey({
         name,
         scopes: scopeList,
-        expires_in_days: parseInt(expiresInDays, 10) || 90,
       });
 
       setRawKey(res.rawKey);
@@ -145,14 +144,7 @@ export function CreateApiKeyModal({
             label="Granted Scopes (Comma-separated)"
             value={scopes}
             onChange={(e) => setScopes(e.target.value)}
-            helperText="e.g. *, worker, policy:evaluate, cases:read"
-          />
-
-          <Input
-            label="Expires in (Days)"
-            type="number"
-            value={expiresInDays}
-            onChange={(e) => setExpiresInDays(e.target.value)}
+            helperText="e.g. *, worker, policy:evaluate, cases:read — keys stay valid until revoked"
           />
         </form>
       )}

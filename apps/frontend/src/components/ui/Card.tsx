@@ -15,27 +15,30 @@ export function Card({
   ...props
 }: CardProps) {
   const baseStyles =
-    "relative rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-5 shadow-lg shadow-black/40 text-slate-100 backdrop-blur-xl transition-all duration-200";
-  const glassStyles = glass
-    ? "glass-card"
-    : "";
+    "group relative overflow-hidden rounded-[20px] border border-white/[0.07] bg-[#131316] p-5 text-slate-100";
+  const elevatedStyles = glass ? "border-white/10 bg-[#141416]" : "";
   const hoverStyles = hoverEffect
-    ? "hover:border-white/[0.14] hover:bg-[#111622]/90 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/60"
+    ? "transition-[transform,border-color] duration-200 hover:-translate-y-0.5 hover:border-white/[0.15] cursor-pointer"
     : "";
 
   const glowStyles = {
     none: "",
-    emerald: "before:absolute before:inset-0 before:-z-10 before:rounded-2xl before:bg-emerald-500/5 before:blur-xl",
-    cyan: "before:absolute before:inset-0 before:-z-10 before:rounded-2xl before:bg-cyan-500/5 before:blur-xl",
-    indigo: "before:absolute before:inset-0 before:-z-10 before:rounded-2xl before:bg-indigo-500/5 before:blur-xl",
-    rose: "before:absolute before:inset-0 before:-z-10 before:rounded-2xl before:bg-rose-500/5 before:blur-xl",
+    emerald: "",
+    cyan: "",
+    indigo: "",
+    rose: "",
   };
 
   return (
     <div
-      className={`${baseStyles} ${glassStyles} ${hoverStyles} ${glowStyles[glow]} ${className}`}
+      className={`${baseStyles} ${elevatedStyles} ${hoverStyles} ${glowStyles[glow]} ${className}`}
       {...props}
     >
+      {/* top light refraction streak */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
+      />
       {children}
     </div>
   );
@@ -48,7 +51,7 @@ export function CardHeader({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={`flex items-center justify-between gap-3 pb-3.5 mb-3.5 border-b border-white/[0.06] ${className}`}
+      className={`hairline-b flex items-center justify-between gap-3 pb-3.5 mb-4 ${className}`}
       {...props}
     >
       {children}

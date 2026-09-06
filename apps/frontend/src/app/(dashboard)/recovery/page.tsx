@@ -9,10 +9,12 @@ import {
 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { RecoveryFunnelChart } from "../../../components/charts/RecoveryFunnelChart";
 import { InterventionSuccessChart } from "../../../components/charts/InterventionSuccessChart";
 import { StatGroup } from "../../../components/cards/StatGroup";
 import { Button } from "../../../components/ui/Button";
+import { SkeletonCards, SkeletonChart } from "../../../components/ui/Skeleton";
 import { formatPercent } from "../../../lib/format";
 import { api } from "../../../lib/api";
 import type {
@@ -21,7 +23,7 @@ import type {
   AiPerformanceMetrics,
 } from "../../../lib/types";
 
-gsap.registerPlugin(useGSAP);
+gsap.registerPlugin(useGSAP, ScrollTrigger);
 
 export default function RecoveryPage() {
   const [funnelStages, setFunnelStages] = useState<FunnelStage[]>([]);
@@ -56,39 +58,90 @@ export default function RecoveryPage() {
 
   useGSAP(
     () => {
-      if (containerRef.current) {
-        const sections = Array.from(containerRef.current.children);
-        gsap.fromTo(
-          sections,
-          { opacity: 0, y: 12 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.35,
-            stagger: 0.05,
-            ease: "power2.out",
-            clearProps: "opacity,transform",
+      const mm = gsap.matchMedia();
+
+      mm.add(
+        {
+          full: "(prefers-reduced-motion: no-preference)",
+          reduced: "(prefers-reduced-motion: reduce)",
+        },
+        (ctx) => {
+          if (ctx.conditions?.reduced) return;
+          const q = gsap.utils.selector(containerRef);
+
+          // Master timeline: frame -> funnel/intervention panels -> scroll-linked stats.
+          // Transforms + autoAlpha only; labels keep sequencing readable.
+          const tl = gsap.timeline({
+            defaults: { duration: 0.55, ease: "power3.out" },
+          });
+          tl.addLabel("frame", 0);
+          tl.fromTo(
+            q(".fp-frame"),
+            { y: 14, autoAlpha: 0 },
+            { y: 0, autoAlpha: 1, duration: 0.5, clearProps: "transform" },
+            "frame"
+          );
+          tl.fromTo(
+            q(".fp-rise"),
+            { y: 18, autoAlpha: 0 },
+            {
+              y: 0,
+              autoAlpha: 1,
+              duration: 0.5,
+              stagger: { each: 0.07, from: "start" },
+              clearProps: "transform",
+            },
+            "frame+=0.1"
+          );
+
+          // Scroll-linked reveal for the lower stats panel — once.
+          const batchTargets = q(".dash-reveal");
+          if (batchTargets.length > 0) {
+            ScrollTrigger.batch(batchTargets as Element[], {
+              start: "top 90%",
+              once: true,
+              onEnter: (els) =>
+                gsap.fromTo(
+                  els as Element[],
+                  { y: 22, autoAlpha: 0 },
+                  {
+                    y: 0,
+                    autoAlpha: 1,
+                    duration: 0.6,
+                    stagger: { each: 0.08, from: "start" },
+                    ease: "power3.out",
+                    overwrite: true,
+                    clearProps: "transform",
+                  }
+                ),
+            });
           }
-        );
-      }
+        }
+      );
+
+      return () => mm.revert();
     },
-    { dependencies: [], scope: containerRef }
+    { scope: containerRef }
   );
 
   return (
-    <div ref={containerRef} className="space-y-6">
+    <div ref={containerRef}>
+      {/* Outer frame */}
+      <div className="fp-frame rounded-[26px] border border-white/10 bg-[#0c0c0e]/85 p-3 shadow-[0_32px_80px_-32px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:p-4">
+        <div className="space-y-3">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-emerald-400" />
+      <div className="fp-rise flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl px-2 pt-1">
+        <div className="min-w-52">
+          <h1 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-white">
+            <TrendingUp className="h-4 w-4 text-white/60" />
             Recovery Funnel & Intervention Analytics
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5 font-normal">
+          <p className="mt-0.5 text-[11px] font-normal text-white/45">
             Conversion stages, channel efficacy, and intervention success rates
           </p>
         </div>
 
+        <div className="ml-auto flex items-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -98,40 +151,57 @@ export default function RecoveryPage() {
         >
           Refresh Analytics
         </Button>
+        </div>
       </div>
 
       {/* 5-Stage Recovery Funnel Section */}
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-6 shadow-lg shadow-black/40 backdrop-blur-xl">
-        <div className="pb-3.5 mb-5 border-b border-white/[0.06]">
-          <h2 className="text-xs font-semibold text-slate-100 flex items-center gap-2">
-            <Layers className="h-4 w-4 text-cyan-400" />
+      <div className="fp-rise rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
+        <div className="border-b border-white/[0.06] pb-3.5">
+          <h2 className="flex items-center gap-2 text-[13px] font-semibold tracking-tight text-white">
+            <Layers className="h-4 w-4 text-white/60" />
             5-Stage End-to-End Recovery Progression
           </h2>
-          <p className="text-[11px] text-slate-400 mt-0.5 font-normal">
+          <p className="mt-0.5 text-[11px] font-normal text-white/45">
             Stage conversion from initial revenue leakage detection to finalized recovery settlement
           </p>
         </div>
 
-        <RecoveryFunnelChart stages={funnelStages} />
+        <div className="mt-4">
+        {loading && funnelStages.length === 0 ? (
+          <SkeletonChart height={280} />
+        ) : (
+          <RecoveryFunnelChart stages={funnelStages} />
+        )}
+        </div>
       </div>
 
       {/* Intervention Performance Table */}
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-6 shadow-lg shadow-black/40 backdrop-blur-xl">
-        <div className="pb-3.5 mb-4 border-b border-white/[0.06]">
-          <h2 className="text-xs font-semibold text-slate-100 flex items-center gap-2">
-            <Zap className="h-4 w-4 text-amber-400" />
+      <div className="fp-rise rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
+        <div className="border-b border-white/[0.06] pb-3.5">
+          <h2 className="flex items-center gap-2 text-[13px] font-semibold tracking-tight text-white">
+            <Zap className="h-4 w-4 text-white/60" />
             Intervention Channel Performance & Success Rates
           </h2>
-          <p className="text-[11px] text-slate-400 mt-0.5 font-normal">
+          <p className="mt-0.5 text-[11px] font-normal text-white/45">
             Detailed efficacy breakdown for payment retries, WhatsApp, email, links, and incentives
           </p>
         </div>
 
-        <InterventionSuccessChart stats={interventions} />
+        <div className="mt-4">
+        {loading && interventions.length === 0 ? (
+          <SkeletonChart height={280} />
+        ) : (
+          <InterventionSuccessChart stats={interventions} />
+        )}
+        </div>
       </div>
 
       {/* AI Decisioning & Policy Rejection Panel */}
-      <StatGroup
+      <div className="dash-reveal">
+      {loading && !aiMetrics ? (
+        <SkeletonCards count={4} className="lg:grid-cols-4" />
+      ) : (
+        <StatGroup
         title="AI Autonomy & Policy Rejection Governance"
         description="Autonomous recommendation volume and hard policy rejection rates"
         columns={4}
@@ -163,7 +233,11 @@ export default function RecoveryPage() {
             badgeVariant: "warning",
           },
         ]}
-      />
+        />
+      )}
+      </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -5,18 +5,19 @@ import {
   AlertTriangle,
   RefreshCw,
   ChevronRight,
-  Loader2,
 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Button } from "../../../components/ui/Button";
 import { Select } from "../../../components/ui/Select";
 import { Modal } from "../../../components/ui/Modal";
+import { SkeletonTable } from "../../../components/ui/Skeleton";
 import { formatDate, getRiskBandColor } from "../../../lib/format";
 import { api } from "../../../lib/api";
 import type { RiskEvaluationItem } from "../../../lib/types";
 
-gsap.registerPlugin(useGSAP);
+gsap.registerPlugin(useGSAP, ScrollTrigger);
 
 export default function RiskPage() {
   const [risks, setRisks] = useState<RiskEvaluationItem[]>([]);
@@ -66,39 +67,90 @@ export default function RiskPage() {
 
   useGSAP(
     () => {
-      if (containerRef.current) {
-        const sections = Array.from(containerRef.current.children);
-        gsap.fromTo(
-          sections,
-          { opacity: 0, y: 12 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.35,
-            stagger: 0.05,
-            ease: "power2.out",
-            clearProps: "opacity,transform",
+      const mm = gsap.matchMedia();
+
+      mm.add(
+        {
+          full: "(prefers-reduced-motion: no-preference)",
+          reduced: "(prefers-reduced-motion: reduce)",
+        },
+        (ctx) => {
+          if (ctx.conditions?.reduced) return;
+          const q = gsap.utils.selector(containerRef);
+
+          // Master timeline: frame -> header/filter panels -> scroll-linked table.
+          // Transforms + autoAlpha only; labels keep sequencing readable.
+          const tl = gsap.timeline({
+            defaults: { duration: 0.55, ease: "power3.out" },
+          });
+          tl.addLabel("frame", 0);
+          tl.fromTo(
+            q(".fp-frame"),
+            { y: 14, autoAlpha: 0 },
+            { y: 0, autoAlpha: 1, duration: 0.5, clearProps: "transform" },
+            "frame"
+          );
+          tl.fromTo(
+            q(".fp-rise"),
+            { y: 18, autoAlpha: 0 },
+            {
+              y: 0,
+              autoAlpha: 1,
+              duration: 0.5,
+              stagger: { each: 0.07, from: "start" },
+              clearProps: "transform",
+            },
+            "frame+=0.1"
+          );
+
+          // Scroll-linked reveal for the risks table — once.
+          const batchTargets = q(".dash-reveal");
+          if (batchTargets.length > 0) {
+            ScrollTrigger.batch(batchTargets as Element[], {
+              start: "top 90%",
+              once: true,
+              onEnter: (els) =>
+                gsap.fromTo(
+                  els as Element[],
+                  { y: 22, autoAlpha: 0 },
+                  {
+                    y: 0,
+                    autoAlpha: 1,
+                    duration: 0.6,
+                    stagger: { each: 0.08, from: "start" },
+                    ease: "power3.out",
+                    overwrite: true,
+                    clearProps: "transform",
+                  }
+                ),
+            });
           }
-        );
-      }
+        }
+      );
+
+      return () => mm.revert();
     },
-    { dependencies: [], scope: containerRef }
+    { scope: containerRef }
   );
 
   return (
-    <div ref={containerRef} className="space-y-6">
+    <div ref={containerRef}>
+      {/* Outer frame */}
+      <div className="fp-frame rounded-[26px] border border-white/10 bg-[#0c0c0e]/85 p-3 shadow-[0_32px_80px_-32px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:p-4">
+        <div className="space-y-3">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-400" />
+      <div className="fp-rise flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl px-2 pt-1">
+        <div className="min-w-52">
+          <h1 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-white">
+            <AlertTriangle className="h-4 w-4 text-white/60" />
             Risk Intelligence & Explainability Engine
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5 font-normal">
+          <p className="mt-0.5 text-[11px] font-normal text-white/45">
             Real-time multi-factor revenue risk evaluations and calibrated risk bands
           </p>
         </div>
 
+        <div className="ml-auto flex items-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -108,10 +160,11 @@ export default function RiskPage() {
         >
           Refresh Risks
         </Button>
+        </div>
       </div>
 
       {/* Filter Bar */}
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-4 shadow-lg shadow-black/40 backdrop-blur-xl">
+      <div className="fp-rise rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Select
             label="Risk Band"
@@ -119,10 +172,10 @@ export default function RiskPage() {
             onChange={(e) => setBandFilter(e.target.value)}
             options={[
               { value: "", label: "All Bands (Critical to Low)" },
-              { value: "CRITICAL", label: "CRITICAL (Score ≥ 80)" },
-              { value: "HIGH", label: "HIGH (Score 60–79)" },
-              { value: "MEDIUM", label: "MEDIUM (Score 30–59)" },
-              { value: "LOW", label: "LOW (Score < 30)" },
+              { value: "CRITICAL", label: "CRITICAL (Score ≥ 85)" },
+              { value: "HIGH", label: "HIGH (Score 60–84)" },
+              { value: "MEDIUM", label: "MEDIUM (Score 40–59)" },
+              { value: "LOW", label: "LOW (Score < 40)" },
             ]}
           />
 
@@ -155,21 +208,18 @@ export default function RiskPage() {
       </div>
 
       {/* Risks Table */}
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 shadow-lg shadow-black/40 overflow-hidden backdrop-blur-xl min-h-[320px] flex flex-col justify-center">
+      <div className="dash-reveal rounded-3xl border border-white/[0.07] bg-[#131316]/90 p-5 min-h-[320px]">
         {loading && risks.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-2.5 text-xs text-slate-400">
-            <Loader2 className="h-5 w-5 text-emerald-400 animate-spin" />
-            <span className="text-[11px] font-medium text-slate-400">Loading risk evaluations...</span>
-          </div>
+          <SkeletonTable rows={6} cols={7} />
         ) : risks.length === 0 ? (
-          <div className="py-16 text-center text-xs text-slate-500">
-            <AlertTriangle className="mx-auto h-7 w-7 mb-2 opacity-30 text-amber-400" />
+          <div className="py-16 text-center text-xs text-white/40">
+            <AlertTriangle className="mx-auto h-7 w-7 mb-2 opacity-30 text-white/30" />
             No risk evaluations found matching filter criteria
           </div>
         ) : (
-          <div className="overflow-x-auto self-stretch">
+          <div className="overflow-x-auto">
             <table className={`w-full text-left text-xs transition-opacity duration-200 ${loading ? "opacity-60" : "opacity-100"}`}>
-              <thead className="border-b border-white/[0.06] bg-[#090c13]/50 text-slate-400 font-semibold uppercase text-[10px]">
+              <thead className="border-b border-white/[0.06] font-semibold uppercase text-[10px] text-white/45">
                 <tr>
                   <th className="py-3 px-4">Customer ID</th>
                   <th className="py-3 px-4">Risk Surface</th>
@@ -180,15 +230,15 @@ export default function RiskPage() {
                   <th className="py-3 px-4 text-right">Factor Drill-Down</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04] font-mono text-xs">
+              <tbody className="divide-y divide-white/[0.05] font-mono text-xs">
                 {risks.map((r) => {
                   const bandStyles = getRiskBandColor(r.band);
                   return (
-                    <tr key={r.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="py-3 px-4 font-sans text-slate-300 font-medium truncate max-w-[140px] text-[11px]" title={r.customer_id}>
+                    <tr key={r.id} className="transition-colors hover:bg-white/[0.04]">
+                      <td className="py-3 px-4 font-sans font-medium truncate max-w-[140px] text-[11px] text-white/75" title={r.customer_id}>
                         {r.customer_id}
                       </td>
-                      <td className="py-3 px-4 font-sans font-medium text-slate-200 text-xs">
+                      <td className="py-3 px-4 font-sans font-medium text-xs text-white/75">
                         {r.risk_type.replace(/_/g, " ")}
                       </td>
                       <td className="py-3 px-4">
@@ -198,15 +248,15 @@ export default function RiskPage() {
                           {r.band}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right font-bold text-slate-100 tabular-nums">
+                      <td className="py-3 px-4 text-right font-bold text-white tabular-nums">
                         {r.score}/100
                       </td>
                       <td className="py-3 px-4">
-                        <span className="rounded-md bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 text-[10px] text-slate-300">
+                        <span className="rounded-md border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[10px] text-white/70">
                           {r.status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-slate-400 text-[11px]">
+                      <td className="py-3 px-4 text-[11px] text-white/45">
                         {formatDate(r.computed_at)}
                       </td>
                       <td className="py-3 px-4 text-right">
@@ -215,8 +265,8 @@ export default function RiskPage() {
                           size="sm"
                           onClick={() => setSelectedRisk(r)}
                         >
-                          <span className="font-sans font-semibold text-cyan-400 text-xs">Explain</span>
-                          <ChevronRight className="h-3 w-3 text-cyan-400" />
+                          <span className="font-sans font-semibold text-xs text-cyan-300">Explain</span>
+                          <ChevronRight className="h-3 w-3 text-cyan-300" />
                         </Button>
                       </td>
                     </tr>
@@ -228,7 +278,7 @@ export default function RiskPage() {
         )}
 
         {nextCursor && (
-          <div className="p-4 border-t border-white/[0.06] text-center">
+          <div className="mt-4 border-t border-white/[0.06] pt-4 text-center">
             <Button
               variant="outline"
               size="sm"
@@ -255,13 +305,13 @@ export default function RiskPage() {
           }
         >
           <div className="space-y-4 text-xs">
-            <div className="rounded-xl border border-white/[0.06] bg-[#090c13] p-3 text-xs space-y-1 font-mono">
-              <div>Customer: <span className="text-slate-200">{selectedRisk.customer_id}</span></div>
-              <div>Surface: <span className="text-slate-200">{selectedRisk.risk_type}</span></div>
-              <div>Evaluated: <span className="text-slate-200">{formatDate(selectedRisk.computed_at)}</span></div>
+            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5 text-xs space-y-1 font-mono text-white/55">
+              <div>Customer: <span className="text-white">{selectedRisk.customer_id}</span></div>
+              <div>Surface: <span className="text-white">{selectedRisk.risk_type}</span></div>
+              <div>Evaluated: <span className="text-white">{formatDate(selectedRisk.computed_at)}</span></div>
             </div>
 
-            <h4 className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-white/45">
               Contributing Factors & Rule Contributions
             </h4>
 
@@ -270,23 +320,25 @@ export default function RiskPage() {
                 Object.entries(selectedRisk.factors).map(([key, val]) => (
                   <div
                     key={key}
-                    className="flex items-center justify-between p-2.5 rounded-xl border border-white/[0.06] bg-[#090c13]/70"
+                    className="flex items-center justify-between rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5"
                   >
-                    <span className="font-sans font-medium text-slate-300 capitalize text-xs">
+                    <span className="font-sans font-medium capitalize text-xs text-white/70">
                       {key.replace(/_/g, " ")}
                     </span>
-                    <span className="text-cyan-400 font-bold tabular-nums">
+                    <span className="font-bold tabular-nums text-cyan-300">
                       {typeof val === "object" ? JSON.stringify(val) : String(val)}
                     </span>
                   </div>
                 ))
               ) : (
-                <p className="text-slate-500 italic text-xs">No specific factor breakdown stored</p>
+                <p className="italic text-xs text-white/40">No specific factor breakdown stored</p>
               )}
             </div>
           </div>
         </Modal>
       )}
+        </div>
+      </div>
     </div>
   );
 }

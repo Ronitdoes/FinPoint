@@ -28,11 +28,11 @@ export function Button({
 }: ButtonProps) {
   const variantStyles = {
     primary:
-      "bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold border-emerald-400/30 shadow-sm shadow-emerald-950/40 hover:shadow-md hover:shadow-emerald-500/20 active:bg-emerald-600 active:scale-[0.98]",
+      "bg-[#3ef0a8] hover:bg-[#63f7bb] text-black font-semibold border-[#3ef0a8] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.45),0_10px_36px_-10px_rgba(62,240,168,0.65)] hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5),0_12px_44px_-10px_rgba(62,240,168,0.75)] active:scale-[0.98]",
     secondary:
-      "bg-[#131926] hover:bg-[#1a2335] text-slate-200 border-white/[0.08] hover:border-white/[0.16] shadow-sm active:bg-[#0f141e] active:scale-[0.98]",
+      "bg-white/[0.05] hover:bg-white/[0.10] text-slate-200 border-white/10 hover:border-white/15 backdrop-blur-xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] active:scale-[0.98]",
     outline:
-      "bg-transparent hover:bg-white/[0.04] text-slate-300 border-white/[0.12] hover:border-white/[0.24] hover:text-white active:scale-[0.98]",
+      "bg-white/[0.05] hover:bg-white/[0.10] text-slate-300 border-white/10 hover:border-white/15 backdrop-blur-xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:text-white active:scale-[0.98]",
     danger:
       "bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/30 hover:border-rose-500/50 shadow-sm active:bg-rose-500/30 active:scale-[0.98]",
     warning:
@@ -52,7 +52,7 @@ export function Button({
   return (
     <button
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-2 border transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none select-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 border will-change-transform transition-[transform,background-color,border-color,box-shadow] duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none select-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
       {...props}
     >
       {loading ? (
