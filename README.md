@@ -1,4 +1,4 @@
-# AI Revenue Recovery — Autonomous-but-Bounded Revenue Recovery Platform
+# FinPoint — Autonomous-but-Bounded Revenue Recovery Platform
 
 > **Thesis:** *AI decides what should happen; policy + workflow infrastructure decide what is allowed to happen.*
 >
