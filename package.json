@@ -23,12 +23,13 @@
     "infra:down": "docker compose -f infra/docker/docker-compose.yml down"
   },
   "devDependencies": {
-    "@repo/db": "workspace:*",
     "@repo/config": "workspace:*",
+    "@repo/db": "workspace:*",
     "@repo/domain": "workspace:*",
-    "@repo/worker": "workspace:*",
     "@repo/integrations": "workspace:*",
     "@repo/observability": "workspace:*",
+    "@repo/worker": "workspace:*",
+    "@types/node": "^20",
     "fastify": "^5.2.1",
     "ioredis": "^5.4.2",
     "pino": "^9.6.0",

@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
+  "globalEnv": ["NODE_ENV", "FAULT_POINTS", "CHAOS_ENABLED"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

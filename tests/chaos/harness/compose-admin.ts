@@ -16,6 +16,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import process from "node:process";
 
 export interface DrillReport {
   drill: string;
@@ -29,6 +30,25 @@ export interface DrillReport {
 }
 
 const PROD_SHAPED_ENV = ["production", "prod", "live"];
+
+/**
+ * Portable blocking sleep (the `sleep(1)` binary does not exist on Windows
+ * dev machines). Implemented via `Atomics.wait` so kill drills behave
+ * identically on win32/POSIX without spawning a subprocess.
+ */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Container names default to the compose project naming but stay overridable
+ * via env (`CHAOS_REDIS_CONTAINER`, …) since compose prefixes depend on the
+ * checkout directory name.
+ */
+function containerName(envVar: string, fallback: string): string {
+  const override = process.env[envVar]?.trim();
+  return override && override.length > 0 ? override : fallback;
+}
 
 /** Throws when the current environment looks like production. */
 export function assertNonProd(): void {
@@ -106,7 +126,9 @@ function guarded(drill: string, command: string[], run: () => DrillReport): Dril
 }
 
 /** Restart Redis mid-use; callers assert degraded-not-dead behavior + recovery. */
-export function drillRestartRedis(container = "ai-revenue-recovery-redis-1"): DrillReport {
+export function drillRestartRedis(
+  container = containerName("CHAOS_REDIS_CONTAINER", "ai-revenue-recovery-redis-1"),
+): DrillReport {
   return guarded("redis-down", ["docker", "restart", container], () =>
     runDocker(["restart", container], "redis-down"),
   );
@@ -114,19 +136,25 @@ export function drillRestartRedis(container = "ai-revenue-recovery-redis-1"): Dr
 
 /** Freeze Postgres I/O for `seconds`, then unpause; pool must reconnect. */
 export function drillPausePostgres(
-  container = "ai-revenue-recovery-postgres-1",
+  container = containerName("CHAOS_POSTGRES_CONTAINER", "ai-revenue-recovery-postgres-1"),
   seconds = 30,
 ): DrillReport {
   return guarded("postgres-reconnect", ["docker", "pause/unpause", container], () => {
     const paused = runDocker(["pause", container], "postgres-reconnect");
     if (paused.exitCode !== 0) return paused;
-    execFileSync("sleep", [String(seconds)], { timeout: (seconds + 10) * 1000 });
+    try {
+      sleepSync(seconds * 1000);
+    } catch {
+      // Fall through: the container must be unpaused even if the wait breaks.
+    }
     return runDocker(["unpause", container], "postgres-reconnect");
   });
 }
 
 /** SIGKILL the Temporal worker container mid-round; workflows resume from history. */
-export function drillKillWorker(container = "ai-revenue-recovery-worker-1"): DrillReport {
+export function drillKillWorker(
+  container = containerName("CHAOS_WORKER_CONTAINER", "ai-revenue-recovery-worker-1"),
+): DrillReport {
   return guarded("worker-crash", ["docker", "kill", "-s", "SIGKILL", container], () =>
     runDocker(["kill", "-s", "SIGKILL", container], "worker-crash"),
   );
@@ -134,7 +162,7 @@ export function drillKillWorker(container = "ai-revenue-recovery-worker-1"): Dri
 
 /** Stop Redpanda to simulate an unreachable bus; consumers must drain backlog on return. */
 export function drillStopRedpanda(
-  container = "ai-revenue-recovery-redpanda-1",
+  container = containerName("CHAOS_REDPANDA_CONTAINER", "ai-revenue-recovery-redpanda-1"),
 ): DrillReport {
   return guarded("redpanda-down", ["docker", "stop", container], () =>
     runDocker(["stop", container], "redpanda-down"),
@@ -143,7 +171,7 @@ export function drillStopRedpanda(
 
 /** Restarts a previously stopped Redpanda container (backlog-drain second half). */
 export function drillStartRedpanda(
-  container = "ai-revenue-recovery-redpanda-1",
+  container = containerName("CHAOS_REDPANDA_CONTAINER", "ai-revenue-recovery-redpanda-1"),
 ): DrillReport {
   return guarded("redpanda-up", ["docker", "start", container], () =>
     runDocker(["start", container], "redpanda-up"),

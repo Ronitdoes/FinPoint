@@ -4,12 +4,23 @@ FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd2
 WORKDIR /app
 
 # Copy dependency manifests
+# Every workspace in the root dependency graph must exist on disk or
+# `bun install --frozen-lockfile` fails on the pruned checkout (keep this
+# list in sync with root package.json workspace deps).
 COPY package.json bun.lock turbo.json ./
 COPY apps/frontend/package.json ./apps/frontend/package.json
-COPY packages/domain/package.json ./packages/domain/package.json
 COPY packages/config/package.json ./packages/config/package.json
+COPY packages/db/package.json ./packages/db/package.json
+COPY packages/domain/package.json ./packages/domain/package.json
+COPY packages/observability/package.json ./packages/observability/package.json
+COPY packages/policy/package.json ./packages/policy/package.json
+COPY packages/orchestration/package.json ./packages/orchestration/package.json
+COPY packages/integrations/package.json ./packages/integrations/package.json
+COPY packages/testing/package.json ./packages/testing/package.json
 COPY packages/typescript-config/package.json ./packages/typescript-config/package.json
 COPY packages/eslint-config/package.json ./packages/eslint-config/package.json
+COPY services/eval/package.json ./services/eval/package.json
+COPY services/worker/package.json ./services/worker/package.json
 
 RUN bun install --frozen-lockfile
 

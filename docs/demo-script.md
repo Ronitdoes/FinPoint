@@ -26,7 +26,7 @@ bun run dev
 
 - **Frontend Dashboard**: [http://localhost:3000](http://localhost:3000)
 - **Backend API**: [http://localhost:4000](http://localhost:4000)
-- **Temporal UI**: [http://localhost:8088](http://localhost:8088)
+- **Temporal UI**: [http://localhost:8080](http://localhost:8080)
 - **Login Email**: `ops@example.com` (or `admin@example.com`)
 - **Password**: `Admin12345!@#`
 
@@ -132,7 +132,7 @@ curl -X POST http://localhost:4000/demo/payment-fail \
 
 **Goal**: Demonstrate durable, stateful execution that survives failures and restarts.
 
-1. Open the Temporal Web UI at [http://localhost:8088](http://localhost:8088).
+1. Open the Temporal Web UI at [http://localhost:8080](http://localhost:8080).
 2. Look up workflow ID `recover:<caseId>`:
    - Status: `RUNNING`
    - Current activity: `sendWhatsAppMessage` completed → `WAITING_FOR_PAYMENT`.
