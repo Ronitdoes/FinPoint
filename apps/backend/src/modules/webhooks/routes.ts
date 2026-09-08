@@ -3,6 +3,8 @@ import { processInboundWebhook } from "./ingest.service";
 import { NotAcceptableError } from "../../lib/errors";
 import { whatsappWebhookRoutes } from "../messaging/webhooks/whatsapp.routes";
 import { emailWebhookRoutes } from "../messaging/webhooks/email.routes";
+import { checkIpBlock } from "../security/ip-block.service";
+import { recordWebhookAuthFailure } from "../security/webhook-abuse";
 
 import { DEV_MOCK_STRIPE_WEBHOOK_SECRET, DEV_MOCK_RAZORPAY_WEBHOOK_SECRET } from "../demo/simulator.service";
 
@@ -48,7 +50,7 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
           timeWindow: "1 minute",
         },
       },
-      preHandler: [validateContentType],
+      preHandler: [checkIpBlock, validateContentType],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const rawBody = getRawBody(request);
@@ -67,25 +69,32 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
             ? DEV_MOCK_STRIPE_WEBHOOK_SECRET
             : undefined;
 
-      const result = await processInboundWebhook(
-        {
-          db: fastify.db,
-          repos: fastify.repos,
-          eventBus: (fastify as any).eventBus,
-          logger: request.log,
-          stripeWebhookSecret: stripeSecret,
-        },
-        {
-          provider: "STRIPE",
-          rawBody,
-          headers: request.headers,
-          queryTenantId: query?.tenant_id,
-          correlationId: request.correlationId,
-          traceparent: request.traceparent,
-        },
-      );
+      try {
+        const result = await processInboundWebhook(
+          {
+            db: fastify.db,
+            repos: fastify.repos,
+            eventBus: (fastify as any).eventBus,
+            logger: request.log,
+            stripeWebhookSecret: stripeSecret,
+          },
+          {
+            provider: "STRIPE",
+            rawBody,
+            headers: request.headers,
+            queryTenantId: query?.tenant_id,
+            correlationId: request.correlationId,
+            traceparent: request.traceparent,
+          },
+        );
 
-      return reply.status(200).send(result);
+        return reply.status(200).send(result);
+      } catch (err: any) {
+        if (err?.code === "INVALID_SIGNATURE" || err?.statusCode === 401) {
+          await recordWebhookAuthFailure(fastify, request, "STRIPE");
+        }
+        throw err;
+      }
     },
   );
 
@@ -99,7 +108,7 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
           timeWindow: "1 minute",
         },
       },
-      preHandler: [validateContentType],
+      preHandler: [checkIpBlock, validateContentType],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const rawBody = getRawBody(request);
@@ -118,25 +127,32 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
             ? DEV_MOCK_RAZORPAY_WEBHOOK_SECRET
             : undefined;
 
-      const result = await processInboundWebhook(
-        {
-          db: fastify.db,
-          repos: fastify.repos,
-          eventBus: (fastify as any).eventBus,
-          logger: request.log,
-          razorpayWebhookSecret: razorpaySecret,
-        },
-        {
-          provider: "RAZORPAY",
-          rawBody,
-          headers: request.headers,
-          queryTenantId: query?.tenant_id,
-          correlationId: request.correlationId,
-          traceparent: request.traceparent,
-        },
-      );
+      try {
+        const result = await processInboundWebhook(
+          {
+            db: fastify.db,
+            repos: fastify.repos,
+            eventBus: (fastify as any).eventBus,
+            logger: request.log,
+            razorpayWebhookSecret: razorpaySecret,
+          },
+          {
+            provider: "RAZORPAY",
+            rawBody,
+            headers: request.headers,
+            queryTenantId: query?.tenant_id,
+            correlationId: request.correlationId,
+            traceparent: request.traceparent,
+          },
+        );
 
-      return reply.status(200).send(result);
+        return reply.status(200).send(result);
+      } catch (err: any) {
+        if (err?.code === "INVALID_SIGNATURE" || err?.statusCode === 401) {
+          await recordWebhookAuthFailure(fastify, request, "RAZORPAY");
+        }
+        throw err;
+      }
     },
   );
 

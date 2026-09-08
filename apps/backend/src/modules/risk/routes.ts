@@ -9,6 +9,7 @@ import {
   ValidationError,
   NotFoundError,
 } from "../../lib/errors";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 
 const listRisksQuerySchema = z.object({
   status: z.enum(RISK_STATUSES).optional(),
@@ -37,6 +38,9 @@ export const riskRoutes: FastifyPluginAsync = async (app) => {
     "",
     {
       preHandler: [app.requireAuth],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = listRisksQuerySchema.safeParse(request.query);
@@ -78,6 +82,9 @@ export const riskRoutes: FastifyPluginAsync = async (app) => {
     "/:id",
     {
       preHandler: [app.requireAuth],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseParams = riskParamsSchema.safeParse(request.params);

@@ -2,6 +2,8 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { MessageStatus, DomainEvent } from "@repo/domain";
 import { NotAcceptableError } from "../../../lib/errors";
+import { checkIpBlock } from "../../security/ip-block.service";
+import { recordWebhookAuthFailure } from "../../security/webhook-abuse";
 
 export interface EmailWebhookOptions {
   webhookSecret?: string | null;
@@ -44,6 +46,7 @@ export const emailWebhookRoutes: FastifyPluginAsync<EmailWebhookOptions> = async
 
     // Verify token / secret
     if (providedToken && providedToken !== expectedSecret) {
+      await recordWebhookAuthFailure(fastify, request, "EMAIL");
       return reply.status(401).send({
         error: {
           code: "UNAUTHORIZED",
@@ -158,7 +161,7 @@ export const emailWebhookRoutes: FastifyPluginAsync<EmailWebhookOptions> = async
           timeWindow: "1 minute",
         },
       },
-      preHandler: [validateContentType],
+      preHandler: [checkIpBlock, validateContentType],
     },
     handleEmailWebhook,
   );
@@ -173,7 +176,7 @@ export const emailWebhookRoutes: FastifyPluginAsync<EmailWebhookOptions> = async
           timeWindow: "1 minute",
         },
       },
-      preHandler: [validateContentType],
+      preHandler: [checkIpBlock, validateContentType],
     },
     handleEmailWebhook,
   );

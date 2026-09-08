@@ -22,6 +22,7 @@ export const DomainErrorCodes = {
   IDEMPOTENCY_IN_FLIGHT: "IDEMPOTENCY_IN_FLIGHT",
   IDEMPOTENCY_KEY_REUSED: "IDEMPOTENCY_KEY_REUSED",
   RATE_LIMITED: "RATE_LIMITED",
+  IP_BLOCKED: "IP_BLOCKED",
   TENANT_CONTEXT_MISSING: "TENANT_CONTEXT_MISSING",
   INVALID_SIGNATURE: "INVALID_SIGNATURE",
   UNMAPPABLE_PAYLOAD: "UNMAPPABLE_PAYLOAD",
@@ -151,6 +152,18 @@ export class RateLimitedError extends DomainError {
 export class InvalidSignatureError extends DomainError {
   constructor(message: string = "Invalid webhook signature", details: unknown = {}) {
     super(message, DomainErrorCodes.INVALID_SIGNATURE, 401, details);
+  }
+}
+
+export class IpBlockedError extends DomainError {
+  constructor(
+    message: string = "IP temporarily blocked due to repeated authentication failures",
+    retryAfterSeconds: number = 600,
+    details: unknown = {},
+  ) {
+    super(message, DomainErrorCodes.IP_BLOCKED, 429, details, {
+      "Retry-After": String(retryAfterSeconds),
+    });
   }
 }
 

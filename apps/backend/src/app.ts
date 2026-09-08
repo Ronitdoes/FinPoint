@@ -7,6 +7,9 @@ import { contextPlugin } from "./plugins/context";
 import { loggerPlugin, createLoggerConfig } from "./plugins/logger";
 import { corsPlugin } from "./plugins/cors";
 import { rateLimitPlugin } from "./plugins/rate-limit";
+import { rateLimitKeyGenerator } from "./plugins/rate-limit-policy";
+import { recordRatelimitHit } from "@repo/observability";
+import { IpBlockService, checkIpBlock } from "./modules/security/ip-block.service";
 import { dbPlugin, type Repositories } from "./plugins/db";
 import { errorHandlerPlugin } from "./plugins/error-handler";
 import { otelPlugin } from "./plugins/otel";
@@ -14,6 +17,7 @@ import { shutdownPlugin } from "./plugins/shutdown";
 import { authPlugin } from "./plugins/auth";
 import { rbacPlugin } from "./plugins/rbac";
 import { registerRouteModules } from "./lib/routes";
+import { registerJobs, type JobsOptions } from "./jobs";
 import { registerRiskConsumer } from "./modules/risk/consumer";
 import { registerCaseConsumer } from "./modules/cases/consumer";
 import type { Database } from "@repo/db";
@@ -39,6 +43,7 @@ export interface AppOptions {
   disableRateLimit?: boolean;
   logger?: FastifyServerOptions["logger"];
   eventBus?: EventBus;
+  jobs?: JobsOptions;
 }
 
 /**
@@ -145,11 +150,19 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     isProduction: config.app.env === "production",
   });
 
-  // 4. Rate Limiting plugin
+  // 4. Rate Limiting plugin (s-30 per-class policy; identity-keyed)
   if (!opts.disableRateLimit) {
     await app.register(rateLimitPlugin, {
       redis,
       skipOnError: true,
+      keyGenerator: rateLimitKeyGenerator,
+      onLimitExceeded: (_req, routeClass) => {
+        try {
+          recordRatelimitHit(routeClass);
+        } catch {
+          // metrics must never break request handling
+        }
+      },
     });
   }
 
@@ -174,6 +187,12 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     sessionSecret: config.auth?.sessionSecret,
   });
 
+  // 9b. Abuse protection: temporary IP blocks after repeated signature
+  // failures (s-30). Decorated before routes so guards can reference it.
+  const ipBlockService = new IpBlockService(redis);
+  app.decorate("ipBlockService", ipBlockService);
+  app.decorate("checkIpBlock", checkIpBlock);
+
   // 10. RBAC Role checking plugin
   await app.register(rbacPlugin);
 
@@ -185,6 +204,9 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
 
   // 13. Register case orchestrator event consumer (s-17)
   registerCaseConsumer(app);
+
+  // 14. Register background reconciliation jobs (s-31; opt-in, off in tests)
+  registerJobs(app, opts.jobs);
 
   return app;
 }

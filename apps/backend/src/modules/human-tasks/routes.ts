@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { ForbiddenError, ValidationError } from "../../lib/errors";
 import { HumanTasksService } from "./service";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 import {
   approveHumanTaskBodySchema,
   assignHumanTaskBodySchema,
@@ -36,6 +37,9 @@ export const humanTasksRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = listHumanTasksQuerySchema.safeParse(request.query);
@@ -65,6 +69,9 @@ export const humanTasksRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseParams = humanTaskParamsSchema.safeParse(request.params);

@@ -3,6 +3,7 @@ import { metaRoutes } from "../modules/meta/routes";
 import { authRoutes } from "../modules/auth/routes";
 import { adminUsersRoutes } from "../modules/admin/users.routes";
 import { adminApiKeysRoutes } from "../modules/admin/api-keys.routes";
+import { ipBlocksRoutes } from "../modules/admin/ip-blocks.routes";
 import { webhooksRoutes } from "../modules/webhooks/routes";
 import { eventsRoutes } from "../modules/events/routes";
 import { riskRoutes } from "../modules/risk/routes";
@@ -45,6 +46,10 @@ export const routeModules: RouteModuleEntry[] = [
   {
     prefix: "/admin",
     plugin: adminApiKeysRoutes,
+  },
+  {
+    prefix: "/admin",
+    plugin: ipBlocksRoutes,
   },
   {
     prefix: "/audit",

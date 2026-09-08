@@ -523,6 +523,77 @@ export function recordCostEntryGap(category: string, count = 1): void {
   costEntryGapsTotal.inc({ category }, count);
 }
 
+// 19. Security Hardening Metrics (Step 30 — Spec 03 §11)
+export const securityRatelimitHitsTotal = new Counter({
+  name: "security_ratelimit_hits_total",
+  help: "Total number of HTTP requests rejected by rate limiting partitioned by route class",
+  labelNames: ["route_class"] as const,
+  registers: [metricsRegistry],
+});
+
+export const securitySignatureFailuresTotal = new Counter({
+  name: "security_signature_failures_total",
+  help: "Total number of webhook signature verification failures partitioned by provider",
+  labelNames: ["provider"] as const,
+  registers: [metricsRegistry],
+});
+
+export const securityIpBlocksTotal = new Counter({
+  name: "security_ip_blocks_total",
+  help: "Total number of temporary IP blocks imposed after repeated signature failures",
+  labelNames: ["reason"] as const,
+  registers: [metricsRegistry],
+});
+
+export function recordRatelimitHit(routeClass: string): void {
+  securityRatelimitHitsTotal.inc({ route_class: routeClass });
+}
+
+export function recordSignatureFailure(provider: string): void {
+  securitySignatureFailuresTotal.inc({ provider });
+}
+
+export function recordIpBlock(reason: string): void {
+  securityIpBlocksTotal.inc({ reason });
+}
+
+// 20. Resilience & Chaos Metrics (Step 31 — Spec 01 §21)
+export const chaosFaultsInjectedTotal = new Counter({
+  name: "chaos_faults_injected_total",
+  help: "Total number of chaos faults injected by the fault-point harness partitioned by fault and phase",
+  labelNames: ["fault", "phase"] as const,
+  registers: [metricsRegistry],
+});
+
+export const executingSweeperActionsTotal = new Counter({
+  name: "executing_sweeper_actions_total",
+  help: "Total EXECUTING-stuck actions reconciled by the sweeper partitioned by resolution result",
+  labelNames: ["result"] as const,
+  registers: [metricsRegistry],
+});
+
+export const chaosBacklogDrainDurationMs = new Histogram({
+  name: "chaos_backlog_drain_duration_ms",
+  help: "Time taken to drain a backlogged event backlog in milliseconds",
+  labelNames: ["topic"] as const,
+  buckets: [100, 500, 1000, 2500, 5000, 15000, 30000, 60000],
+  registers: [metricsRegistry],
+});
+
+export function recordChaosFaultInjected(fault: string, phase: string): void {
+  chaosFaultsInjectedTotal.inc({ fault, phase });
+}
+
+export function recordExecutingSweeperAction(
+  result: "completed" | "failed" | "pending" | string,
+): void {
+  executingSweeperActionsTotal.inc({ result });
+}
+
+export function recordBacklogDrain(topic: string, durationMs: number): void {
+  chaosBacklogDrainDurationMs.observe({ topic }, durationMs);
+}
+
 /**
  * Returns the Prometheus exposition text format.
  */

@@ -13,6 +13,7 @@ import {
   withActivityContext,
   withActivityDb,
   createNonRetryableFailure,
+  checkFaultPoint,
 } from "../framework";
 
 export interface ExecuteRetryPaymentInput extends ActivityContext {
@@ -69,6 +70,13 @@ export async function executeRetryPayment(
       const amount = input.amountMinor ? BigInt(input.amountMinor) : payment.amount;
       const currency = input.currency ?? payment.currency;
 
+      // Step 31: crash window before the money-moving side effect.
+      await checkFaultPoint("executeRetryPayment", "before_provider_call", {
+        tenantId: input.tenantId,
+        caseId: input.caseId,
+        idempotencyKey,
+      });
+
       const retryResult = await adapter.retryPayment({
         tenantId: input.tenantId,
         caseId: input.caseId,
@@ -83,7 +91,13 @@ export async function executeRetryPayment(
         attemptNumber: input.attemptNumber,
       });
 
-      // Persist attempt in DB
+      // Persist attempt in DB (step 31: post-provider crash window first).
+      await checkFaultPoint("executeRetryPayment", "after_provider_call", {
+        tenantId: input.tenantId,
+        caseId: input.caseId,
+        idempotencyKey,
+        providerStatus: retryResult.status,
+      });
       const attempt = await createPaymentAttempt(
         { db, tx },
         {

@@ -8,7 +8,15 @@ loadEnv({ path: path.resolve(import.meta.dirname, "../../../.env") });
 
 export async function startServer() {
   const config = apiConfig();
-  const app = await buildApp({ config });
+  // Step 31: EXECUTING-stuck sweeper reconciles crash-window rows every 5
+  // minutes in every non-test environment (s-33 owns the durable schedule).
+  const enableSweeper = config.app.env !== "test";
+  const app = await buildApp({
+    config,
+    jobs: enableSweeper
+      ? { executingSweeper: { enabled: true, intervalMs: 5 * 60 * 1000 } }
+      : undefined,
+  });
 
   let isShuttingDown = false;
 

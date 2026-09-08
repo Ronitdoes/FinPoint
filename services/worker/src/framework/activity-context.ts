@@ -1,6 +1,7 @@
 import { Context } from "@temporalio/activity";
 import { db, withTransaction, type Database, type Tx } from "@repo/db";
 import { getLogger, withSpan } from "@repo/observability";
+import { checkFaultPoint } from "./fault-points";
 
 export interface ActivityContext {
   tenantId: string;
@@ -63,8 +64,18 @@ export async function withActivityContext<T>(
     },
     async () => {
       log.debug({ activity: activityName }, "Starting activity execution");
+      // Step 31: deterministic pre-hook breakpoint (fault-point harness).
+      await checkFaultPoint(activityName, "pre", {
+        tenantId: ctx.tenantId,
+        caseId: ctx.caseId,
+      });
       try {
         const result = await fn();
+        // Step 31: deterministic post-hook breakpoint (fault-point harness).
+        await checkFaultPoint(activityName, "post", {
+          tenantId: ctx.tenantId,
+          caseId: ctx.caseId,
+        });
         log.debug({ activity: activityName }, "Activity executed successfully");
         return result;
       } catch (error) {

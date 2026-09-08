@@ -24,6 +24,8 @@ export interface CreateDecisionInput {
   outputTokens?: number;
   costMinorUnits?: bigint;
   error?: string;
+  /** Test/seed override for the creation timestamp (defaults to now). */
+  createdAt?: Date;
 }
 
 export async function createDecision(
@@ -51,6 +53,7 @@ export async function createDecision(
       outputTokens: input.outputTokens,
       costMinorUnits: input.costMinorUnits ?? 0n,
       error: input.error,
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     })
     .returning();
   return created;

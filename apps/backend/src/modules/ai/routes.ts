@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { ValidationError } from "../../lib/errors";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 import { AiDecideService } from "./decide.service";
 import { decisionGovernanceRoutes } from "./governance/routes";
 
@@ -30,6 +31,11 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireScope("ai:decide"),
       ],
+      config: {
+        // LLM calls cost money per token: budget like other expensive
+        // authenticated ingestion surfaces (s-30 events class).
+        rateLimit: rateLimitFor("events"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = decideBodySchema.safeParse(request.body);

@@ -1,5 +1,6 @@
 # Multi-stage Dockerfile for Fastify Backend (apps/backend)
-FROM oven/bun:1.4-alpine AS base
+# s-30: base images pinned by digest (tag kept for readability; digest is authoritative).
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS base
 WORKDIR /app
 
 # Copy dependency manifests
@@ -28,7 +29,7 @@ ENV NODE_ENV=production
 RUN bun run --cwd apps/backend build
 
 # Slim production runner
-FROM oven/bun:1.4-alpine AS runner
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

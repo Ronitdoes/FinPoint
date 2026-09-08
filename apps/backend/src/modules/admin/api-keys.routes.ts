@@ -8,6 +8,7 @@ import {
   revokeTenantApiKey,
   listTenantApiKeys,
 } from "./service";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 import { ValidationError } from "../../lib/errors";
 
 export const adminApiKeysRoutes: FastifyPluginAsync = async (
@@ -79,7 +80,7 @@ export const adminApiKeysRoutes: FastifyPluginAsync = async (
    */
   fastify.get(
     "/api-keys",
-    { preHandler: adminGuards },
+    { preHandler: adminGuards, config: { rateLimit: rateLimitFor("read") } },
     async (request, reply) => {
       const { tenantId } = fastify.getTenantScope(request);
 

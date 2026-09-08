@@ -558,6 +558,10 @@ describe("Payment Provider Adapters & Execution Service Integration", { timeout:
       const res = await app.inject({
         method: "POST",
         url: `/demo/mock/payments/${key}/next-outcome`,
+        headers: {
+          // s-30: mock scripting requires demo-authorized principal (OPERATIONS+ session)
+          cookie: `rr_session=${adminCookie}`,
+        },
         payload: {
           status: "FAILED",
           failureCode: "stale_card",
@@ -571,6 +575,19 @@ describe("Payment Provider Adapters & Execution Service Integration", { timeout:
       const override = MockPaymentProvider.getOutcomeOverride(key);
       expect(override?.status).toBe("FAILED");
       expect(override?.failureCode).toBe("stale_card");
+    });
+
+    it("POST /demo/mock/payments/:key/next-outcome rejects unauthenticated scripting (s-30)", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/demo/mock/payments/evil_key_99/next-outcome`,
+        payload: {
+          status: "SUCCEEDED",
+        },
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(MockPaymentProvider.getOutcomeOverride("evil_key_99")).toBeUndefined();
     });
   });
 });

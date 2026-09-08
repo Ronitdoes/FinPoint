@@ -6,6 +6,7 @@ import {
   EvaluatePolicyRequestSchema,
   UpdatePolicyRuleSchema,
 } from "./policy.types";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 import { PolicyService } from "./policy.service";
 
 /**
@@ -79,6 +80,9 @@ export const policiesCrudRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.requireAuth,
         fastify.requireRole("ADMIN", "FINANCE", "OPERATIONS", "SUPPORT", "VIEWER"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request, reply) => {
       const tenantScope = fastify.getTenantScope(request);
@@ -154,6 +158,9 @@ export const policiesCrudRoutes: FastifyPluginAsync = async (fastify) => {
     "/:id/versions",
     {
       preHandler: [fastify.requireAuth, fastify.requireRole("ADMIN", "FINANCE")],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request, reply) => {
       const tenantScope = fastify.getTenantScope(request);

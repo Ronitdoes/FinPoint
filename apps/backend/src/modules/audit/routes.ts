@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { ACTOR_TYPES } from "@repo/domain";
 import { ValidationError } from "../../lib/errors";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 
 const auditQuerySchema = z.object({
   case_id: z.string().uuid().optional(),
@@ -25,6 +26,9 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
     "",
     {
       preHandler: [app.requireAuth, app.requireRole("ADMIN")],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = auditQuerySchema.safeParse(request.query);

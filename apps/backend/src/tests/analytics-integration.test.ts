@@ -222,6 +222,9 @@ describe("Step 27 Integration: Analytics Service & APIs", { timeout: 60000 }, ()
         inputTokens: 200,
         outputTokens: 50,
         costMinorUnits: 10n,
+        // Golden-month fixture: decision belongs to the August window (s-30 fix —
+        // createdAt otherwise defaults to now and drifts out of FROM/TO over time).
+        createdAt: new Date("2026-08-01T10:01:00.000Z"),
       },
     );
 
@@ -251,6 +254,7 @@ describe("Step 27 Integration: Analytics Service & APIs", { timeout: 60000 }, ()
         status: "EXECUTED",
         idempotencyKey: `${tenantA.id}:${case1.id}:SEND_WHATSAPP:1`,
         completedAt: new Date("2026-08-01T10:02:00.000Z"),
+        createdAt: new Date("2026-08-01T10:02:00.000Z"),
       },
     );
 
@@ -339,6 +343,7 @@ describe("Step 27 Integration: Analytics Service & APIs", { timeout: 60000 }, ()
         inputTokens: 250,
         outputTokens: 60,
         costMinorUnits: 15n,
+        createdAt: new Date("2026-08-05T09:01:00.000Z"),
       },
     );
 
@@ -379,6 +384,7 @@ describe("Step 27 Integration: Analytics Service & APIs", { timeout: 60000 }, ()
         status: "EXECUTED",
         idempotencyKey: `${tenantA.id}:${case2.id}:OFFER_INCENTIVE:1`,
         completedAt: new Date("2026-08-05T10:00:00.000Z"),
+        createdAt: new Date("2026-08-05T10:00:00.000Z"),
       },
     );
 
@@ -467,6 +473,7 @@ describe("Step 27 Integration: Analytics Service & APIs", { timeout: 60000 }, ()
         inputTokens: 180,
         outputTokens: 40,
         costMinorUnits: 8n,
+        createdAt: new Date("2026-08-15T14:01:00.000Z"),
       },
     );
 
@@ -496,6 +503,7 @@ describe("Step 27 Integration: Analytics Service & APIs", { timeout: 60000 }, ()
         status: "EXECUTED",
         idempotencyKey: `${tenantA.id}:${case3.id}:SEND_EMAIL:1`,
         completedAt: new Date("2026-08-15T14:02:00.000Z"),
+        createdAt: new Date("2026-08-15T14:02:00.000Z"),
       },
     );
 
@@ -546,6 +554,7 @@ describe("Step 27 Integration: Analytics Service & APIs", { timeout: 60000 }, ()
         inputTokens: 220,
         outputTokens: 50,
         costMinorUnits: 12n,
+        createdAt: new Date("2026-08-20T11:01:00.000Z"),
       },
     );
 
@@ -575,6 +584,7 @@ describe("Step 27 Integration: Analytics Service & APIs", { timeout: 60000 }, ()
         status: "EXECUTED",
         idempotencyKey: `${tenantA.id}:${case4.id}:RETRY_PAYMENT:1`,
         completedAt: new Date("2026-08-20T11:02:00.000Z"),
+        createdAt: new Date("2026-08-20T11:02:00.000Z"),
       },
     );
 

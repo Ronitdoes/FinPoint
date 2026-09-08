@@ -8,6 +8,7 @@ import { executeInterventionsQuery } from "./queries/interventions";
 import { executeFunnelQuery } from "./queries/funnel";
 import { executeRiskMixQuery } from "./queries/risk-mix";
 import { executeAiPerformanceQuery } from "./queries/ai-performance";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 
 const analyticsRangeQuerySchema = z.object({
   from: z.string().optional(),
@@ -79,6 +80,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
    */
   app.get(
     "/summary",
+    {
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = analyticsRangeQuerySchema.safeParse(request.query);
       if (!parseResult.success) {
@@ -126,6 +132,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
    */
   app.get(
     "/recovery",
+    {
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = recoveryTimeseriesQuerySchema.safeParse(request.query);
       if (!parseResult.success) {
@@ -176,6 +187,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
    */
   app.get(
     "/interventions",
+    {
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = analyticsRangeQuerySchema.safeParse(request.query);
       if (!parseResult.success) {
@@ -214,6 +230,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
    */
   app.get(
     "/funnel",
+    {
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = analyticsRangeQuerySchema.safeParse(request.query);
       if (!parseResult.success) {
@@ -252,6 +273,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
    */
   app.get(
     "/risk-mix",
+    {
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = analyticsRangeQuerySchema.safeParse(request.query);
       if (!parseResult.success) {
@@ -290,6 +316,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
    */
   app.get(
     "/ai",
+    {
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = analyticsRangeQuerySchema.safeParse(request.query);
       if (!parseResult.success) {

@@ -14,3 +14,4 @@ if (typeof BigInt !== "undefined" && !BigInt.prototype.toJSON) {
 export * from "./errors";
 export * from "./retry-policies";
 export * from "./activity-context";
+export * from "./fault-points";

@@ -6,7 +6,11 @@ import { ValidationError } from "../../lib/errors";
 export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   /**
    * POST /auth/login — Interactive operator login.
-   * Rate limited per IP+email with lockout backoff.
+   * Rate limited per IP+email with lockout backoff (s-30 policy class
+   * `authLogin`: 5 attempts/min; enforced by the bespoke bucket in
+   * `loginUser`, which keys on IP+email-hash so one user's lockout never
+   * locks out other users behind the same NAT egress — stronger keying
+   * than the generic route limiter, hence no route-level `max` here).
    */
   fastify.post<{ Body: LoginInput }>("/login", async (request, reply) => {
     const parseResult = loginSchema.safeParse(request.body);

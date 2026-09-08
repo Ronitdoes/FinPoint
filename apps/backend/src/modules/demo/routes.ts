@@ -15,6 +15,7 @@ import {
   ForbiddenError,
   ValidationError,
 } from "../../lib/errors";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 
 const paymentFailSchema = z.object({
   tenant_id: z.string().optional(),
@@ -116,7 +117,7 @@ export const demoRoutes: FastifyPluginAsync = async (app) => {
    */
   app.post(
     "/payment-fail",
-    { preHandler: [demoGuard] },
+    { preHandler: [demoGuard], config: { rateLimit: rateLimitFor("demo") } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = paymentFailSchema.safeParse(request.body || {});
       if (!parseResult.success) {
@@ -146,7 +147,7 @@ export const demoRoutes: FastifyPluginAsync = async (app) => {
    */
   app.post(
     "/payment-succeed",
-    { preHandler: [demoGuard] },
+    { preHandler: [demoGuard], config: { rateLimit: rateLimitFor("demo") } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = paymentSucceedSchema.safeParse(request.body || {});
       if (!parseResult.success) {
@@ -175,7 +176,7 @@ export const demoRoutes: FastifyPluginAsync = async (app) => {
    */
   app.post(
     "/checkout-abandon",
-    { preHandler: [demoGuard] },
+    { preHandler: [demoGuard], config: { rateLimit: rateLimitFor("demo") } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = checkoutAbandonSchema.safeParse(request.body || {});
       if (!parseResult.success) {
@@ -214,7 +215,7 @@ export const demoRoutes: FastifyPluginAsync = async (app) => {
    */
   app.post(
     "/invoice-overdue",
-    { preHandler: [demoGuard] },
+    { preHandler: [demoGuard], config: { rateLimit: rateLimitFor("demo") } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = invoiceOverdueSchema.safeParse(request.body || {});
       if (!parseResult.success) {
@@ -244,7 +245,7 @@ export const demoRoutes: FastifyPluginAsync = async (app) => {
    */
   app.patch(
     "/injections",
-    { preHandler: [demoGuard] },
+    { preHandler: [demoGuard], config: { rateLimit: rateLimitFor("demo") } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = patchInjectionsSchema.safeParse(request.body || {});
       if (!parseResult.success) {
@@ -274,7 +275,7 @@ export const demoRoutes: FastifyPluginAsync = async (app) => {
    */
   app.get(
     "/injections",
-    { preHandler: [demoGuard] },
+    { preHandler: [demoGuard], config: { rateLimit: rateLimitFor("demo") } },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       const result = await getDemoInjections(
         (app as any).redisClient,
@@ -293,9 +294,13 @@ export const demoRoutes: FastifyPluginAsync = async (app) => {
   /**
    * POST /demo/mock/payments/:key/next-outcome
    * Scripted outcome override for MockPaymentProvider (retained from Step 18).
+   * s-30: placed behind the same demo guard as every other simulation
+   * endpoint — scripting provider outcomes without authentication is an
+   * abuse primitive, even in mock mode.
    */
   app.post(
     "/mock/payments/:key/next-outcome",
+    { preHandler: [demoGuard], config: { rateLimit: rateLimitFor("demo") } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsResult = mockOverrideParamsSchema.safeParse(request.params);
       if (!paramsResult.success) {

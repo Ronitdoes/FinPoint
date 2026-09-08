@@ -10,6 +10,7 @@ import {
   updateTenantUser,
   listTenantUsers,
 } from "./service";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 import { ValidationError } from "../../lib/errors";
 
 export const adminUsersRoutes: FastifyPluginAsync = async (
@@ -76,7 +77,7 @@ export const adminUsersRoutes: FastifyPluginAsync = async (
    */
   fastify.get(
     "/users",
-    { preHandler: adminGuards },
+    { preHandler: adminGuards, config: { rateLimit: rateLimitFor("read") } },
     async (request, reply) => {
       const { tenantId } = fastify.getTenantScope(request);
 

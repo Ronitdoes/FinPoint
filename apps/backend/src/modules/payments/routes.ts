@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { MockPaymentProvider, resolvePaymentProvider } from "@repo/integrations";
 import { NotFoundError, ValidationError } from "../../lib/errors";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 
 const paymentParamsSchema = z.object({
   id: z.string().uuid("Payment ID must be a valid UUID"),
@@ -82,6 +83,9 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = paymentParamsSchema.safeParse(request.params);

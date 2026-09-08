@@ -3,6 +3,7 @@ import { getTenantScope } from "../../plugins/auth";
 import type { ListMessagesQuery } from "./types";
 import { maskEmail, maskPhone } from "../customers/context/allowlist";
 import { NotFoundError } from "../../lib/errors";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 
 function maskRecipientAddress(address: string, channel: string): string {
   if (channel === "EMAIL") {
@@ -38,6 +39,9 @@ export const messagingRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.requireAuth,
         fastify.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { tenantId } = getTenantScope(request);
@@ -94,6 +98,9 @@ export const messagingRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.requireAuth,
         fastify.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { tenantId } = getTenantScope(request);

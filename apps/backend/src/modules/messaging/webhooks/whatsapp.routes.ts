@@ -3,6 +3,8 @@ import { createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 import type { MessageStatus, CustomerResponseType, DomainEvent } from "@repo/domain";
 import { NotAcceptableError } from "../../../lib/errors";
 import { maskPhone } from "../../customers/context/allowlist";
+import { checkIpBlock } from "../../security/ip-block.service";
+import { recordWebhookAuthFailure } from "../../security/webhook-abuse";
 
 export interface WhatsAppWebhookOptions {
   verifySecret?: string | null;
@@ -50,6 +52,7 @@ export const whatsappWebhookRoutes: FastifyPluginAsync<WhatsAppWebhookOptions> =
       return reply.status(200).type("text/plain").send(challenge || "");
     }
 
+    await recordWebhookAuthFailure(fastify, request, "WHATSAPP");
     return reply.status(403).send({ error: "Verification token mismatch" });
   });
 
@@ -63,7 +66,7 @@ export const whatsappWebhookRoutes: FastifyPluginAsync<WhatsAppWebhookOptions> =
           timeWindow: "1 minute",
         },
       },
-      preHandler: [validateContentType],
+      preHandler: [checkIpBlock, validateContentType],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const rawBody =
@@ -89,7 +92,7 @@ export const whatsappWebhookRoutes: FastifyPluginAsync<WhatsAppWebhookOptions> =
             sigBuffer.length !== expectedBuffer.length ||
             !timingSafeEqual(sigBuffer, expectedBuffer)
           ) {
-            request.log.warn("Invalid WhatsApp webhook signature");
+            await recordWebhookAuthFailure(fastify, request, "WHATSAPP");
             return reply.status(401).send({
               error: {
                 code: "INVALID_SIGNATURE",
@@ -98,6 +101,7 @@ export const whatsappWebhookRoutes: FastifyPluginAsync<WhatsAppWebhookOptions> =
             });
           }
         } catch {
+          await recordWebhookAuthFailure(fastify, request, "WHATSAPP");
           return reply.status(401).send({
             error: {
               code: "INVALID_SIGNATURE",
@@ -106,6 +110,7 @@ export const whatsappWebhookRoutes: FastifyPluginAsync<WhatsAppWebhookOptions> =
           });
         }
       } else if (process.env.NODE_ENV === "production") {
+        await recordWebhookAuthFailure(fastify, request, "WHATSAPP");
         return reply.status(401).send({
           error: {
             code: "SIGNATURE_MISSING",

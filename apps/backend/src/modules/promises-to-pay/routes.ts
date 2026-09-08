@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { ValidationError } from "../../lib/errors";
 import { PromisesToPayService } from "./service";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 import {
   listPromisesToPayQuerySchema,
   markPromiseHonoredBodySchema,
@@ -23,6 +24,9 @@ export const promisesToPayRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = listPromisesToPayQuerySchema.safeParse(request.query);
@@ -52,6 +56,9 @@ export const promisesToPayRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseParams = promiseToPayParamsSchema.safeParse(request.params);

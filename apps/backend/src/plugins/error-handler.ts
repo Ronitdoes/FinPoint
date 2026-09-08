@@ -86,15 +86,21 @@ const errorHandlerPluginCallback: FastifyPluginAsync = async (fastify) => {
       return reply.status(413).send(response);
     }
 
-    // 2f. Fastify Rate Limit (429)
-    if (error?.statusCode === 429 || error?.code === "FST_ERR_RATE_LIMIT" || error?.code === DomainErrorCodes.RATE_LIMITED) {
+    // 2f. Fastify Rate Limit (429) — includes temporary IP blocks (s-30)
+    if (error?.statusCode === 429 || error?.code === "FST_ERR_RATE_LIMIT" || error?.code === DomainErrorCodes.RATE_LIMITED || error?.code === DomainErrorCodes.IP_BLOCKED) {
       const response: ErrorEnvelope = {
         error: {
-          code: DomainErrorCodes.RATE_LIMITED,
+          code: error?.code === DomainErrorCodes.IP_BLOCKED ? DomainErrorCodes.IP_BLOCKED : DomainErrorCodes.RATE_LIMITED,
           message: error.message || "Rate limit exceeded",
           details: error.details ?? {},
         },
       };
+      const replyWithHeaders = reply as FastifyReply;
+      if (error?.headers && typeof error.headers === "object") {
+        for (const [header, val] of Object.entries(error.headers as Record<string, string>)) {
+          replyWithHeaders.header(header, val);
+        }
+      }
       return reply.status(429).send(response);
     }
 

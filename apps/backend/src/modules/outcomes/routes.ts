@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { RISK_TYPES } from "@repo/domain";
 import { ValidationError, NotFoundError, NoOutcomeError } from "../../lib/errors";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 
 const listOutcomesQuerySchema = z.object({
   from: z.string().datetime({ offset: true }).or(z.string().datetime()).optional(),
@@ -72,6 +73,9 @@ export const outcomesRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = listOutcomesQuerySchema.safeParse(request.query);
@@ -123,6 +127,9 @@ export const outcomesRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseParams = caseParamSchema.safeParse(request.params);

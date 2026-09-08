@@ -46,7 +46,7 @@ MVP scenario items mapped across s-10…s-32. "Verified in" names the step whose
 |---|---|---|---|
 | 1 | Provider sends payment.failed | s-10 | s-10 ✅, s-32 |
 | 2 | Event is authenticated | s-10 (signature verification; authn plugins s-09) | s-10 ✅, s-30 |
-| 3 | Duplicate event is ignored | s-10 idempotency (+ Redis fast path ADR-007) | s-10 ✅, s-31 concurrency tests, s-32 |
+| 3 | Duplicate event is ignored | s-10 idempotency (+ Redis fast path ADR-007) | s-10 ✅, s-31 ✅ concurrency tests, s-32 |
 | 4 | Internal event is created | s-11 | s-11 ✅, s-32 |
 | 5 | Risk is calculated | s-12 | s-12 ✅ (unit + integration suite), s-32 |
 | 6 | Recovery case is created | s-17 | s-17 ✅, s-32 |
@@ -61,7 +61,7 @@ MVP scenario items mapped across s-10…s-32. "Verified in" names the step whose
 | 15 | Recovered amount is computed | s-26 attribution + cost model | s-26 ✅, s-27 |
 | 16 | Dashboard reflects it | s-28 reads authoritative outcomes (spec 01 §25) | s-28 ✅, s-32 |
 | 17 | Audit timeline contains every major event | s-25 | s-25, s-32 |
-| 18 | System recovers from worker/API restarts | s-20 durable execution design | s-22 ✅, s-31 chaos/restart tests |
+| 18 | System recovers from worker/API restarts | s-20 durable execution design | s-22 ✅, s-31 ✅ chaos/restart tests |
 
 ## 3. Acceptance tests — spec 03 §8 → s-32
 
@@ -81,10 +81,10 @@ All blocks are automated as E2E acceptance tests in s-32 (gate G6):
 
 | Switch | Switch implemented in | Resilience proven in |
 |---|---|---|
-| `SIMULATE_PAYMENT_TIMEOUT` | s-29 (demo/simulation endpoints + adapters hooks) | s-31 |
-| `SIMULATE_MESSAGE_FAILURE` | s-29 | s-31 |
-| `SIMULATE_LLM_FAILURE` | s-29 | s-31 |
-| `SIMULATE_DUPLICATE_WEBHOOK` | s-29 | s-31 |
+| `SIMULATE_PAYMENT_TIMEOUT` | s-29 (demo/simulation endpoints + adapters hooks) | s-31 ✅ (stripe/razorpay timeout storms + worker-crash exact-once) |
+| `SIMULATE_MESSAGE_FAILURE` | s-29 | s-31 ✅ (whatsapp-timeout storm, no double-send) |
+| `SIMULATE_LLM_FAILURE` | s-29 | s-31 ✅ (llm-timeout-malformed storms → fallback + costs) |
+| `SIMULATE_DUPLICATE_WEBHOOK` | s-29 | s-31 ✅ (duplicate-webhook ×50 storm, 1 ACCEPTED + 49 DUPLICATE) |
 
 ## 5. Key metrics — spec 00 §9 → s-26 / s-27
 
@@ -113,13 +113,19 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Bounded autonomy principle | spec 00 §1, §8 | s-14/s-15/s-16 enforcement; CONVENTIONS.md §10 |
 | Event envelope standardization | spec 01 §6 | s-03 (envelope in domain) ✅ confirmed; s-11 (bus transport/replay) ✅ |
 | Domain vocabulary package `@repo/domain`: entities, enums, canonical state machine + transition table, closed action catalog with zod parameter schemas, policy-limit constants, money helpers (integer minor units), AI-decidable per-surface subsets, case-timeline vocabulary | spec 01 §1, §10, §12, §17; spec 02 §4, §5, §6; spec 03 §5, §6 | s-03 ✅; s-04 ✅ (pgEnum parity confirmed) |
-| Idempotency key formula | spec 01 §21 | s-04 ✅ (payment_attempts constraint); s-05 ✅ (actions/messages unique keys); s-18/s-19 adapters; verified s-31 |
-| Tenant isolation on business tables | spec 02 §15 | s-04 ✅ (financial core schema FK + indexes); s-05 ✅ (recovery schema FK + indexes); s-06 ✅ (repositories with tenant-first signatures); s-09 request context; s-30 verification |
+| Idempotency key formula | spec 01 §21 | s-04 ✅ (payment_attempts constraint); s-05 ✅ (actions/messages unique keys); s-18/s-19 adapters; s-31 ✅ chaos storms (duplicates, crash-resume exact-once) |
+| Failure-handling program (14 scenarios: duplicate/out-of-order/provider+LLM timeouts/Redis/Postgres/worker-crash/refresh/retry/late-success/opt-out) | spec 01 §21 | s-31 ✅ (tests/chaos 13 files + 23 tests, fault-point harness, kill drills, RESILIENCE.md evidence) |
+| EXECUTING-stuck reconciliation (crash-window actions resolved via provider status query, never blind re-execution) | spec 01 §21 | s-31 ✅ (apps/backend/src/jobs/executing-sweeper.ts, proven in worker-crash suite) |
+| Tenant isolation on business tables | spec 02 §15 | s-04 ✅ (financial core schema FK + indexes); s-05 ✅ (recovery schema FK + indexes); s-06 ✅ (repositories with tenant-first signatures); s-09 request context; s-30 ✅ verification (36-probe matrix green, ADR-015 RLS deferred with rationale) |
 | Financial core schema, constraints & indexes (tenants, users, api_keys, customers, payments, payment_attempts, subscriptions, checkouts, invoices) | spec 01 §5; spec 02 §1; spec 03 §4 | s-04 ✅ (migration 0000 applied, constraints tested) |
 | Recovery domain schema, constraints, partial indexes & anti-duplication anchors (events, revenue_risks, recovery_cases, ai_decisions, recovery_actions, workflows, messages, promises_to_pay, human_tasks, policy_rules, policy_evaluations, audit_logs, case_events, recovery_outcomes, recovery_cost_entries, idempotency_keys) | spec 01 §5, §17, §18, §19, §21, §25; spec 02 §3, §4, §8, §9; spec 03 §4 | s-05 ✅ (migration 0001 applied, 5 anti-duplication anchors tested, generated column verified) |
 | Repository layer, explicit transactions & guarded state transitions (23 aggregate repos, withTransaction, guarded updates, advisory-locked migrations, db:migrate:check) | spec 01 §21, §26; spec 02 §15, §16 | s-06 ✅ (repositories implemented, guarded transitions tested, migration lock & CI check green) |
 | Backend Fastify application skeleton, plugin pipeline, canonical error envelope across 400/404/413/422/429/500, Redis rate limiting, graceful shutdown, meta endpoints (/health, /ready, /version) | spec 01 §3, §7; spec 02 §13; ADR-002 | s-07 ✅ (Fastify 5 app factory, plugins, routes, lifecycle & 27 unit/integration tests) |
-| Security acceptance criteria | spec 03 §11 | s-09/s-10 build; s-30 verifies each line |
+| Security acceptance criteria | spec 03 §11 | s-09/s-10 build; s-30 ✅ verifies each line (docs/SECURITY-CHECKLIST.md 10/10 green: tests/security 4 suites + test:security aggregate + sweep/audit gates) |
+| Rate-limit policy per route class + signature-abuse IP blocks | spec 01 §22; spec 03 §11 | s-30 ✅ (RATE_LIMIT_POLICIES in plugins/rate-limit-policy.ts, identity keying, IpBlockService + checkIpBlock + ADMIN clear API, abuse-limits suite) |
+| RLS evaluation decision | spec 02 §15 | s-30 ✅ (docs/adr/ADR-015-rls-decision.md: defer with rationale + migration sketch) |
+| Dependency audit gate + digest-pinned base images | spec 01 §22 | s-30 ✅ (scripts/dependency-audit.mjs + scripts/security-sweep.mjs; Dockerfiles digest-pinned; consumed by s-33 CI) |
+| Webhook secret rotation + least-privilege credentials | spec 01 §22 | s-10 rotation procedure; s-30 ✅ companion runbook (abuse-block interplay) + least-privilege credentials doc |
 | Observability foundation: OpenTelemetry distributed tracing, Prometheus metrics registry (@repo/observability), /metrics endpoint, structured logging with secret redaction, 5 core trace keys propagation | spec 01 §20; spec 02 §1; spec 03 §10; ADR-014 | s-08 ✅ (@repo/observability, Fastify otel plugin, /metrics, compose otel-collector) |
 | Authentication, authorization & tenant context (sessions, API keys, RBAC with 5 roles, tenant context guard, login rate-limiting, bootstrap admin seed) | spec 01 §22; spec 03 §11; ADR-012 | s-09 ✅ (user_sessions schema & repo, API keys, Fastify auth/rbac plugins, /auth & /admin routes, seed-admin script, 17 integration tests) |
 | Webhook ingestion & event gateway (Stripe & Razorpay HMAC signature verification, pure normalization matrix, financial core transactional upserts, deduplication anchor, EventBus async dispatch, UNMAPPED handling, secret rotation runbook) | spec 01 §7; spec 02 §5, §14; spec 03 §4, §10; ADR-006 | s-10 ✅ (POST /webhooks/stripe, /webhooks/razorpay, normalizers, core upserts, EventBus, rotation runbook, 11 integration tests) |

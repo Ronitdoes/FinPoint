@@ -12,6 +12,7 @@ import {
 import { CaseControlService } from "./control.service";
 import { toCanonicalCaseDetail, toCaseSummary } from "./case-mapper";
 import { TimelineService } from "../audit/timeline.service";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 
 const listCasesQuerySchema = z.object({
   status: z.enum(CASE_STATUSES).optional(),
@@ -62,6 +63,9 @@ export const caseRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseResult = listCasesQuerySchema.safeParse(request.query);
@@ -108,6 +112,9 @@ export const caseRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseParams = caseParamsSchema.safeParse(request.params);
@@ -183,6 +190,9 @@ export const caseRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseParams = caseParamsSchema.safeParse(request.params);
@@ -247,6 +257,9 @@ export const caseRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseParams = caseParamsSchema.safeParse(request.params);

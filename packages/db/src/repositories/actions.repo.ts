@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import {
   recoveryActions,
   type RecoveryAction,
@@ -22,6 +22,8 @@ export interface InsertActionInput {
   completedAt?: Date;
   result?: Record<string, unknown>;
   error?: Record<string, unknown>;
+  /** Test/seed override for the creation timestamp (defaults to now). */
+  createdAt?: Date;
 }
 
 export interface CompleteActionInput {
@@ -63,6 +65,7 @@ export async function insertAction(
         completedAt: input.completedAt,
         result: input.result,
         error: input.error,
+        ...(input.createdAt ? { createdAt: input.createdAt } : {}),
       })
       .returning();
 
@@ -225,6 +228,47 @@ export async function listActionsForCase(
       ),
     )
     .orderBy(desc(recoveryActions.createdAt));
+}
+
+export interface FindStuckExecutingActionsInput {
+  tenantId?: string;
+  /** Only actions claimed before this instant count as stuck. */
+  stuckBefore: Date;
+  limit?: number;
+}
+
+/**
+ * Finds EXECUTING actions whose claim predates `stuckBefore`.
+ * Step 31: feeds the EXECUTING-stuck sweeper (crash window between claim and
+ * completion). Read-only; resolution never blindly re-executes.
+ */
+export async function findStuckExecutingActions(
+  ctx: RepoContext,
+  input: FindStuckExecutingActionsInput,
+): Promise<RecoveryAction[]> {
+  const executor = getExecutor(ctx);
+  // Rows claimed without an explicit started_at fall back to created_at, so a
+  // crash between insert and claim is still detected. Both comparisons use
+  // plain column operators (proven Date binding) instead of raw SQL fragments.
+  const conditions = [
+    eq(recoveryActions.status, "EXECUTING"),
+    or(
+      lt(recoveryActions.startedAt, input.stuckBefore),
+      and(
+        isNull(recoveryActions.startedAt),
+        lt(recoveryActions.createdAt, input.stuckBefore),
+      ),
+    ),
+  ];
+  if (input.tenantId) {
+    conditions.push(eq(recoveryActions.tenantId, input.tenantId));
+  }
+  return await executor
+    .select()
+    .from(recoveryActions)
+    .where(and(...conditions))
+    .orderBy(recoveryActions.startedAt)
+    .limit(input.limit ?? 100);
 }
 
 export interface UpdateActionsStatusForCaseInput {

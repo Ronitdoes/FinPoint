@@ -14,6 +14,7 @@ import {
   recordProviderDecline,
   withSpan,
 } from "@repo/observability";
+import { checkFaultPoint } from "@repo/worker/fault-points";
 import { PaymentRefreshService } from "./refresh.service";
 
 export interface ExecuteRetryPaymentInput {
@@ -191,6 +192,13 @@ export class PaymentExecutionService {
             { db: this.db },
             { tenantId, actionId },
           );
+          // Step 31: deterministic crash window between claim and provider call.
+          await checkFaultPoint("claim", "after_claim", {
+            tenantId,
+            caseId,
+            actionId,
+            idempotencyKey,
+          });
         }
 
         // 4. Resolve payment details from database
@@ -236,12 +244,33 @@ export class PaymentExecutionService {
             throw new Error("SIMULATE_PAYMENT_TIMEOUT triggered");
           }
 
+          // Step 31: crash window immediately before the money-moving call.
+          await checkFaultPoint("claim", "before_provider_call", {
+            tenantId,
+            caseId,
+            actionId,
+            idempotencyKey,
+          });
+
           adapterResult = await this.callAdapterWithNetworkRetries(
             adapter,
             providerCallInput,
             timeoutMs,
           );
+
+          // Step 31: crash window after provider authorized, before ledger write.
+          await checkFaultPoint("claim", "after_provider_call", {
+            tenantId,
+            caseId,
+            actionId,
+            idempotencyKey,
+          });
         } catch (networkError: any) {
+          // Step 31: injected crash faults must propagate (simulated SIGKILL),
+          // never be misclassified as provider network UNKNOWN.
+          if (networkError?.code === "FAULT_INJECTED") {
+            throw networkError;
+          }
           const latency = performance.now() - startTime;
           recordProviderCall(effectiveProvider, "retryPayment", "error", latency);
 

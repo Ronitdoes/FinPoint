@@ -17,6 +17,7 @@ import {
   withActivityContext,
   withActivityDb,
   createNonRetryableFailure,
+  checkFaultPoint,
 } from "../framework";
 
 export interface SendTemplateMessageInput extends ActivityContext {
@@ -97,7 +98,12 @@ export async function sendTemplateMessage(
         );
       }
 
-      // 3. Dispatch via adapter
+      // 3. Dispatch via adapter (step 31: crash window hooks around the side effect)
+      await checkFaultPoint("sendTemplateMessage", "before_provider_call", {
+        tenantId: input.tenantId,
+        caseId: input.caseId,
+        idempotencyKey,
+      });
       const sendResult = await adapter.sendTemplate({
         tenantId: input.tenantId,
         caseId: input.caseId,
@@ -115,7 +121,12 @@ export async function sendTemplateMessage(
         },
       });
 
-      // 4. Record message and delivery event
+      // 4. Record message and delivery event (step 31: post-dispatch crash window)
+      await checkFaultPoint("sendTemplateMessage", "after_provider_call", {
+        tenantId: input.tenantId,
+        caseId: input.caseId,
+        idempotencyKey,
+      });
       const createdMessage = await insertMessage(
         { db, tx },
         {

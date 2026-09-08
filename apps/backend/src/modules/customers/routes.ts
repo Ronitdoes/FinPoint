@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { ValidationError } from "../../lib/errors";
+import { rateLimitFor } from "../../plugins/rate-limit-policy";
 import { CustomerContextService } from "./customer-context.service";
 import { ContextPurposeSchema } from "./context/types";
 
@@ -31,6 +32,9 @@ export const customersRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("VIEWER", "SUPPORT", "OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseParams = getContextParamsSchema.safeParse(request.params);

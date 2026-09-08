@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { DECISION_STATUSES } from "@repo/domain";
 import { ValidationError, NotFoundError } from "../../../lib/errors";
+import { rateLimitFor } from "../../../plugins/rate-limit-policy";
 
 const listDecisionsQuerySchema = z.object({
   case_id: z.string().uuid().optional(),
@@ -32,6 +33,9 @@ export const decisionGovernanceRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseQuery = listDecisionsQuerySchema.safeParse(request.query);
@@ -109,6 +113,9 @@ export const decisionGovernanceRoutes: FastifyPluginAsync = async (app) => {
         app.requireAuth,
         app.requireRole("OPERATIONS", "FINANCE", "ADMIN"),
       ],
+      config: {
+        rateLimit: rateLimitFor("read"),
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parseParams = getDecisionParamsSchema.safeParse(request.params);

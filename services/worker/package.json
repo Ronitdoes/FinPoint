@@ -11,6 +11,7 @@
     "./workflows": "./src/workflows/index.ts",
     "./client": "./src/client.ts",
     "./framework": "./src/framework/index.ts",
+    "./fault-points": "./src/framework/fault-points.ts",
     "./signaling": "./src/signaling/index.ts"
   },
   "scripts": {

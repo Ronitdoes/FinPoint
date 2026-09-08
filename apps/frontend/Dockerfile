@@ -1,5 +1,6 @@
 # Multi-stage Dockerfile for Next.js Frontend (apps/frontend)
-FROM oven/bun:1.4-alpine AS base
+# s-30: base images pinned by digest (tag kept for readability; digest is authoritative).
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS base
 WORKDIR /app
 
 # Copy dependency manifests
@@ -25,7 +26,7 @@ RUN mkdir -p /app/apps/frontend/public
 RUN bun run --cwd apps/frontend build
 
 # Slim production runner
-FROM node:20-alpine AS runner
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
