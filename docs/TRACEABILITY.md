@@ -149,7 +149,7 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Analytics Service & Views (PostgreSQL analytics schema and 6 views v_recovery_summary, v_recovery_timeseries, v_intervention_performance, v_funnel, v_risk_mix, v_ai_performance, repository aggregations, 6 REST endpoints under /analytics, Redis 30s single-flight caching with stampede protection, cache bust on outcome record, <= 370d range validation, and RBAC cost-field gating) | spec 00 §6, §9; spec 01 §25; spec 02 §13; spec 03 §7 | s-27 ✅ (packages/db schema views & repo, apps/backend analytics module & cache, 15 integration tests) |
 | Local infrastructure stack (postgres, redis, temporal, temporal-ui, redpanda, redpanda-console) with healthchecks + named volumes | spec 01 §4 | s-02 |
 | `.env.example` + typed/validated config (`@repo/config`, fail-fast, frozen) consumed by apps/services instead of raw `process.env` | spec 01 §3, §4; CONVENTIONS §1, §12 | s-02 |
-| Demo narrative & checklist readiness | spec 01 §27, spec 03 §12 | s-29 ✅ seed/demo mode, s-35 rehearsal |
+| Demo narrative & checklist readiness | spec 01 §27, spec 03 §12 | s-29 ✅ seed/demo mode, s-35 ✅ rehearsed (measured script, 3 cycles, friction log; live Temporal execution L1-bounded) |
 | Deployment topology + CI checklist (Vercel frontend; API+workers+PG+Redis+Redpanda on AWS/Railway/Render; Docker for API/workers; lint→typecheck→unit→integration→build→migration-checks) | spec 01 §26 | s-33 ✅ (infra/docker unified backend + frontend images; .github/workflows ci/deploy-staging/rollback; docs/deploy/environments.md; migrate:check gate with bad-state proof) |
 | Operational acceptance carried into prod configs (LB probes, prod-shape demo omission, cron inventory, startup self-checks) | spec 03 §10, §11 | s-33 ✅ (/health liveness + /ready readiness contract; /demo omitted in prod-shape with 404 proof; 5-job cron inventory in-process; boot self-check log + smoke script; startup-config tests) |
 | Credential boundaries verified in image builds (credentials reach only adapters; no secrets in images) | spec 02 §14 | s-33 ✅ (deploy-check: frontend NEXT_PUBLIC_*-only ARG allowlist, digest pins, frozen lockfile, twin sync; entrypoint runtime-only secrets; environments.md secret-ref matrix) |
@@ -161,6 +161,30 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 From spec 01 §30 ("What NOT to build initially") and the Later/No rows of spec 03 §1. These are **not** assigned steps; revisit only after v0.1.0 release gate (G7):
 
 multi-agent architecture · fine-tuned LLM · vector database before retrieval is needed · full ML pipeline · voice agent · Kafka cluster complexity (beyond optional Redpanda compose service) · 20 third-party providers · complex pricing engine · autonomous discount negotiation · fully autonomous collections · ML risk scoring · advanced experimentation/playbooks · CRM/ERP/telephony adapters (interfaces reserved in `packages/integrations`).
+
+---
+
+## 8. Release re-audit — s-35 (v0.1.0) ✅
+
+Full coverage re-audit against code + tests on 2026-09-10. Method and raw
+numbers in `docs/RELEASE-v0.1.0.md` §6; sign-off in §2–§4 there.
+
+| Re-audit item | Result |
+|---|---|
+| MVP matrix §1 (16 Yes rows) | 16/16 ship; 4 deferrals unchanged with pointers (ML/voice/multi-agent/experimentation → spec 00 §10) |
+| DoD-18 §2 | 18/18 evidenced (15 fully live + 3 L1-bounded: DOD-10/11/12 — workflow row + service proofs live, Temporal task execution deferred to patch step) |
+| Acceptance §3 (7 §8 blocks) | 7/7 green (`test:e2e:coverage` 18/18 + 7/7) |
+| Failure switches §4 | 4/4 implemented + chaos-proven |
+| Metrics §5 | all groups computed + exposed (s-26/s-27/s-28/s-34) |
+| Cross-cutting §6 | confirmed; `Demo narrative & checklist readiness` now s-29 ✅ + s-35 rehearsed (measured script) |
+| Boundaries | `bun run boundaries:audit` (new gate): 528 files, 0 ERROR / 38 WARN (grandfathered env reads + 3 workflow wall-clock advisories) / 30 INFO |
+| Secrets | `security:sweep` clean incl. 10,334 bundle files; `security:audit` clean |
+| Frontend budget | `/dashboard` cold first-load ≈169KB gz (< 300KB); prod build green |
+| Demo rehearsal | 3 cycles live (cold ×2 + fallback-variant ×1); script numbers corrected to measured (risk 60/HIGH, ₹14.6L/35 baseline); friction F1–F3 fixed, F4/F5 → L2/L1 deferrals |
+| Versions | all workspaces at `0.1.0`; migration 0010 applied (11/11 `db:migrate:check`) |
+
+Known limitations L1–L6 and deferral register D1–D7: `docs/RELEASE-v0.1.0.md`
+§10–§11 (patch-step backlog; no silent scope).
 
 ---
 

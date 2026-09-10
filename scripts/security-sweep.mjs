@@ -63,6 +63,14 @@ const VALUE_ALLOWLIST = new Set([
   "packages/integrations/src/payments/razorpay.adapter.ts::rzp_test_secret",
   // Frozen roadmap prose naming the key pattern (specs/ are append-only).
   "specs/steps/s-30.md::BEGIN PRIVATE KEY",
+  // s-30 explainer quotes the same vetted prose (pattern name in English
+  // words, not key material). Added s-35 release sweep with rationale.
+  "docs/explanation/s-30-explanation.md::BEGIN PRIVATE KEY",
+  // load-lite mjs builds a per-run random loopback signing secret
+  // (`whsec_loadlite_<8 random hex>`) for local load tests only; the static
+  // prefix trips the webhook_secret pattern but no credential is stored.
+  // Added s-35 release sweep with rationale.
+  "scripts/load-lite.mjs::whsec_loadlite",
 ]);
 
 // Files whose full content is exempt (they define the gate itself).

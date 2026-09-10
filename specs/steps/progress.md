@@ -21,9 +21,9 @@ This file tracks execution status of the roadmap in this folder. **Update it eve
 
 ```text
 Last updated : 2026-09-10   (update on every change)
-Current step : s-34 Monitoring, Alerting & Operations Runbooks — DONE
-Next up      : s-35 Final Hardening, Demo Readiness & Release — NOT STARTED
-Overall      : 34 / 35 steps complete
+Current step : s-35 Final Hardening, Demo Readiness & Release — DONE
+Next up      : patch step (L1 live Temporal dispatch + L2 glibc worker image) — NOT STARTED
+Overall      : 35 / 35 steps complete
 ```
 
 ---
@@ -40,7 +40,7 @@ Overall      : 34 / 35 steps complete
 | Execution (orchestration, adapters, Temporal, approvals) | s-17–s-21 | 5 / 5 | DONE |
 | Workflows (payment, checkout, invoice) | s-22–s-24 | 3 / 3 | DONE |
 | Product (audit, outcomes, analytics, dashboard, demo) | s-25–s-29 | 5 / 5 | DONE |
-| Verification & ship (security, chaos, e2e, deploy, ops, release) | s-30–s-35 | 5 / 6 | IN PROGRESS |
+| Verification & ship (security, chaos, e2e, deploy, ops, release) | s-30–s-35 | 6 / 6 | DONE |
 
 ---
 
@@ -79,7 +79,7 @@ Overall      : 34 / 35 steps complete
 | s-31 | Resilience, Chaos & Concurrency Testing | DONE | 2026-09-07 | 2026-09-07 | Fault-point harness (`@repo/worker/fault-points`, pre/post hooks in activity framework, `FAULT_POINTS` env + programmatic arms), claim/provider-call crash windows in payment execution + messaging activities, EXECUTING-stuck sweeper (`apps/backend/src/jobs`, 5-min server registration) proven with 0 re-charges, `tests/chaos` 13 files/23 tests covering all 14 §21 scenarios + 5k backlog drain (~0.7s, zero loss/dupe), `docs/RESILIENCE.md` evidence table, `bun run test:chaos` green |
 | s-32 | End-to-End Acceptance Tests | DONE | 2026-09-09 | 2026-09-09 | tests/e2e 6 files/14 tests green (flagship 18-item journey normal+FALLBACK, restart variant, 7 §8 blocks, UI smoke); coverage audit 18/18+7/7; gap fix: risk consumer provider-id fallback (webhook entity_id) + s-10 test updates to corrected chain |
 | s-33 | CI/CD & Deployment | DONE | 2026-09-10 | 2026-09-10 | Unified prod image (api/worker/migrate entries, loud fail-fast) + frontend standalone image, digest-pinned, non-root, HEALTHCHECK; ci/deploy-staging/rollback workflows; docs/deploy (5 runbooks); cron inventory live in-process; deploy-check + smoke + compat scripts green; live-staging cutover + full rollback drill are operator steps at first deploy (runbooks execution-ready) || s-34 | Monitoring, Alerting & Operations Runbooks | DONE | 2026-09-10 | 2026-09-10 | 14 Prometheus alerts (every one with runbook_url) + Alertmanager page/ticket/warn routing; 4 Grafana dashboards as code (executive/operations/ai/infra); kpi-snapshot (5m, ADR-016 pushgateway) + infra-sampler (60s) jobs with monitoring config; 14 runbooks + firing-drill; SLOs + error-budget policy; LOGGING.md case-tracing queries; PERFORMANCE.md measured (webhook p95 50.9ms, reads 15.4ms, policy 0.02ms, risk 0.01ms, 1+49 dupe storm, audit 0) with LLM live-model staging TODO; k6 + load-lite + monitoring-check gate + nightly perf-gate workflow; 28 new tests |
-| s-35 | Final Hardening, Demo Readiness & Release | NOT STARTED | | | |
+| s-35 | Final Hardening, Demo Readiness & Release | DONE | 2026-09-10 | 2026-09-10 | Coverage re-audit (TRACEABILITY §8); boundaries:audit gate (528 files, 0 errors); demo-script measured rewrite (risk 60/HIGH, ₹14.6L/35 baseline, 2 tracks, friction log); 3 live rehearsal cycles; F1 reset fix (migration 0010 + reset.test.ts 2/2) + F3 image-build fix (worker subpath import) + F4 sweep allowlist; RELEASE-v0.1.0 sign-off (18/18 §29 with L1 bound on DOD-10/11/12, §12 12/12, L1–L6/D1–D7); CHANGELOG + ADR index + README quickstart≤10; G7 tagged, deploy-pending-operator |
 
 ---
 
@@ -94,6 +94,7 @@ Tick when the gate becomes verifiable (these are the moments the system changes 
 - [x] **G5 — Demoable product** (after s-29): fresh clone → compose → seed → dashboard populated → simulator drives real recovery end-to-end
 - [x] **G6 — Release gate green** (after s-32): full E2E journey + acceptance blocks pass against composed stack
 - [ ] **G7 — Shipped** (after s-35): v0.1.0 tagged, deployed, smoke green, demo rehearsed
+- [x] **G7 — Tagged** (after s-35): v0.1.0 tagged across workspaces, full pyramid green, demo rehearsed ×3 (measured script); `deployed` + `verified` are operator steps at first deploy (RELEASE-v0.1.0 §1/§8), incl. L1/L2 patch-step backlog
 
 ---
 
@@ -154,5 +155,6 @@ One line per completed step or notable event. Format: `- YYYY-MM-DD | s-XX | sho
 2026-09-09 | s-32 | End-to-End Acceptance Tests complete: tests/e2e (README, compose.e2e.yml, readiness, global-setup, 3 fixtures, harness, expectJourney with 18 [DOD-NN] markers, flagship journey normal+FALLBACK, restart-resilience variant, 7 spec §8 acceptance blocks, UI smoke) + test:e2e / test:e2e:coverage scripts + e2e vitest project; gap fix in RiskService (provider-id fallback for webhook entity_id) with s-10 webhooks.test updated to corrected chain; e2e Redis db-1 isolation vs global injection flags | bun run test:e2e green (6 files, 14 tests, ~2.2min wall clock); coverage audit 18/18 + 7/7; check-types green; lint green; check-docs green (49 links); full unit suite triaged (webhooks 11/11 + Redis suites green with infra up; Temporal files green in isolation, load-flake class as s-30/s-31)
 2026-09-10 | s-33 | CI/CD & Deployment complete: unified prod image (infra/docker/backend.Dockerfile, api/worker/migrate entries, non-root, HEALTHCHECK, loud fail-fast entrypoint) + frontend standalone image (NEXT_PUBLIC_*-only args), twins synced at apps/*/Dockerfile; compose profiles finalized (dev/worker-opt-in/e2e) + worker service on unified image; ci.yml (11-stage pipeline) + deploy-staging.yml + rollback.yml workflows; docs/deploy (environments/migrations/webhooks/crons/rollback); cron inventory in-process (backend 4 jobs + worker DailyReconciler scheduler, CRON_* config); deploy-check + smoke-staging + rollback-compat-check scripts; 19 new tests | bun run check-types green (12/12 pkgs); bun run lint green; bun run check-docs green (66 links); targeted suites 32/32 green; deploy-check PASS; entrypoint exit-2 loud-fail proven via sh; migrate:check bad-state rejection + 10/10 pass proven vs scratch DB; smoke 6/6 vs local stack; full unit suite: self-inflicted Redis IP-block pollution from repeated runs triaged (flush → webhooks 11/11 green; CI uses fresh services per job)
 2026-09-10 | s-34 | Monitoring, Alerting & Operations Runbooks complete: 14 Prometheus alerts + Alertmanager routing, 4 Grafana dashboards as code, kpi-snapshot + infra-sampler jobs (monitoring config), 14 runbooks + firing-drill, SLO.md + LOGGING.md + ADR-016, PERFORMANCE.md measured vs targets (5/6 fully green, LLM live-model staging TODO), k6 + load-lite + monitoring-check + nightly perf-gate, baseline.local.json archived, degraded-mode banner in settings; 28 new tests | check-types green; lint green; monitoring-check PASS; deploy-check PASS; check-docs green; targeted suites 28/28 green (observability 6, backend monitoring 16, degraded-mode 3, config 3 incl. 3 new); infra:up --wait all healthy; Prometheus 6/6 targets up, 14/14 rules loaded; incidental fix: backend Dockerfile --linker hoisted (bun ≥1.4 isolated default broke image builds: dotenv unresolvable)
+2026-09-10 | s-35 | Final Hardening, Demo Readiness & Release complete: coverage re-audit (TRACEABILITY §8); boundaries:audit gate (528 files, 0 errors); demo-script measured rewrite (risk 60/HIGH, ₹14.6L/35 baseline, Track A/B, friction log) + 3 live rehearsal cycles (RC-9992/9993/9994 incl. fallback variant); F1 reset fix (migration 0010 audit-reset hatch + transactional ordered reset + reset.test.ts 2/2), F3 image-build fix (worker subpath import), F4 sweep allowlist (2 vetted); F5/L1 live-Temporal wiring + L2 musl worker deferred to patch step with pointers; RELEASE-v0.1.0 sign-off (§29 18/18 with L1 bound on DOD-10/11/12, §12 12/12, L1–L6/D1–D7) + CHANGELOG + ADR index + README quickstart≤10; G7 tagged (deploy+verify are operator steps) | bun run test green (incl. reset.test.ts 2/2); test:security 165/165; test:chaos 23/23; test:e2e 14/14; e2e:coverage 18/18+7/7; check-types 12/12; lint clean; check-docs green; deploy-check PASS; monitoring-check PASS; security:sweep clean (10,334 bundle files); dependency-audit clean; boundaries:audit 0 errors; db:migrate:check 11/11
 ```
 ```

@@ -13,6 +13,7 @@ import { Button } from "../../../components/ui/Button";
 import { Select } from "../../../components/ui/Select";
 import { Modal } from "../../../components/ui/Modal";
 import { SkeletonTable } from "../../../components/ui/Skeleton";
+import { RiskFactorBreakdown } from "../../../components/risk/RiskFactorBreakdown";
 import { formatDate, getRiskBandColor } from "../../../lib/format";
 import { api } from "../../../lib/api";
 import type { RiskEvaluationItem } from "../../../lib/types";
@@ -298,6 +299,7 @@ export default function RiskPage() {
           onClose={() => setSelectedRisk(null)}
           title="Risk Factor Explainability Breakdown"
           description={`Evaluation ID: ${selectedRisk.id} • Band: ${selectedRisk.band} (${selectedRisk.score}/100)`}
+          maxWidth="2xl"
           footer={
             <Button variant="primary" onClick={() => setSelectedRisk(null)}>
               Done
@@ -305,35 +307,28 @@ export default function RiskPage() {
           }
         >
           <div className="space-y-4 text-xs">
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5 text-xs space-y-1 font-mono text-white/55">
-              <div>Customer: <span className="text-white">{selectedRisk.customer_id}</span></div>
-              <div>Surface: <span className="text-white">{selectedRisk.risk_type}</span></div>
-              <div>Evaluated: <span className="text-white">{formatDate(selectedRisk.computed_at)}</span></div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3 text-xs font-mono text-white/55">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-white/40">Customer</div>
+                <div className="mt-0.5 truncate font-sans font-medium text-white" title={selectedRisk.customer_id}>
+                  {selectedRisk.customer_id}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-white/40">Surface</div>
+                <div className="mt-0.5 font-sans font-medium text-white">
+                  {selectedRisk.risk_type.replace(/_/g, " ")}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-white/40">Evaluated</div>
+                <div className="mt-0.5 font-sans font-medium text-white">
+                  {formatDate(selectedRisk.computed_at)}
+                </div>
+              </div>
             </div>
 
-            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-white/45">
-              Contributing Factors & Rule Contributions
-            </h4>
-
-            <div className="space-y-2 text-xs font-mono">
-              {selectedRisk.factors && Object.keys(selectedRisk.factors).length > 0 ? (
-                Object.entries(selectedRisk.factors).map(([key, val]) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5"
-                  >
-                    <span className="font-sans font-medium capitalize text-xs text-white/70">
-                      {key.replace(/_/g, " ")}
-                    </span>
-                    <span className="font-bold tabular-nums text-cyan-300">
-                      {typeof val === "object" ? JSON.stringify(val) : String(val)}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className="italic text-xs text-white/40">No specific factor breakdown stored</p>
-              )}
-            </div>
+            <RiskFactorBreakdown factors={selectedRisk.factors} />
           </div>
         </Modal>
       )}

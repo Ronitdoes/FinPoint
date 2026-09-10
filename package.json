@@ -12,6 +12,7 @@
     "test:e2e:coverage": "bun scripts/e2e-coverage-check.mjs",
     "security:sweep": "bun scripts/security-sweep.mjs",
     "security:audit": "bun scripts/dependency-audit.mjs",
+    "boundaries:audit": "bun scripts/audit-boundaries.ts",
     "deploy:check": "bun scripts/deploy-check.mjs",
     "smoke:staging": "bun scripts/smoke-staging.mjs",
     "rollback:compat-check": "bun scripts/rollback-compat-check.mjs",

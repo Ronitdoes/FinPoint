@@ -17,61 +17,61 @@ export interface OutcomeCardProps {
 export function OutcomeCard({ outcome, currency = "INR" }: OutcomeCardProps) {
   if (!outcome) {
     return (
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-6 text-center text-slate-500 text-xs backdrop-blur-xl">
+      <div className="rounded-3xl border border-white/[0.07] bg-[#131316] p-6 text-center text-xs text-white/40">
         Case is currently in progress — no finalized recovery outcome yet
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/25 via-[#0d111a]/90 to-[#0d111a]/90 p-5 shadow-lg shadow-black/40 backdrop-blur-xl">
-      <div className="flex items-center justify-between pb-3 mb-4 border-b border-emerald-500/15">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-[0_0_12px_-3px_rgba(16,185,129,0.3)]">
-            <CheckCircle2 className="h-4 w-4" />
-          </div>
-          <div>
-            <h3 className="text-xs font-semibold text-slate-100">
+    <div className="rounded-3xl border border-white/[0.07] bg-[#131316] p-5">
+      <div className="mb-4 border-b border-white/[0.06] pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-[#3ef0a8]" />
+            <h3 className="text-[13px] font-semibold tracking-tight text-white">
               Recovered Revenue Outcome
             </h3>
-            <p className="text-[10px] text-slate-400 font-mono">
-              Attribution: {outcome.attribution_method}
-            </p>
+          </div>
+
+          <div className="text-right font-mono">
+            <span className="block font-sans text-[10px] uppercase tracking-wider text-white/45">
+              Recovered
+            </span>
+            <span className="text-lg font-bold text-[#3ef0a8] tabular-nums">
+              {formatMoney(outcome.recovered_amount, currency)}
+            </span>
           </div>
         </div>
-
-        <div className="text-right font-mono">
-          <span className="text-[10px] text-slate-400 block font-sans uppercase tracking-wider">Recovered</span>
-          <span className="text-lg font-bold text-emerald-400 tabular-nums">
-            {formatMoney(outcome.recovered_amount, currency)}
-          </span>
-        </div>
+        <p className="mt-1 font-mono text-[11px] font-normal text-white/45">
+          Attribution: <span className="text-white/70">{outcome.attribution_method}</span>
+        </p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono">
-        <div className="rounded-xl border border-white/[0.06] bg-[#090c13]/70 p-3">
-          <span className="text-[10px] text-slate-500 font-sans block mb-0.5 uppercase tracking-wider">
+        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5">
+          <span className="mb-1 block font-sans text-[10px] uppercase tracking-widest text-white/45">
             Payment Ref
           </span>
-          <span className="text-slate-200 truncate block text-xs" title={outcome.payment_id || "N/A"}>
+          <span className="block truncate text-xs text-white font-medium" title={outcome.payment_id || "N/A"}>
             {outcome.payment_id || "Direct Settlement"}
           </span>
         </div>
 
-        <div className="rounded-xl border border-white/[0.06] bg-[#090c13]/70 p-3">
-          <span className="text-[10px] text-slate-500 font-sans block mb-0.5 uppercase tracking-wider">
+        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5">
+          <span className="mb-1 block font-sans text-[10px] uppercase tracking-widest text-white/45">
             Recovered At
           </span>
-          <span className="text-slate-200 block text-xs">
+          <span className="block text-xs text-white font-medium">
             {formatDate(outcome.recovered_at)}
           </span>
         </div>
 
-        <div className="rounded-xl border border-white/[0.06] bg-[#090c13]/70 p-3">
-          <span className="text-[10px] text-slate-500 font-sans block mb-0.5 uppercase tracking-wider">
+        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5">
+          <span className="mb-1 block font-sans text-[10px] uppercase tracking-widest text-white/45">
             Attribution Method
           </span>
-          <span className="text-emerald-400 font-bold flex items-center gap-1 text-xs">
+          <span className="flex items-center gap-1 text-xs font-bold text-[#3ef0a8]">
             <TrendingUp className="h-3 w-3" />
             {outcome.attribution_method}
           </span>

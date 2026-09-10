@@ -1,6 +1,5 @@
 import React from "react";
 import { Sparkles, BrainCircuit, ShieldAlert, CheckCircle2 } from "lucide-react";
-import { Badge } from "../ui/Badge";
 
 export interface RecommendedActionItem {
   type?: string;
@@ -29,8 +28,8 @@ export interface DecisionCardProps {
 export function DecisionCard({ decision }: DecisionCardProps) {
   if (!decision) {
     return (
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-6 text-center text-slate-500 text-xs backdrop-blur-xl">
-        <BrainCircuit className="mx-auto h-7 w-7 mb-2 opacity-30" />
+      <div className="rounded-3xl border border-white/[0.07] bg-[#131316] p-6 text-center text-xs text-white/40">
+        <BrainCircuit className="mx-auto mb-2 h-7 w-7 opacity-30 text-white/40" />
         <p>No AI decision recorded for this case yet</p>
       </div>
     );
@@ -40,50 +39,55 @@ export function DecisionCard({ decision }: DecisionCardProps) {
   const confidencePercent = Math.round(decision.diagnosis.confidence * 100);
 
   return (
-    <div className="rounded-2xl border border-indigo-500/25 bg-gradient-to-b from-indigo-950/20 via-[#0d111a]/90 to-[#0d111a]/90 p-5 shadow-lg shadow-black/40 backdrop-blur-xl">
-      <div className="flex items-center justify-between gap-3 pb-3 mb-4 border-b border-indigo-500/15">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shadow-[0_0_12px_-3px_rgba(99,102,241,0.3)]">
-            <Sparkles className="h-4 w-4" />
-          </div>
-          <div>
-            <h3 className="text-xs font-semibold text-slate-100 flex items-center gap-2">
+    <div className="rounded-3xl border border-white/[0.07] bg-[#131316] p-5">
+      <div className="mb-4 border-b border-white/[0.06] pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-cyan-400" />
+            <h3 className="flex items-center gap-2 text-[13px] font-semibold tracking-tight text-white">
               AI Decision Recommendation
               {isFallback && (
-                <Badge variant="warning" size="sm">
-                  <ShieldAlert className="h-3 w-3 mr-1" />
+                <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-300">
+                  <ShieldAlert className="mr-1 h-3 w-3" />
                   FALLBACK (RULE-BASED)
-                </Badge>
+                </span>
               )}
             </h3>
-            <p className="text-[10px] text-slate-400 font-mono">
-              Model: {decision.model} • Prompt: {decision.prompt_version}
-            </p>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
+                confidencePercent >= 75
+                  ? "border-[#3ef0a8]/30 bg-[#3ef0a8]/10 text-[#3ef0a8]"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+              }`}
+            >
+              {confidencePercent}% Confidence
+            </span>
           </div>
         </div>
-
-        <Badge variant={confidencePercent >= 75 ? "success" : "warning"} size="md">
-          {confidencePercent}% Confidence
-        </Badge>
+        <p className="mt-1 font-mono text-[11px] font-normal text-white/45">
+          Model: <span className="text-white/70">{decision.model}</span> • Prompt:{" "}
+          <span className="text-white/70">{decision.prompt_version}</span>
+        </p>
       </div>
 
-      <div className="space-y-4 text-xs">
+      <div className="space-y-3.5 text-xs">
         {/* Diagnosis & Confidence */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
-              Diagnosed Root Cause:
+        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-white/45">
+              Diagnosed Root Cause
             </span>
-            <span className="font-mono font-bold text-indigo-300 text-xs">
+            <span className="font-mono text-xs font-bold text-cyan-300">
               {decision.diagnosis.cause}
             </span>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800/80">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
             <div
-              className={`h-full rounded-full transition-all ${
-                confidencePercent >= 75
-                  ? "bg-gradient-to-r from-cyan-500 to-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
-                  : "bg-gradient-to-r from-amber-500 to-orange-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+              className={`h-full rounded-full transition-all duration-300 ${
+                confidencePercent >= 75 ? "bg-[#3ef0a8]" : "bg-amber-400"
               }`}
               style={{ width: `${confidencePercent}%` }}
             />
@@ -92,15 +96,15 @@ export function DecisionCard({ decision }: DecisionCardProps) {
 
         {/* Rationale */}
         {decision.diagnosis.rationale && (
-          <div className="rounded-xl border border-indigo-500/15 bg-indigo-950/20 p-3 text-slate-300 leading-relaxed text-xs">
-            <span className="font-semibold text-indigo-300 mr-1.5">Rationale:</span>
+          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3.5 text-xs leading-relaxed text-white/75">
+            <span className="mr-1.5 font-semibold text-white">Rationale:</span>
             {decision.diagnosis.rationale}
           </div>
         )}
 
         {/* Recommended Actions */}
         <div>
-          <h4 className="font-semibold text-slate-400 uppercase tracking-wider text-[10px] mb-2">
+          <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/45">
             Recommended Action Sequence
           </h4>
           <div className="space-y-2">
@@ -110,18 +114,20 @@ export function DecisionCard({ decision }: DecisionCardProps) {
                 return (
                   <div
                     key={idx}
-                    className="flex items-start gap-2.5 rounded-xl border border-white/[0.06] bg-[#090c13]/70 p-2.5 font-mono text-xs"
+                    className="flex items-start gap-2.5 rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3 font-mono text-xs"
                   >
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#3ef0a8]" />
                     <div className="flex-1">
-                      <span className="font-bold text-slate-200">{act.type || JSON.stringify(act)}</span>
-                    {act.delay_hours && (
-                      <span className="ml-2 text-slate-400 text-[11px]">
-                        (delay: {act.delay_hours}h)
+                      <span className="font-bold text-white">
+                        {act.type || JSON.stringify(act)}
                       </span>
-                    )}
+                      {act.delay_hours && (
+                        <span className="ml-2 font-mono text-[11px] text-white/45">
+                          (delay: {act.delay_hours}h)
+                        </span>
+                      )}
                       {act.template && (
-                        <span className="ml-2 text-cyan-400 text-[11px]">
+                        <span className="ml-2 font-mono text-[11px] text-cyan-300">
                           [template: {act.template}]
                         </span>
                       )}
@@ -130,7 +136,7 @@ export function DecisionCard({ decision }: DecisionCardProps) {
                 );
               })
             ) : (
-              <p className="text-slate-500 italic">No specific actions recommended</p>
+              <p className="italic text-xs text-white/40">No specific actions recommended</p>
             )}
           </div>
         </div>
@@ -138,14 +144,14 @@ export function DecisionCard({ decision }: DecisionCardProps) {
         {/* Stop Conditions */}
         {decision.stop_conditions && decision.stop_conditions.length > 0 && (
           <div>
-            <h4 className="font-semibold text-slate-400 uppercase tracking-wider text-[10px] mb-1.5">
+            <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/45">
               Stop Conditions
             </h4>
             <div className="flex flex-wrap gap-1.5">
               {decision.stop_conditions.map((cond, idx) => (
                 <span
                   key={idx}
-                  className="rounded-lg border border-white/[0.06] bg-[#090c13] px-2 py-0.5 text-[10px] font-mono text-slate-400"
+                  className="rounded-full border border-white/[0.08] bg-black/40 px-2.5 py-1 font-mono text-[10px] text-white/60"
                 >
                   {cond}
                 </span>
