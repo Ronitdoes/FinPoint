@@ -5,6 +5,7 @@ import { workerConfig } from "@repo/config";
 import { getLogger } from "@repo/observability";
 import { ACTIVITIES } from "./registry";
 import { DEFAULT_TASK_QUEUE } from "./workflows/shared";
+import { WorkerCronScheduler } from "./cron/scheduler";
 
 const logger = getLogger({ component: "recovery-worker" });
 
@@ -39,12 +40,24 @@ export async function runWorker(): Promise<void> {
     "Recovery Temporal Worker started successfully and polling for tasks",
   );
 
+  // s-33 cron module: daily invoice/PTP reconciler pass. Disabled in test
+  // and when CRON_ENABLED=false; the timer is unref'd and stopped here so
+  // worker drain (preStop sleep + poller shutdown) never hangs on cron.
+  let stopCron: (() => void) | null = null;
+  if (config.cron.enabled && config.app.env !== "test") {
+    const scheduler = new WorkerCronScheduler({
+      reconcileIntervalMs: config.cron.reconcileIntervalMs,
+    });
+    stopCron = scheduler.start();
+  }
+
   let isShuttingDown = false;
   const shutdown = async (signal: string) => {
     if (isShuttingDown) return;
     isShuttingDown = true;
     logger.info({ signal }, "Gracefully shutting down worker; draining in-flight activities...");
     try {
+      stopCron?.();
       worker.shutdown();
       await connection.close();
       logger.info("Worker shutdown complete");

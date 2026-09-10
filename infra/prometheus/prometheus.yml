@@ -1,0 +1,76 @@
+# AI Revenue Recovery — Prometheus scrape config (s-34).
+#
+# Scrape policy:
+# - `GET /metrics` on the backend is an INTERNAL endpoint. It MUST be
+#   reachable only on the private scrape network (compose network locally;
+#   VPC security-group / private subnet in staging+prod — see
+#   docs/deploy/environments.md). It is intentionally unauthenticated so a
+#   stock Prometheus can scrape it; network restriction is the control
+#   (s-30 residual risk, closed here by documentation + compose isolation).
+# - No business PII is exported in any label (CONVENTIONS §12). KPI series
+#   carry only tenant=staging|prod; per-tenant UUIDs, emails, phones, and
+#   case IDs never appear (audited by scripts/monitoring-check.mjs).
+# - Meta-monitoring (s-34 §Observability): Prometheus scrapes itself and
+#   Alertmanager so "monitoring the monitor" is a real alert
+#   (PrometheusDown, AlertmanagerDown in rules.yml).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: "arr-prometheus"
+
+rule_files:
+  - /etc/prometheus/rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # Application metrics (Fastify GET /metrics, prom-client exposition).
+  - job_name: "arr-backend"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:4000"]
+        labels:
+          service: "api"
+
+  # Business KPI snapshots mirrored by the kpi-snapshot job (ADR-016).
+  # The job pushes analytics-view values every 5m with tenant=staging|prod
+  # labels; Prometheus federates them here for the Executive dashboard.
+  - job_name: "pushgateway"
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]
+        labels:
+          service: "kpi-pushgateway"
+
+  # Host / container hygiene signals (node_exporter in staging+prod;
+  # optional locally behind the `observability` compose profile).
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: "node"
+
+  # Redis signals (redis_exporter in staging+prod).
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: "redis"
+
+  # Postgres signals (postgres_exporter with the analytics views allowlisted
+  # read-only; keeps OLTP untouched — ADR-016 alternative path, staging+prod).
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: "postgres"
+
+  # Meta-monitoring: Prometheus scrapes itself.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

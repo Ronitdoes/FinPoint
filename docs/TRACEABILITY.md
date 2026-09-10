@@ -44,38 +44,39 @@ MVP scenario items mapped across s-10…s-32. "Verified in" names the step whose
 
 | # | DoD item | Implemented in | Verified in |
 |---|---|---|---|
-| 1 | Provider sends payment.failed | s-10 | s-10 ✅, s-32 |
-| 2 | Event is authenticated | s-10 (signature verification; authn plugins s-09) | s-10 ✅, s-30 |
-| 3 | Duplicate event is ignored | s-10 idempotency (+ Redis fast path ADR-007) | s-10 ✅, s-31 ✅ concurrency tests, s-32 |
-| 4 | Internal event is created | s-11 | s-11 ✅, s-32 |
-| 5 | Risk is calculated | s-12 | s-12 ✅ (unit + integration suite), s-32 |
-| 6 | Recovery case is created | s-17 | s-17 ✅, s-32 |
-| 7 | Context is assembled | s-13 | s-13 ✅ (unit + PII sweep + integration suite), s-32 |
-| 8 | AI returns schema-valid decision | s-14 (schema enforcement, eval harness s-15) | s-14 ✅ (prompts, structured outputs, repair retry, fallback, 9 integration tests), s-15 |
-| 9 | Policy validates decision | s-16 | s-16 ✅, s-17 ✅, s-32 |
-| 10 | Temporal workflow starts | s-20 runtime; orchestration trigger s-17 | s-20 ✅, s-22 ✅ |
-| 11 | Message is sent | s-19 adapters + ledger; used by s-22 | s-19 ✅, s-22 ✅ |
-| 12 | Payment retry occurs | s-18 adapter; orchestrated in s-22 | s-18 ✅, s-22 ✅ |
-| 13 | Provider returns success | s-18 (mock/live parity) | s-18 ✅, s-22 ✅, s-32 |
-| 14 | Outcome is recorded | s-26 | s-26 ✅ |
-| 15 | Recovered amount is computed | s-26 attribution + cost model | s-26 ✅, s-27 |
-| 16 | Dashboard reflects it | s-28 reads authoritative outcomes (spec 01 §25) | s-28 ✅, s-32 |
-| 17 | Audit timeline contains every major event | s-25 | s-25, s-32 |
-| 18 | System recovers from worker/API restarts | s-20 durable execution design | s-22 ✅, s-31 ✅ chaos/restart tests |
+| 1 | Provider sends payment.failed | s-10 | s-10 ✅, s-32 ✅ (DOD-01 flagship) |
+| 2 | Event is authenticated | s-10 (signature verification; authn plugins s-09) | s-10 ✅, s-30 ✅, s-32 ✅ (DOD-02 forged-reject) |
+| 3 | Duplicate event is ignored | s-10 idempotency (+ Redis fast path ADR-007) | s-10 ✅, s-31 ✅ concurrency tests, s-32 ✅ (DOD-03 + AC-PAY-2) |
+| 4 | Internal event is created | s-11 | s-11 ✅, s-32 ✅ (DOD-04 envelope) |
+| 5 | Risk is calculated | s-12 | s-12 ✅ (unit + integration suite), s-32 ✅ (DOD-05 HIGH parity) |
+| 6 | Recovery case is created | s-17 | s-17 ✅, s-32 ✅ (DOD-06 single RC-*) |
+| 7 | Context is assembled | s-13 | s-13 ✅ (unit + PII sweep + integration suite), s-32 ✅ (DOD-07 allowlist) |
+| 8 | AI returns schema-valid decision | s-14 (schema enforcement, eval harness s-15) | s-14 ✅ (prompts, structured outputs, repair retry, fallback, 9 integration tests), s-15 ✅, s-32 ✅ (DOD-08 COMPLETED + FALLBACK modes) |
+| 9 | Policy validates decision | s-16 | s-16 ✅, s-17 ✅, s-32 ✅ (DOD-09 ALLOWED) |
+| 10 | Temporal workflow starts | s-20 runtime; orchestration trigger s-17 | s-20 ✅, s-22 ✅, s-32 ✅ (DOD-10 RUNNING + recover:{caseId}) |
+| 11 | Message is sent | s-19 adapters + ledger; used by s-22 | s-19 ✅, s-22 ✅, s-32 ✅ (DOD-11 WhatsApp SENT idempotent-keyed) |
+| 12 | Payment retry occurs | s-18 adapter; orchestrated in s-22 | s-18 ✅, s-22 ✅, s-32 ✅ (DOD-12 attempt-2 REQUESTED, provider-once) |
+| 13 | Provider returns success | s-18 (mock/live parity) | s-18 ✅, s-22 ✅, s-32 ✅ (DOD-13 SUCCEEDED) |
+| 14 | Outcome is recorded | s-26 | s-26 ✅, s-32 ✅ (DOD-14 WORKFLOW_LINKED 1299900 paise) |
+| 15 | Recovered amount is computed | s-26 attribution + cost model | s-26 ✅, s-27 ✅, s-32 ✅ (DOD-15 net = recovered − costs) |
+| 16 | Dashboard reflects it | s-28 reads authoritative outcomes (spec 01 §25) | s-28 ✅, s-32 ✅ (DOD-16 summary delta + UI smoke) |
+| 17 | Audit timeline contains every major event | s-25 | s-25 ✅, s-32 ✅ (DOD-17 9-type ordered spine) |
+| 18 | System recovers from worker/API restarts | s-20 durable execution design | s-22 ✅, s-31 ✅ chaos/restart tests, s-32 ✅ (DOD-18 kill-variant + outcome-once) |
 
-## 3. Acceptance tests — spec 03 §8 → s-32
+## 3. Acceptance tests — spec 03 §8 → s-32 ✅
 
-All blocks are automated as E2E acceptance tests in s-32 (gate G6):
+All blocks are automated as E2E acceptance tests in s-32 (gate G6 green
+2026-09-09: `bun run test:e2e` 6 files / 14 tests; coverage audit 18/18 + 7/7):
 
 | Spec block | Scenario | s-32 test |
 |---|---|---|
-| Payment recovery 1 | failed payment → exactly one recovery case | AC-PAY-1 |
-| Payment recovery 2 | duplicate webhook → no duplicate case | AC-PAY-2 |
-| Payment recovery 3 | retry count = 3 + AI recommends retry → policy rejects | AC-PAY-3 |
-| Payment recovery 4 | successful retry → workflow closes, outcome records amount | AC-PAY-4 |
-| Checkout 1 | purchase completes → abandonment workflow stops | AC-CO-1 |
-| Checkout 2 | abandoned past threshold → recovery case may be created | AC-CO-2 |
-| Invoice 1 | high-value overdue invoice + incentive recommendation → human approval required | AC-INV-1 |
+| Payment recovery 1 | failed payment → exactly one recovery case | AC-PAY-1 ✅ (`tests/e2e/acceptance/payment-recovery.acceptance.test.ts`) |
+| Payment recovery 2 | duplicate webhook → no duplicate case | AC-PAY-2 ✅ (same file) |
+| Payment recovery 3 | retry count = 3 + AI recommends retry → policy rejects | AC-PAY-3 ✅ (same file; pure `evaluate` POL-MAXRETRY contract) |
+| Payment recovery 4 | successful retry → workflow closes, outcome records amount | AC-PAY-4 ✅ (same file) |
+| Checkout 1 | purchase completes → abandonment workflow stops | AC-CO-1 ✅ (`tests/e2e/acceptance/checkout.acceptance.test.ts`; `completeRaceGuard.safeToSend=false`) |
+| Checkout 2 | abandoned past threshold → recovery case may be created | AC-CO-2 ✅ (same file; risk + optional case) |
+| Invoice 1 | high-value overdue invoice + incentive recommendation → human approval required | AC-INV-1 ✅ (`tests/e2e/acceptance/invoice-highvalue.acceptance.test.ts`; ESCALATED + APPROVAL task) |
 
 ## 4. Failure-injection switches — spec 03 §9
 
@@ -97,7 +98,7 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Financial | Recovery Cost | s-26 cost model (LLM, messaging, processing, discount, human, provider — spec 02 §8) | s-27, s-28 |
 | Operational | Active Cases · Average Time to Recovery · Escalation Rate | s-27 | s-27, s-28 |
 | Operational | Policy Rejection Rate | emitted at policy evaluation (s-16) | s-27 |
-| Operational | Workflow Failure Rate · Provider Failure Rate | otel metrics baseline (s-08) | s-27, s-34 alerts |
+| Operational | Workflow Failure Rate · Provider Failure Rate | otel metrics baseline (s-08) | s-27, s-34 ✅ (alerts WorkflowFailureRate/ProviderFailureRate + Operations dashboard panels) |
 | AI | Decision Acceptance Rate · Recommendation-to-Execution Rate · False Intervention Rate | s-15 governance data + s-26 | s-27 |
 | AI | AI Cost per Case · AI Cost per ₹ Recovered | s-26 (LLM token/cost capture per ADR-008) | s-27, s-28 |
 | AI | Intervention Success Rate | s-26 per-action outcomes | s-27, s-28 intervention table (spec 03 §7) |
@@ -149,7 +150,11 @@ Modeled/computed in s-26 (outcomes, attribution, cost model); exposed via analyt
 | Local infrastructure stack (postgres, redis, temporal, temporal-ui, redpanda, redpanda-console) with healthchecks + named volumes | spec 01 §4 | s-02 |
 | `.env.example` + typed/validated config (`@repo/config`, fail-fast, frozen) consumed by apps/services instead of raw `process.env` | spec 01 §3, §4; CONVENTIONS §1, §12 | s-02 |
 | Demo narrative & checklist readiness | spec 01 §27, spec 03 §12 | s-29 ✅ seed/demo mode, s-35 rehearsal |
+| Deployment topology + CI checklist (Vercel frontend; API+workers+PG+Redis+Redpanda on AWS/Railway/Render; Docker for API/workers; lint→typecheck→unit→integration→build→migration-checks) | spec 01 §26 | s-33 ✅ (infra/docker unified backend + frontend images; .github/workflows ci/deploy-staging/rollback; docs/deploy/environments.md; migrate:check gate with bad-state proof) |
+| Operational acceptance carried into prod configs (LB probes, prod-shape demo omission, cron inventory, startup self-checks) | spec 03 §10, §11 | s-33 ✅ (/health liveness + /ready readiness contract; /demo omitted in prod-shape with 404 proof; 5-job cron inventory in-process; boot self-check log + smoke script; startup-config tests) |
+| Credential boundaries verified in image builds (credentials reach only adapters; no secrets in images) | spec 02 §14 | s-33 ✅ (deploy-check: frontend NEXT_PUBLIC_*-only ARG allowlist, digest pins, frozen lockfile, twin sync; entrypoint runtime-only secrets; environments.md secret-ref matrix) |
 | Demo Mode, Simulation Endpoints & Seed Data (simulation endpoints /demo/payment-fail, /demo/payment-succeed, /demo/checkout-abandon, /demo/invoice-overdue, Redis failure injection store /demo/injections with 15m sliding TTL, dynamic LLM failure injection, deterministic seed factories, pristine pre-trigger Scenarios A/B/C fixtures, safe tenant-scoped reset, 9-scene live demo walkthrough script in docs/demo-script.md, production route omission & 410 guard, demo scope guard) | spec 01 §24, §27; spec 03 §2, §9, §12 | s-29 ✅ (@repo/db/seeds, apps/backend demo module, docs/demo-script.md, 15 integration tests) |
+| Monitoring, Alerting & Operations Runbooks (14 Prometheus alerts with runbook_url each, Alertmanager page/ticket/warn routing, 4 Grafana dashboards as code, kpi-snapshot 5m pushgateway job per ADR-016 + infra-sampler 60s SLI job, 14 runbooks + firing-drill, SLOs + error-budget policy, Loki log pipeline with case-tracing queries, PERFORMANCE.md measured vs spec 03 §10, k6 + load-lite + monitoring-check + nightly perf-gate, degraded-mode banner doctrine) | spec 00 §9; spec 01 §20, §26; spec 03 §10 | s-34 ✅ (infra/prometheus, infra/grafana/dashboards, infra/loki, apps/backend jobs, docs/runbooks 14 + firing-drill, docs/SLO.md, docs/LOGGING.md, docs/PERFORMANCE.md, docs/adr/ADR-016, 28 new tests) |
 
 ## 7. Explicitly out of scope for the MVP
 

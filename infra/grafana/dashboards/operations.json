@@ -1,0 +1,88 @@
+{
+  "uid": "arr-operations",
+  "title": "Operations — Ingest, Bus, Workflows, Providers",
+  "tags": ["revenue-recovery", "operations"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "description": "Ingest rate/latency, bus lag and DLQ depth, workflow start/outcome rates, case funnel, provider failure rates, policy rejection rate.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Webhook ingest rate by provider/status",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (provider, status) (rate(webhook_deliveries_total[5m]))" }]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Webhook latency p50/p95",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum(rate(webhook_duration_ms_bucket[5m])) by (le))" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum(rate(webhook_duration_ms_bucket[5m])) by (le))" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Webhook error share (alert: WebhookErrorRate)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(webhook_deliveries_total{status=~\"error|invalid_signature\"}[5m])) / clamp_min(sum(rate(webhook_deliveries_total[5m])), 0.001)" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Bus DLQ depth",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(bus_dlq_depth) by (group)" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Bus consumer lag (seconds)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "bus_consumer_lag_seconds" }]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Workflow starts vs outcomes",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (type) (rate(workflow_started_total[5m]))" },
+        { "refId": "B", "expr": "sum by (type, result) (rate(workflow_outcome_total[5m]))" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Case funnel progression",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (stage) (rate(case_funnel_total[5m]))" }]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Provider failure rate by provider/op",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (provider, op) (rate(provider_calls_total{status=\"error\"}[5m])) / clamp_min(sum by (provider, op) (rate(provider_calls_total[5m])), 0.001)" }]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Policy rejection rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(policy_evaluations_total{result=\"REJECTED\"}[5m])) / clamp_min(sum(rate(policy_evaluations_total[5m])), 0.001)" }]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Audit write failures (must stay 0)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "increase(audit_write_failures_total[15m])" }]
+    }
+  ]
+}

@@ -35,6 +35,15 @@ export default defineConfig({
           include: ["tests/chaos/**/*.test.ts"],
         },
       },
+      {
+        test: {
+          name: "e2e",
+          testTimeout: 180000,
+          hookTimeout: 180000,
+          include: ["tests/e2e/**/*.test.ts", "tests/e2e/**/*.e2e.ts"],
+          globalSetup: ["tests/e2e/setup/global-setup.ts"],
+        },
+      },
     ],
   },
 });

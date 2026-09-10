@@ -1,0 +1,121 @@
+# ==============================================================================
+# AI Revenue Recovery — nightly performance + monitoring gate (s-34).
+#
+# Schedule: 03:00 UTC daily + manual dispatch. Jobs:
+#   1. monitoring-check — alert set exact, thresholds, runbook links,
+#      metric-name audit, dashboard validity, PII label audit (no infra).
+#   2. load-lite bench — policy/risk/llm-fallback phases (infra-free,
+#      no secrets) + >20% regression comparison vs
+#      infra/load/baseline.local.json.
+#   3. staging load (gated) — k6 webhook burst 100rps×60s + reads 50rps×60s
+#      plus load-lite webhook/reads/duplicates vs staging. Runs ONLY when
+#      the `staging` environment secrets exist (STAGING_BASE_URL,
+#      STAGING_API_TOKEN, STAGING_STRIPE_WHSEC); skipped otherwise so forks
+#      stay green.
+#
+# Baseline promotion: the FIRST staging run that goes green archives its
+# results as infra/load/baseline.staging.json (manual PR by the operator:
+# copy the uploaded artifact into the repo) and flips
+# PERF_BASELINE_FILE below. Until then the gate compares against the local
+# baseline, which the infra-free bench phases satisfy on any machine.
+# ==============================================================================
+
+name: perf-gate
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+env:
+  PERF_BASELINE_FILE: infra/load/baseline.local.json
+
+jobs:
+  monitoring-check:
+    name: monitoring-as-code gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - run: bun install --frozen-lockfile
+      - name: Alert/dashboard/label audit
+        run: bun scripts/monitoring-check.mjs
+      - name: promtool lint (when available)
+        run: |
+          if command -v promtool >/dev/null 2>&1; then
+            promtool check rules infra/prometheus/rules.yml
+            promtool check config infra/prometheus/prometheus.yml
+          else
+            echo "promtool not installed — monitoring-check.mjs is the executable gate (see firing-drill.md)."
+          fi
+
+  load-bench:
+    name: load-lite bench + regression
+    runs-on: ubuntu-latest
+    needs: [monitoring-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - run: bun install --frozen-lockfile
+      - name: Infra-free bench phases (policy, risk, llm-fallback)
+        run: bun scripts/load-lite.mjs --phase policy --out /tmp/bench-policy.json && bun scripts/load-lite.mjs --phase risk --out /tmp/bench-risk.json && bun scripts/load-lite.mjs --phase llm --out /tmp/bench-llm.json
+      - name: Merge bench results
+        run: >-
+          bun -e '
+          import policy from "/tmp/bench-policy.json" with {type:"json"};
+          import risk from "/tmp/bench-risk.json" with {type:"json"};
+          import llm from "/tmp/bench-llm.json" with {type:"json"};
+          const merged = { phases: { ...policy.phases, ...risk.phases, ...llm.phases } };
+          await Bun.write("/tmp/bench-merged.json", JSON.stringify(merged, null, 2));'
+      - name: 20% regression rule vs baseline
+        run: bun scripts/monitoring-check.mjs --perf-baseline ${{ env.PERF_BASELINE_FILE }} --perf-results /tmp/bench-merged.json
+
+  staging-load:
+    name: staging k6 + load-lite (gated on staging secrets)
+    runs-on: ubuntu-latest
+    needs: [load-bench]
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - uses: grafana/setup-k6-action@v1
+      - run: bun install --frozen-lockfile
+      - name: Check staging secrets present
+        id: gate
+        run: |
+          if [ -z "${{ secrets.STAGING_BASE_URL }}" ] || [ -z "${{ secrets.STAGING_API_TOKEN }}" ] || [ -z "${{ secrets.STAGING_STRIPE_WHSEC }}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Staging secrets absent — skipping live staging load (see header)."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: k6 staging mix (100rps webhooks + 50rps reads, 60s)
+        if: steps.gate.outputs.ready == 'true'
+        run: >-
+          k6 run
+          -e BASE_URL=${{ secrets.STAGING_BASE_URL }}
+          -e API_TOKEN=${{ secrets.STAGING_API_TOKEN }}
+          -e STRIPE_WEBHOOK_SECRET=${{ secrets.STAGING_STRIPE_WHSEC }}
+          infra/load/k6-smoke.js
+        env:
+          K6_WEBHOOKS_URL: ${{ secrets.STAGING_BASE_URL }}
+      - name: load-lite vs staging (webhook + reads + duplicates)
+        if: steps.gate.outputs.ready == 'true'
+        run: >-
+          DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}
+          DIRECT_URL=${{ secrets.STAGING_DIRECT_URL }}
+          REDIS_URL=${{ secrets.STAGING_REDIS_URL }}
+          bun scripts/load-lite.mjs --phase webhook --webhook-n 300 --out /tmp/staging-webhook.json
+        continue-on-error: true
+      - name: Upload staging results (baseline promotion artifact)
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-load-results
+          path: /tmp/staging-*.json

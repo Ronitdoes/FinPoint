@@ -614,3 +614,204 @@ export function resetMetrics(): void {
 export function getMetricsContentType(): string {
   return metricsRegistry.contentType;
 }
+
+/* ==============================================================================
+ * s-34 Monitoring & Alerting instruments (Spec 01 §20, Spec 03 §10, ADR-016)
+ *
+ * Gauges below back the Prometheus alert rules in
+ * `infra/prometheus/rules.yml` and the four Grafana dashboards in
+ * `infra/grafana/dashboards/`. Label discipline (CONVENTIONS §12,
+ * s-30 SECURITY-CHECKLIST §9): tenant-scoped business series carry ONLY a
+ * low-cardinality `tenant` label (staging|prod aggregate or hashed tenant
+ * cohort) — never raw tenant UUIDs, emails, phones, or case IDs — so no
+ * business PII ever lands in an exported label.
+ * ============================================================================== */
+
+// 21. Event-bus depth & lag (BusDLQDepth alert; Operations dashboard)
+export const busDlqDepth = new Gauge({
+  name: "bus_dlq_depth",
+  help: "Current number of messages parked in the event-bus dead-letter queue",
+  labelNames: ["group"] as const,
+  registers: [metricsRegistry],
+});
+
+export const busConsumerLagSeconds = new Gauge({
+  name: "bus_consumer_lag_seconds",
+  help: "Event-bus consumer lag behind the log tip in seconds",
+  labelNames: ["group"] as const,
+  registers: [metricsRegistry],
+});
+
+export function setBusDlqDepth(group: string, depth: number): void {
+  busDlqDepth.set({ group }, depth);
+}
+
+export function setBusConsumerLag(group: string, lagSeconds: number): void {
+  busConsumerLagSeconds.set({ group }, lagSeconds);
+}
+
+// 22. DB pool saturation (DBPoolSaturation alert; Infra dashboard)
+// Values are sampled by the backend infra-sampler job
+// (apps/backend/src/jobs/infra-sampler.ts) from the pg pool stats.
+export const dbPoolUsed = new Gauge({
+  name: "db_pool_used",
+  help: "Number of database pool connections currently checked out",
+  registers: [metricsRegistry],
+});
+
+export const dbPoolMax = new Gauge({
+  name: "db_pool_max",
+  help: "Maximum database pool size configured for this process",
+  registers: [metricsRegistry],
+});
+
+export const dbPoolSaturationRatio = new Gauge({
+  name: "db_pool_saturation_ratio",
+  help: "Fraction of the database pool currently in use (0..1)",
+  registers: [metricsRegistry],
+});
+
+export function setDbPoolStats(used: number, max: number): void {
+  const safeMax = max > 0 ? max : 1;
+  dbPoolUsed.set(used);
+  dbPoolMax.set(max);
+  dbPoolSaturationRatio.set(Math.min(1, Math.max(0, used / safeMax)));
+}
+
+// 23. Temporal worker capacity (TemporalWorkerPollers alert; Infra dashboard)
+export const temporalWorkerPollers = new Gauge({
+  name: "temporal_worker_pollers",
+  help: "Number of active Temporal worker pollers for the recovery task queue",
+  labelNames: ["queue"] as const,
+  registers: [metricsRegistry],
+});
+
+export const temporalActivitySlots = new Gauge({
+  name: "temporal_activity_slots_available",
+  help: "Number of free Temporal activity execution slots",
+  labelNames: ["queue"] as const,
+  registers: [metricsRegistry],
+});
+
+export function setTemporalWorkerStats(
+  queue: string,
+  pollers: number,
+  freeSlots: number,
+): void {
+  temporalWorkerPollers.set({ queue }, pollers);
+  temporalActivitySlots.set({ queue }, freeSlots);
+}
+
+// 24. Approval queue depth & age (AI dashboard; LLMFallback degraded doctrine)
+export const approvalOldestAgeSeconds = new Gauge({
+  name: "approval_oldest_age_seconds",
+  help: "Age of the oldest undecided human approval task in seconds",
+  registers: [metricsRegistry],
+});
+
+export function setApprovalOldestAge(ageSeconds: number): void {
+  approvalOldestAgeSeconds.set(Math.max(0, ageSeconds));
+}
+
+// 25. Business KPI gauges (Executive dashboard; ADR-016 pushgateway path)
+// The kpi-snapshot job (apps/backend/src/jobs/kpi-snapshot.ts) refreshes
+// these every 5 minutes from the analytics views, then mirrors the same
+// values to the Prometheus pushgateway with tenant=staging|prod labels so
+// Grafana reads numbers identical to the dashboard API by construction.
+export const kpiRevenueAtRisk = new Gauge({
+  name: "kpi_revenue_at_risk_minor",
+  help: "Revenue at risk in integer minor units (paise/cents), analytics view snapshot",
+  labelNames: ["tenant"] as const,
+  registers: [metricsRegistry],
+});
+
+export const kpiRevenueRecovered = new Gauge({
+  name: "kpi_revenue_recovered_minor",
+  help: "Revenue recovered in integer minor units (paise/cents), analytics view snapshot",
+  labelNames: ["tenant"] as const,
+  registers: [metricsRegistry],
+});
+
+export const kpiNetRecovered = new Gauge({
+  name: "kpi_net_recovered_minor",
+  help: "Net recovered (recovered minus costs) in minor units, analytics view snapshot",
+  labelNames: ["tenant"] as const,
+  registers: [metricsRegistry],
+});
+
+export const kpiRecoveryRate = new Gauge({
+  name: "kpi_recovery_rate",
+  help: "Recovery rate fraction 0..1 from the analytics summary view",
+  labelNames: ["tenant"] as const,
+  registers: [metricsRegistry],
+});
+
+export const kpiActiveCases = new Gauge({
+  name: "kpi_active_cases",
+  help: "Current number of non-terminal recovery cases, analytics view snapshot",
+  labelNames: ["tenant"] as const,
+  registers: [metricsRegistry],
+});
+
+export const kpiEscalations = new Gauge({
+  name: "kpi_escalations_total",
+  help: "Cumulative escalated recovery cases, analytics view snapshot",
+  labelNames: ["tenant"] as const,
+  registers: [metricsRegistry],
+});
+
+export interface KpiSnapshot {
+  tenant: string;
+  revenueAtRiskMinor: number;
+  revenueRecoveredMinor: number;
+  netRecoveredMinor: number;
+  recoveryRate: number;
+  activeCases: number;
+  escalations: number;
+}
+
+export function setKpiSnapshot(snap: KpiSnapshot): void {
+  const { tenant } = snap;
+  kpiRevenueAtRisk.set({ tenant }, snap.revenueAtRiskMinor);
+  kpiRevenueRecovered.set({ tenant }, snap.revenueRecoveredMinor);
+  kpiNetRecovered.set({ tenant }, snap.netRecoveredMinor);
+  kpiRecoveryRate.set({ tenant }, snap.recoveryRate);
+  kpiActiveCases.set({ tenant }, snap.activeCases);
+  kpiEscalations.set({ tenant }, snap.escalations);
+}
+
+// 26. Ops-hygiene gauges (CertExpiry / DiskFills alerts; Infra dashboard)
+// Sourced from node_exporter / blackbox exporter in staging+prod; the
+// setters exist so synthetic firing drills (s-34 Tests) can force the
+// paging path without touching real certificates or disks.
+export const certExpiryDays = new Gauge({
+  name: "cert_expiry_days",
+  help: "Days until the public TLS certificate expires",
+  labelNames: ["host"] as const,
+  registers: [metricsRegistry],
+});
+
+export const diskFreeRatio = new Gauge({
+  name: "disk_free_ratio",
+  help: "Fraction of disk space still free (0..1) per mountpoint",
+  labelNames: ["mountpoint"] as const,
+  registers: [metricsRegistry],
+});
+
+export const redisMemoryRatio = new Gauge({
+  name: "redis_memory_ratio",
+  help: "Fraction of Redis maxmemory currently used (0..1)",
+  registers: [metricsRegistry],
+});
+
+export function setCertExpiryDays(host: string, days: number): void {
+  certExpiryDays.set({ host }, days);
+}
+
+export function setDiskFreeRatio(mountpoint: string, ratio: number): void {
+  diskFreeRatio.set({ mountpoint }, ratio);
+}
+
+export function setRedisMemoryRatio(ratio: number): void {
+  redisMemoryRatio.set(Math.min(1, Math.max(0, ratio)));
+}

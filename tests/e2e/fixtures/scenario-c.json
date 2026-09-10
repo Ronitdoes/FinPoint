@@ -1,0 +1,12 @@
+{
+  "name": "scenario-c-highvalue-invoice",
+  "description": "Pristine pre-trigger Scenario C (CUS-003): high-value overdue enterprise invoice requiring human approval",
+  "customer_ref": "CUS-003",
+  "customer": { "name": "Acme Enterprises", "email": "billing@acme.com", "phone": "+919876543212" },
+  "amount_minor": 48000000,
+  "amount_display": "₹4,80,000.00",
+  "currency": "INR",
+  "days_overdue": 7,
+  "expected_policy_result": "REQUIRE_APPROVAL",
+  "expected_rule": "POL-HIGHVALUE"
+}

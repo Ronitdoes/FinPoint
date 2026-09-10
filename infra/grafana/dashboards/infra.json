@@ -1,0 +1,81 @@
+{
+  "uid": "arr-infra",
+  "title": "Infrastructure — Errors, Pools, Cache, Workers",
+  "tags": ["revenue-recovery", "infrastructure"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "description": "HTTP error-budget burn, DB connections/pool saturation, Redis memory, Temporal worker pollers and activity slots, cert/disk hygiene, monitoring pipeline health.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP error-budget burn (5xx share)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 0.001)" }]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP latency p95 by route",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_ms_bucket[5m])))" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "DB pool saturation ratio",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "db_pool_saturation_ratio" }]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "DB pool used vs max",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "db_pool_used" },
+        { "refId": "B", "expr": "db_pool_max" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Redis memory ratio",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "redis_memory_ratio" }]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Temporal worker pollers / activity slots",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "temporal_worker_pollers" },
+        { "refId": "B", "expr": "temporal_activity_slots_available" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "TLS cert expiry (days, min)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "min(cert_expiry_days)" }]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Disk free ratio (min)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "min(disk_free_ratio)" }]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Scrape targets down",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "count(up == 0)" }]
+    }
+  ]
+}

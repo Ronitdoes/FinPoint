@@ -19,6 +19,7 @@ import { Tabs } from "../../../components/ui/Tabs";
 import { SkeletonStats, SkeletonTable } from "../../../components/ui/Skeleton";
 import { CreateUserModal } from "../../../components/modals/CreateUserModal";
 import { CreateApiKeyModal } from "../../../components/modals/CreateApiKeyModal";
+import { DegradedModeBanner } from "../../../components/DegradedModeBanner";
 import { formatDate } from "../../../lib/format";
 import { canManageAdmin } from "../../../lib/rbac";
 import { api } from "../../../lib/api";
@@ -197,6 +198,9 @@ export default function SettingsPage() {
                 Active configuration for this isolated financial tenant partition
               </p>
             </div>
+
+            {/* Degraded autonomy mode ops toggle (s-34 doctrine) */}
+            <DegradedModeBanner />
 
             {loading && !currentUser ? (
               <SkeletonStats count={4} />

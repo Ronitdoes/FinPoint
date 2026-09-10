@@ -1,0 +1,99 @@
+{
+  "env": {
+    "nodeEnv": "development",
+    "busDriver": "inprocess",
+    "mockProviders": true,
+    "when": "2026-09-10T12:50:37.453Z"
+  },
+  "phases": {
+    "policy": {
+      "name": "policy_evaluation",
+      "n": 1000,
+      "unit": "ms",
+      "mean": 0.02,
+      "p50": 0.01,
+      "p95": 0.02,
+      "p99": 0.06,
+      "max": 2.54
+    },
+    "risk": {
+      "name": "risk_calculation",
+      "n": 1000,
+      "unit": "ms",
+      "mean": 0,
+      "p50": 0,
+      "p95": 0.01,
+      "p99": 0.01,
+      "max": 0.57
+    },
+    "llm_fallback": {
+      "name": "llm_fallback_path",
+      "n": 200,
+      "unit": "ms",
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0.01,
+      "max": 0.14
+    },
+    "webhook": {
+      "name": "webhook_response",
+      "n": 300,
+      "unit": "ms",
+      "mean": 33.01,
+      "p50": 30.02,
+      "p95": 50.92,
+      "p99": 103.52,
+      "max": 108.78,
+      "accepted": 300,
+      "total": 300
+    },
+    "duplicates": {
+      "name": "duplicate_webhook_storm",
+      "sent": 50,
+      "accepted": 1,
+      "duplicates": 49,
+      "other": [],
+      "zero_duplicate_financial_actions": true
+    },
+    "reads": {
+      "name": "api_read",
+      "n": 200,
+      "unit": "ms",
+      "mean": 5.35,
+      "p50": 4.53,
+      "p95": 15.38,
+      "p99": 33.48,
+      "max": 33.52,
+      "ok": 200,
+      "total": 200
+    }
+  },
+  "targets": {
+    "webhook_p95_lt_300ms": {
+      "value": 50.92,
+      "target": 300,
+      "pass": true
+    },
+    "api_reads_p95_lt_500ms": {
+      "value": 15.38,
+      "target": 500,
+      "pass": true
+    },
+    "policy_lt_50ms": {
+      "value": 0.02,
+      "target": 50,
+      "pass": true
+    },
+    "risk_lt_50ms": {
+      "value": 0.01,
+      "target": 50,
+      "pass": true
+    },
+    "zero_duplicate_financial_actions": {
+      "value": true,
+      "target": true,
+      "pass": true
+    }
+  }
+}

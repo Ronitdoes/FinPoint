@@ -1,5 +1,6 @@
 import {
   parseServerEnv,
+  resolveCronEnabled,
   resolveMockProviders,
   type NodeEnv,
   type RawServerEnv,
@@ -73,12 +74,34 @@ export interface OtelConfig {
   readonly otlpEndpoint: string | null;
 }
 
+export interface MonitoringConfig {
+  /** Pushgateway base URL; null ⇒ gauges refresh in-process only. */
+  readonly pushGatewayUrl: string | null;
+  /** Cohort label for KPI series (`staging`|`prod`). */
+  readonly cohort: string;
+  readonly kpiSnapshotIntervalMs: number;
+  readonly infraSamplerIntervalMs: number;
+}
+
 export interface AuthConfig {
   readonly sessionSecret: string;
   readonly bootstrapAdminEmail: string | null;
   readonly bootstrapAdminPassword: string | null;
   readonly bootstrapAdminName: string | null;
   readonly bootstrapTenantName: string | null;
+}
+
+export interface CronConfig {
+  /** Master toggle (CRON_ENABLED, default on except in test). */
+  readonly enabled: boolean;
+  /** Attribution window sweeper cadence (default hourly). */
+  readonly attributionSweepIntervalMs: number;
+  /** Action-cost completeness audit cadence (default daily). */
+  readonly costAuditIntervalMs: number;
+  /** Invoice/PTP reconciler cadence (default daily). */
+  readonly reconcileIntervalMs: number;
+  /** Audit-retention archive cadence (default monthly). */
+  readonly retentionSweepIntervalMs: number;
 }
 
 /**
@@ -97,7 +120,9 @@ export interface ServerConfig {
   readonly messaging: MessagingConfig;
   readonly demo: DemoConfig;
   readonly otel: OtelConfig;
+  readonly monitoring: MonitoringConfig;
   readonly auth: AuthConfig;
+  readonly cron: CronConfig;
 }
 
 function fromRaw(raw: RawServerEnv): ServerConfig {
@@ -154,12 +179,25 @@ function fromRaw(raw: RawServerEnv): ServerConfig {
     otel: Object.freeze({
       otlpEndpoint: raw.OTEL_EXPORTER_OTLP_ENDPOINT ?? null,
     }),
+    monitoring: Object.freeze({
+      pushGatewayUrl: raw.PUSHGATEWAY_URL ?? null,
+      cohort: raw.MONITORING_COHORT,
+      kpiSnapshotIntervalMs: raw.KPI_SNAPSHOT_INTERVAL_MS,
+      infraSamplerIntervalMs: raw.INFRA_SAMPLER_INTERVAL_MS,
+    }),
     auth: Object.freeze({
       sessionSecret: raw.SESSION_SECRET,
       bootstrapAdminEmail: raw.BOOTSTRAP_ADMIN_EMAIL ?? null,
       bootstrapAdminPassword: raw.BOOTSTRAP_ADMIN_PASSWORD ?? null,
       bootstrapAdminName: raw.BOOTSTRAP_ADMIN_NAME ?? null,
       bootstrapTenantName: raw.BOOTSTRAP_TENANT_NAME ?? null,
+    }),
+    cron: Object.freeze({
+      enabled: resolveCronEnabled(raw),
+      attributionSweepIntervalMs: raw.ATTRIBUTION_SWEEP_INTERVAL_MS,
+      costAuditIntervalMs: raw.COST_AUDIT_INTERVAL_MS,
+      reconcileIntervalMs: raw.RECONCILE_INTERVAL_MS,
+      retentionSweepIntervalMs: raw.RETENTION_SWEEP_INTERVAL_MS,
     }),
   });
 }

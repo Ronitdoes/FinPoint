@@ -27,6 +27,91 @@ export class RiskService {
   constructor(private readonly app: FastifyInstance) {}
 
   /**
+   * Resolves a payment subject to its canonical DB row.
+   *
+   * Webhook ingest publishes `entity_id = normalized.entityId` (the PROVIDER
+   * payment id, e.g. `pi_...`), while internal publishers use the DB UUID.
+   * s-32 E2E exposed the gap: the UUID-only lookup threw `22P02` and the
+   * event landed in DLQ, so no risk/case was ever created for real webhooks.
+   * Fix (s-32 §API Contracts: extend EXISTING filters, no backdoors): fall
+   * back to the existing provider-id filter. Returns the canonical DB id for
+   * downstream anchoring (risk subject, case obligation).
+   */
+  private async resolvePaymentForRisk(
+    tenantId: string,
+    entityId: string,
+    source?: string,
+  ): Promise<{ payment: any | null; paymentId: string }> {
+    try {
+      const byId = await this.app.repos.findPaymentById(
+        { db: this.app.db },
+        { tenantId, paymentId: entityId },
+      );
+      if (byId) return { payment: byId, paymentId: byId.id };
+    } catch {
+      // Non-UUID provider id — fall through to the provider-id filter.
+    }
+    const normalizedSource = (source ?? "").toUpperCase();
+    const candidates =
+      normalizedSource === "STRIPE" ||
+      normalizedSource === "RAZORPAY" ||
+      normalizedSource === "MOCK"
+        ? [normalizedSource]
+        : ["STRIPE", "RAZORPAY", "MOCK"];
+    for (const candidate of candidates) {
+      try {
+        const byProvider = await this.app.repos.findPaymentByProviderPaymentId(
+          { db: this.app.db },
+          { tenantId, provider: candidate as any, providerPaymentId: entityId },
+        );
+        if (byProvider) return { payment: byProvider, paymentId: byProvider.id };
+      } catch {
+        // Keep trying remaining provider filters.
+      }
+    }
+    return { payment: null, paymentId: entityId };
+  }
+
+  /**
+   * Invoice counterpart of `resolvePaymentForRisk` (Stripe
+   * `invoice.payment_failed` publishes the provider invoice id).
+   */
+  private async resolveInvoiceForRisk(
+    tenantId: string,
+    entityId: string,
+    source?: string,
+  ): Promise<{ invoice: any | null; invoiceId: string }> {
+    try {
+      const byId = await this.app.repos.findInvoiceById(
+        { db: this.app.db },
+        { tenantId, invoiceId: entityId },
+      );
+      if (byId) return { invoice: byId, invoiceId: byId.id };
+    } catch {
+      // Non-UUID provider id — fall through to the provider-id filter.
+    }
+    const normalizedSource = (source ?? "").toUpperCase();
+    const candidates =
+      normalizedSource === "STRIPE" ||
+      normalizedSource === "RAZORPAY" ||
+      normalizedSource === "MOCK"
+        ? [normalizedSource]
+        : ["STRIPE", "RAZORPAY", "MOCK"];
+    for (const candidate of candidates) {
+      try {
+        const byProvider = await this.app.repos.findInvoiceByProviderId(
+          { db: this.app.db },
+          { tenantId, provider: candidate as any, providerInvoiceId: entityId },
+        );
+        if (byProvider) return { invoice: byProvider, invoiceId: byProvider.id };
+      } catch {
+        // Keep trying remaining provider filters.
+      }
+    }
+    return { invoice: null, invoiceId: entityId };
+  }
+
+  /**
    * Handles inbound domain events from the bus (consumer group: risk-engine).
    */
   async handleDomainEvent(
@@ -48,21 +133,35 @@ export class RiskService {
         await this.processInvoiceOverdueEvent(event, startTime);
         break;
 
-      case "payment.succeeded":
+      case "payment.succeeded": {
+        // Webhook envelopes carry the provider id; resolve to the DB anchor
+        // so previously calculated OPEN risks actually close.
+        const { paymentId } = await this.resolvePaymentForRisk(
+          event.tenant_id,
+          event.entity_id,
+          event.source,
+        );
         await this.closeOpenRisksForSubject(
           event.tenant_id,
           "PAYMENT",
-          event.entity_id,
+          paymentId,
         );
         break;
+      }
 
-      case "invoice.paid":
+      case "invoice.paid": {
+        const { invoiceId } = await this.resolveInvoiceForRisk(
+          event.tenant_id,
+          event.entity_id,
+          event.source,
+        );
         await this.closeOpenRisksForSubject(
           event.tenant_id,
           "INVOICE",
-          event.entity_id,
+          invoiceId,
         );
         break;
+      }
 
       case "checkout.completed":
         await this.closeOpenRisksForSubject(
@@ -86,19 +185,18 @@ export class RiskService {
     startTime: number,
   ): Promise<void> {
     const tenantId = event.tenant_id;
-    const paymentId = event.entity_id;
+    // Canonical DB anchor (provider-id fallback for webhook envelopes).
+    const { payment, paymentId } = await this.resolvePaymentForRisk(
+      tenantId,
+      event.entity_id,
+      event.source,
+    );
 
     // Load subject aggregates via repository layer only
-    const [customer, payment] = await Promise.all([
-      this.app.repos.findCustomerById(
-        { db: this.app.db },
-        { tenantId, customerId: event.customer_id },
-      ),
-      this.app.repos.findPaymentById(
-        { db: this.app.db },
-        { tenantId, paymentId },
-      ),
-    ]);
+    const customer = await this.app.repos.findCustomerById(
+      { db: this.app.db },
+      { tenantId, customerId: event.customer_id },
+    );
 
     if (!customer) {
       this.app.log.warn(
@@ -245,18 +343,17 @@ export class RiskService {
     startTime: number,
   ): Promise<void> {
     const tenantId = event.tenant_id;
-    const invoiceId = event.entity_id;
+    // Canonical DB anchor (provider-id fallback for webhook envelopes).
+    const { invoice, invoiceId } = await this.resolveInvoiceForRisk(
+      tenantId,
+      event.entity_id,
+      event.source,
+    );
 
-    const [customer, invoice] = await Promise.all([
-      this.app.repos.findCustomerById(
-        { db: this.app.db },
-        { tenantId, customerId: event.customer_id },
-      ),
-      this.app.repos.findInvoiceById(
-        { db: this.app.db },
-        { tenantId, invoiceId },
-      ),
-    ]);
+    const customer = await this.app.repos.findCustomerById(
+      { db: this.app.db },
+      { tenantId, customerId: event.customer_id },
+    );
 
     if (!customer) {
       this.app.log.warn(

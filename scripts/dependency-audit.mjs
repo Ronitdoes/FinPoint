@@ -37,7 +37,14 @@ if (!existsSync(join(REPO_ROOT, "bun.lock"))) {
 }
 
 // 2. Dockerfile hygiene: frozen lockfile + digest-pinned base images.
-const dockerfiles = ["apps/backend/Dockerfile", "apps/frontend/Dockerfile"];
+// Canonical production images live in infra/docker (s-33); the apps/* twins
+// carry identical content for historical references and are checked too.
+const dockerfiles = [
+  "infra/docker/backend.Dockerfile",
+  "infra/docker/frontend.Dockerfile",
+  "apps/backend/Dockerfile",
+  "apps/frontend/Dockerfile",
+];
 for (const rel of dockerfiles) {
   const abs = join(REPO_ROOT, rel);
   if (!existsSync(abs)) {

@@ -89,6 +89,26 @@ export const otelSchema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
 });
 
+/**
+ * Monitoring & alerting surface (s-34, docs/SLO.md, ADR-016). All optional:
+ * gauges still refresh in-process for `GET /metrics` when the pushgateway
+ * is unset; the cohort label keeps business KPI series to staging|prod.
+ */
+export const monitoringSchema = z.object({
+  PUSHGATEWAY_URL: z.string().url().optional(),
+  MONITORING_COHORT: z.string().min(1).default("staging"),
+  KPI_SNAPSHOT_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5 * 60 * 1000),
+  INFRA_SAMPLER_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60 * 1000),
+});
+
 export const authSchema = z.object({
   SESSION_SECRET: z
     .string()
@@ -102,6 +122,36 @@ export const authSchema = z.object({
 
 export const webPublicSchema = z.object({
   NEXT_PUBLIC_API_URL: z.string().url().default("http://localhost:8000"),
+});
+
+/**
+ * Background cron inventory (s-33, docs/deploy/crons.md). Intervals are
+ * millisecond durations; all jobs are idempotent and overlap-guarded, so a
+ * missed or doubled tick is harmless. CRON_ENABLED defaults ON except in
+ * `test` (same convention as MOCK_PROVIDERS defaulting by NODE_ENV).
+ */
+export const cronSchema = z.object({
+  CRON_ENABLED: optionalBooleanFlag,
+  ATTRIBUTION_SWEEP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60 * 60 * 1000),
+  COST_AUDIT_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(24 * 60 * 60 * 1000),
+  RECONCILE_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(24 * 60 * 60 * 1000),
+  RETENTION_SWEEP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30 * 24 * 60 * 60 * 1000),
 });
 
 /**
@@ -131,7 +181,9 @@ const serverSchemaBase = appSchema
   .merge(messagingSchema)
   .merge(demoSchema)
   .merge(otelSchema)
-  .merge(authSchema);
+  .merge(monitoringSchema)
+  .merge(authSchema)
+  .merge(cronSchema);
 
 export const serverEnvSchema = serverSchemaBase.superRefine((value, ctx) => {
   const mockProviders = value.MOCK_PROVIDERS ?? value.NODE_ENV !== "production";
@@ -208,4 +260,9 @@ export function parseServerEnv(source: EnvSource = process.env): RawServerEnv {
 /** Effective mock-mode flag for an already-validated env. */
 export function resolveMockProviders(env: RawServerEnv): boolean {
   return env.MOCK_PROVIDERS ?? env.NODE_ENV !== "production";
+}
+
+/** Effective cron master toggle for an already-validated env. */
+export function resolveCronEnabled(env: RawServerEnv): boolean {
+  return env.CRON_ENABLED ?? env.NODE_ENV !== "test";
 }

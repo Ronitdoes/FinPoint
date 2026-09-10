@@ -1,0 +1,244 @@
+# AI Revenue Recovery — Prometheus alert rules (s-34).
+#
+# Source: spec 01 §20 instrument list + spec 03 §10 targets. Every alert
+# carries a `runbook_url` annotation pointing at its procedure in
+# docs/runbooks/<slug>.md (step requirement: "every alert names a runbook").
+# Severity vocabulary: `page` (wake someone) | `ticket` (ticket+slack,
+# next-business-day OK) | `warn` (slack channel, business hours).
+#
+# Evaluation policy (s-34 §Reliability): rules evaluate against staging
+# first; paging thresholds below were tuned from the baselines captured in
+# docs/PERFORMANCE.md. Staging alertmanager routes `page` to the staging
+# paging drill target until the on-call rotation explicitly opts prod in.
+#
+# Label hygiene: no alert label carries PII (CONVENTIONS §12); only
+# provider/op/route/group/queue/tenant(staging|prod) low-cardinality keys.
+
+groups:
+  - name: arr-ingest
+    interval: 30s
+    rules:
+      - alert: WebhookErrorRate
+        expr: |
+          (
+            sum(rate(webhook_deliveries_total{status=~"error|invalid_signature"}[5m]))
+            /
+            clamp_min(sum(rate(webhook_deliveries_total[5m])), 0.001)
+          ) > 0.02
+        for: 5m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Webhook error rate above 2% for 5m"
+          description: "Share of webhook deliveries ending error/invalid_signature exceeds 2% over the last 5 minutes. Ingest availability SLO is at risk."
+          runbook_url: "docs/runbooks/webhook-error-rate.md"
+          dashboard_url: "infra/grafana/dashboards/operations.json/operations"
+
+      - alert: P95WebhookLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(webhook_duration_ms_bucket[15m])) by (le)
+          ) > 300
+        for: 15m
+        labels:
+          severity: warn
+          team: platform
+        annotations:
+          summary: "p95 webhook latency above 300ms for 15m"
+          description: "Spec 03 §10 target breached: accepted-async webhook p95 exceeds 300ms over 15 minutes."
+          runbook_url: "docs/runbooks/p95-webhook-latency.md"
+          dashboard_url: "infra/grafana/dashboards/operations.json/operations"
+
+  - name: arr-pipeline
+    interval: 30s
+    rules:
+      - alert: BusDLQDepth
+        # Depth gauge covers the in-process driver (true parked count from
+        # the infra-sampler); the counter-increase arm covers Redpanda,
+        # where depth reads come from topic offsets instead of a gauge.
+        expr: |
+          max_over_time(bus_dlq_depth[15m]) > 0
+          or
+          increase(bus_dlq_total[15m]) > 0
+        for: 15m
+        labels:
+          severity: ticket
+          team: platform
+        annotations:
+          summary: "Event-bus DLQ non-empty for 15m"
+          description: "Poison messages are parked in the DLQ. Investigate the poison payload before replaying; never purge blindly."
+          runbook_url: "docs/runbooks/bus-dlq-depth.md"
+          dashboard_url: "infra/grafana/dashboards/operations.json/operations"
+
+      - alert: WorkflowFailureRate
+        expr: |
+          (
+            sum(rate(workflow_outcome_total{result=~"FAILED|failed"}[15m]))
+            /
+            clamp_min(sum(rate(workflow_started_total[15m])), 0.001)
+          ) > 0.01
+        for: 15m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Workflow failure rate above 1% for 15m"
+          description: "Terminal workflow failures exceed 1% of starts over 15 minutes. Check Temporal UI + worker logs."
+          runbook_url: "docs/runbooks/workflow-failure-rate.md"
+          dashboard_url: "infra/grafana/dashboards/operations.json/operations"
+
+      - alert: TemporalWorkerPollers
+        expr: min_over_time(temporal_worker_pollers[5m]) == 0
+        for: 5m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Temporal worker pollers at zero — execution halted"
+          description: "No active pollers on the recovery task queue for 5 minutes. Durable execution is halted; workflows cannot progress."
+          runbook_url: "docs/runbooks/temporal-worker-pollers.md"
+          dashboard_url: "infra/grafana/dashboards/infra.json/infrastructure"
+
+      - alert: RecoveredAmountDrop
+        expr: |
+          kpi_revenue_recovered_minor
+            < 0.5 * avg_over_time(kpi_revenue_recovered_minor[7d] offset 1d)
+        for: 30m
+        labels:
+          severity: warn
+          team: revenue-ops
+        annotations:
+          summary: "Recovered amount dropped >50% vs 7-day average"
+          description: "Silent-pipeline-break signal: pushgateway KPI snapshot shows recovered revenue below half its trailing 7-day average."
+          runbook_url: "docs/runbooks/recovered-amount-drop.md"
+          dashboard_url: "infra/grafana/dashboards/executive.json/executive"
+
+  - name: arr-providers
+    interval: 30s
+    rules:
+      - alert: ProviderFailureRate
+        expr: |
+          (
+            sum by (provider, op) (rate(provider_calls_total{status="error"}[15m]))
+            /
+            clamp_min(sum by (provider, op) (rate(provider_calls_total[15m])), 0.001)
+          ) > 0.10
+        for: 15m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Provider failure rate above 10% for one provider/op"
+          description: "A single provider operation (stripe/razorpay charge, whatsapp/email send) fails more than 10% of calls over 15 minutes. Follow the provider-incident path."
+          runbook_url: "docs/runbooks/provider-failure-rate.md"
+          dashboard_url: "infra/grafana/dashboards/operations.json/operations"
+
+  - name: arr-ai-policy
+    interval: 30s
+    rules:
+      - alert: LLMFallbackRate
+        expr: |
+          (
+            sum(rate(fallback_total[30m]))
+            /
+            clamp_min(sum(rate(llm_calls_total[30m])), 0.001)
+          ) > 0.30
+        for: 30m
+        labels:
+          severity: warn
+          team: ai-platform
+        annotations:
+          summary: "LLM fallback rate above 30% for 30m"
+          description: "Degraded-autonomy mode: nearly a third of decisions fall back to deterministic rules. Set the dashboard degraded-mode banner (ops toggle) until the model path recovers."
+          runbook_url: "docs/runbooks/llm-fallback-rate.md"
+          dashboard_url: "infra/grafana/dashboards/ai.json/ai-decisions"
+
+      - alert: PolicyRejectionSpike
+        expr: |
+          (
+            sum(rate(policy_evaluations_total{result="REJECTED"}[5m]))
+            >
+            3 * sum(rate(policy_evaluations_total{result="REJECTED"}[1h] offset 1h))
+          )
+          and
+          sum(rate(policy_evaluations_total{result="REJECTED"}[5m])) > 0.05
+        for: 15m
+        labels:
+          severity: warn
+          team: ai-platform
+        annotations:
+          summary: "Policy rejection spike (>3x trailing baseline)"
+          description: "3-sigma proxy: current rejection rate exceeds 3x the same-hour baseline from one hour ago (with a 0.05 rps floor against divide-by-tiny). Suspect a misbehaving recommender or a bad rule deploy."
+          runbook_url: "docs/runbooks/policy-rejection-spike.md"
+          dashboard_url: "infra/grafana/dashboards/ai.json/ai-decisions"
+
+  - name: arr-data
+    interval: 30s
+    rules:
+      - alert: DBPoolSaturation
+        expr: db_pool_saturation_ratio > 0.8
+        for: 10m
+        labels:
+          severity: warn
+          team: platform
+        annotations:
+          summary: "DB pool saturation above 80%"
+          description: "Connection pool more than 80% checked out for 10 minutes. Check for leaked transactions, slow queries, and pool sizing."
+          runbook_url: "docs/runbooks/db-pool-saturation.md"
+          dashboard_url: "infra/grafana/dashboards/infra.json/infrastructure"
+
+      - alert: AuditWriteFailures
+        expr: increase(audit_write_failures_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Audit write failures detected"
+          description: "Any audit/case-event write failure is an immutability regression (spec 03 §10: 100% of sensitive actions auditable). Page immediately."
+          runbook_url: "docs/runbooks/audit-write-failures.md"
+          dashboard_url: "infra/grafana/dashboards/operations.json/operations"
+
+  - name: arr-hygiene
+    interval: 1m
+    rules:
+      - alert: CertExpiry
+        expr: min(cert_expiry_days) < 14
+        for: 1h
+        labels:
+          severity: warn
+          team: platform
+        annotations:
+          summary: "TLS certificate expires in under 14 days"
+          description: "Ops hygiene: rotate the public certificate before expiry. Rotation references only — no secrets in this runbook."
+          runbook_url: "docs/runbooks/cert-expiry.md"
+          dashboard_url: "infra/grafana/dashboards/infra.json/infrastructure"
+
+      - alert: DiskFills
+        expr: min(disk_free_ratio) < 0.10
+        for: 15m
+        labels:
+          severity: warn
+          team: platform
+        annotations:
+          summary: "Disk free space below 10%"
+          description: "Ops hygiene: a mountpoint reports under 10% free for 15 minutes. Clear WAL/segments, expand the volume, or move retention earlier."
+          runbook_url: "docs/runbooks/disk-fills.md"
+          dashboard_url: "infra/grafana/dashboards/infra.json/infrastructure"
+
+  - name: arr-meta
+    interval: 1m
+    rules:
+      - alert: MonitoringPipelineDown
+        expr: up{job=~"arr-backend|pushgateway|prometheus"} == 0
+        for: 5m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Monitoring pipeline target down"
+          description: "Meta-monitoring: a Prometheus scrape target (backend /metrics, pushgateway, or Prometheus self-scrape) has been down for 5 minutes. Fix the monitor before trusting silence."
+          runbook_url: "docs/runbooks/monitoring-pipeline-down.md"
+          dashboard_url: "infra/grafana/dashboards/infra.json/infrastructure"

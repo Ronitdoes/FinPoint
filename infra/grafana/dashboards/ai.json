@@ -1,0 +1,71 @@
+{
+  "uid": "arr-ai",
+  "title": "AI — Decisions, Cost, Fallbacks, Approvals",
+  "tags": ["revenue-recovery", "ai"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "description": "Decision latency p50/p95, token usage and cost rate, fallback rate, circuit-open fallback share, approval queue depth and age.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Decision (LLM) latency p50/p95",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum(rate(llm_latency_ms_bucket[5m])) by (le))" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum(rate(llm_latency_ms_bucket[5m])) by (le))" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Token usage rate by kind/model",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (kind, model) (rate(llm_tokens_total[5m]))" }]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "LLM call rate by status",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (model, status) (rate(llm_calls_total[5m]))" }]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Fallback rate (alert: LLMFallbackRate)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(fallback_total[30m])) / clamp_min(sum(rate(llm_calls_total[30m])), 0.001)" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Fallbacks by reason (circuit-open share = circuit state proxy)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (reason) (rate(fallback_total[5m]))" }]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Approval queue depth (open tasks)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(human_tasks_open) by (type)" }]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Oldest approval age (seconds)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "approval_oldest_age_seconds" }]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Policy evaluations by result",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (result) (rate(policy_evaluations_total[5m]))" }]
+    }
+  ]
+}

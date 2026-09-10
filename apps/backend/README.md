@@ -41,13 +41,15 @@ bun test src/app.test.ts
 
 ## 3. Docker Containerization
 
-The backend includes a multi-stage `Dockerfile` based on `oven/bun:1.4-alpine`.
+The backend ships in the unified API+worker production image
+(`infra/docker/backend.Dockerfile`, `oven/bun:1.4-alpine`, non-root) with
+entrypoint modes `api` / `worker` / `migrate` / `migrate:check`.
 
 ### Building the Docker Image
 
 ```bash
 # From repository root
-docker build -f apps/backend/Dockerfile -t arr-backend:latest .
+docker build -f infra/docker/backend.Dockerfile -t arr-backend:latest .
 ```
 
 ### Running with Docker Compose

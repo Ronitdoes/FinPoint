@@ -1,0 +1,86 @@
+# ==============================================================================
+# E2E acceptance compose profile (s-32).
+# Extends the local infra stack with an `e2e` profile: fresh named volumes,
+# MOCK_PROVIDERS=true, demo routes enabled, deterministic seed contract.
+#
+# Usage:
+#   docker compose -f infra/docker/docker-compose.yml \
+#                  -f tests/e2e/setup/compose.e2e.yml --profile e2e up -d --build --wait
+#   bun run db:migrate
+#   E2E_BASE_URL=http://localhost:4000 bun run test:e2e
+#
+# Safety: MOCK_PROVIDERS is pinned to "true" here. The suite itself asserts the
+# production build omits /demo/* (410/404 guard cases), so this file must never
+# be used with live provider credentials.
+# ==============================================================================
+
+name: ai-revenue-recovery-e2e
+
+services:
+  postgres:
+    extends:
+      file: ../../../infra/docker/docker-compose.yml
+      service: postgres
+    volumes:
+      - e2e-postgres-data:/var/lib/postgresql/data
+
+  redis:
+    extends:
+      file: ../../../infra/docker/docker-compose.yml
+      service: redis
+    volumes:
+      - e2e-redis-data:/data
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  redpanda:
+    extends:
+      file: ../../../infra/docker/docker-compose.yml
+      service: redpanda
+    volumes:
+      - e2e-redpanda-data:/var/lib/redpanda/data
+
+  backend:
+    extends:
+      file: ../../../infra/docker/docker-compose.yml
+      service: backend
+    profiles: ["e2e"]
+    environment:
+      NODE_ENV: test
+      MOCK_PROVIDERS: "true"
+      EVENT_BUS_DRIVER: inprocess
+      LOG_LEVEL: warn
+      # Deterministic minimal fixture set for the e2e profile (NOT s-29 volume).
+      E2E_MINIMAL_SEED: "true"
+      E2E_SCENARIO: scenario-a
+
+  worker:
+    profiles: ["e2e"]
+    build:
+      context: ../../..
+      dockerfile: infra/docker/backend.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+        APP_VERSION: ${APP_VERSION:-dev}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Unified production image in worker entry mode (s-33). No HTTP port, so
+    # the image HEALTHCHECK (GET /health) is disabled for this service.
+    command: ["worker"]
+    healthcheck:
+      test: ["NONE"]
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/revenue_recovery}
+      REDIS_URL: redis://redis:6379
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: revenue-recovery
+      MOCK_PROVIDERS: "true"
+    restart: "no"
+
+volumes:
+  e2e-postgres-data:
+  e2e-redis-data:
+  e2e-redpanda-data:

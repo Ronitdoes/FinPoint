@@ -1,0 +1,51 @@
+# AI Revenue Recovery — Loki log aggregation config (s-34).
+#
+# Pipeline: backend pino JSON (stdout) → Docker logging driver → Promtail
+# (staging+prod) or direct stdout scrape (local) → Loki (:3100) → Grafana
+# Explore. Correlation keys (CONVENTIONS §7/§11) are preserved as Loki
+# labels/fields: correlation_id, tenant_id, case_id + event_id, workflow_id,
+# decision_id, action_id. Secrets never enter logs (deny-by-default
+# allowlist); Promtail drops any accidental sk_*/whsec_* tokens at ingest.
+# Saved case-tracing queries live in docs/LOGGING.md.
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # Keep label cardinality bounded: tenant cohorts only, never raw UUIDs or
+  # contact PII (same discipline as Prometheus labels in prometheus.yml).
+  max_label_names_per_series: 12
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h

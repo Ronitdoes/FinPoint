@@ -1,0 +1,71 @@
+{
+  "uid": "arr-executive",
+  "title": "Executive — Revenue Recovery",
+  "tags": ["revenue-recovery", "executive"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "description": "Business KPIs from the kpi-snapshot job (ADR-016): analytics views mirrored via pushgateway every 5m with tenant=staging|prod. Numbers identical to the dashboard API by construction.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Revenue at Risk (minor units)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(kpi_revenue_at_risk_minor) by (tenant)" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Revenue Recovered (minor units)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(kpi_revenue_recovered_minor) by (tenant)" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Recovery Rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "avg(kpi_recovery_rate) by (tenant)" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Net Recovered (minor units)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(kpi_net_recovered_minor) by (tenant)" }]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Active Cases",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(kpi_active_cases) by (tenant)" }]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Escalations (cumulative)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(kpi_escalations_total) by (tenant)" }]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Recovered vs 7-day average (drop alert source)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(kpi_revenue_recovered_minor) by (tenant)" },
+        { "refId": "B", "expr": "0.5 * avg_over_time(kpi_revenue_recovered_minor[7d] offset 1d)" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Outcomes recorded by attribution method",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (method) (rate(outcome_recorded_total[5m]))" }]
+    }
+  ]
+}

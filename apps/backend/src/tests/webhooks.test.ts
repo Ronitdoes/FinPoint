@@ -131,10 +131,32 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
     expect((attempts[0] as any).status).toBe("FAILED");
     expect((attempts[0] as any).initiated_by).toBe("PROVIDER_AUTO");
 
-    // Verify Event published onto EventBus
-    expect(eventBus.published.length).toBe(1);
+    // Verify Event published onto EventBus (exactly one gateway envelope;
+    // downstream risk.calculated / case.opened land here too on NullBus since
+    // s-32 fixed webhook→risk subject resolution, so filter by type).
+    const failedEnvelopes = eventBus.published.filter((e) => e.type === "payment.failed");
+    expect(failedEnvelopes.length).toBe(1);
     expect(eventBus.published[0].type).toBe("payment.failed");
     expect(eventBus.published[0].source).toBe("STRIPE");
+
+    // s-32 regression proof: the accepted webhook now flows risk → case
+    // (previously DLQ'd on `22P02`: entity_id carried the provider payment id).
+    const deadline = Date.now() + 25000;
+    let riskRow: any = null;
+    let liveCase: any = null;
+    while (Date.now() < deadline) {
+      [riskRow] = await db.execute(
+        sql`SELECT * FROM revenue_risks WHERE tenant_id = ${testTenantId} AND subject_id = ${(payment as any).id} ORDER BY computed_at DESC LIMIT 1`,
+      );
+      const cases = await db.execute(
+        sql`SELECT * FROM recovery_cases WHERE tenant_id = ${testTenantId} AND source_entity_id = ${(payment as any).id} AND status NOT IN ('RECOVERED','STOPPED','FAILED')`,
+      );
+      liveCase = (cases as any[])[0] ?? null;
+      if (riskRow && liveCase) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    expect(riskRow).toBeDefined();
+    expect(liveCase).toBeDefined();
   }, 30000);
 
   it("2. Valid Razorpay payment.captured webhook -> 200 ACCEPTED, rows created, event PROCESSED & published", async () => {
@@ -186,10 +208,11 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
     expect((payment as any).status).toBe("SUCCEEDED");
     expect((payment as any).paid_at).toBeDefined();
 
-    // Verify Event published onto EventBus
-    expect(eventBus.published.length).toBe(1);
-    expect(eventBus.published[0].type).toBe("payment.succeeded");
-    expect(eventBus.published[0].source).toBe("RAZORPAY");
+    // Verify Event published onto EventBus (type-filtered: async downstream
+    // envelopes from earlier tests may land here on the shared NullBus).
+    const succeededEnvelopes = eventBus.published.filter((e) => e.type === "payment.succeeded");
+    expect(succeededEnvelopes.length).toBe(1);
+    expect(succeededEnvelopes[0].source).toBe("RAZORPAY");
   });
 
   it("3. Invalid signature -> 401 INVALID_SIGNATURE, nothing persisted in DB", async () => {
@@ -301,8 +324,11 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
     );
     expect(payments.length).toBe(1);
 
-    // Verify exactly 1 event published to EventBus
-    expect(eventBus.published.length).toBe(1);
+    // Verify exactly 1 gateway envelope for the deduped external id
+    // (type+id filtered: background chain envelopes share the NullBus).
+    const acceptedId = responses.find((r) => r.json().status === "ACCEPTED")!.json().eventId;
+    const gatewayEnvelopes = eventBus.published.filter((e) => e.id === acceptedId);
+    expect(gatewayEnvelopes.length).toBe(1);
   }, 20000);
 
   it("6. Out-of-order delivery (SUCCEEDED before FAILED) -> final state stays SUCCEEDED, regression ignored", async () => {
@@ -438,15 +464,16 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
     expect((storedEvent as any).type).toBe("UNMAPPED");
   });
 
-  it("10. LLM / workflow absence assertion: 0 rows created in ai_decisions, messages, workflows", async () => {
+  it("10. Gateway/intelligence separation: webhook ACCEPT returns synchronously with no embedded AI output; decisions arrive asynchronously via the pipeline", async () => {
     const externalId = `evt_absence_${randomUUID()}`;
+    const providerPaymentId = `pi_absence_${randomUUID()}`;
     const payload = JSON.stringify({
       id: externalId,
       type: "payment_intent.payment_failed",
       created: Math.floor(Date.now() / 1000),
       data: {
         object: {
-          id: `pi_absence_${randomUUID()}`,
+          id: providerPaymentId,
           amount: 5000,
           currency: "usd",
           customer: `cus_absence_${randomUUID()}`,
@@ -455,7 +482,7 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
       },
     });
 
-    await app.inject({
+    const response = await app.inject({
       method: "POST",
       url: `/webhooks/stripe?tenant_id=${testTenantId}`,
       headers: {
@@ -465,21 +492,44 @@ describe("Step 10 Integration: Event Gateway & Webhook Ingestion", { timeout: 30
       payload,
     });
 
-    // Assert strictly 0 AI decisions, messages, or workflow records
-    const [aiCount] = await db.execute(
-      sql`SELECT count(*) as count FROM ai_decisions WHERE tenant_id = ${testTenantId}`,
-    );
-    const [msgCount] = await db.execute(
-      sql`SELECT count(*) as count FROM messages WHERE tenant_id = ${testTenantId}`,
-    );
-    const [wfCount] = await db.execute(
-      sql`SELECT count(*) as count FROM workflows WHERE tenant_id = ${testTenantId}`,
-    );
+    // Synchronous contract: ACCEPT carries routing refs only — never AI output.
+    expect(response.statusCode).toBe(200);
+    const syncBody = response.json();
+    expect(syncBody.status).toBe("ACCEPTED");
+    expect(syncBody.eventId).toBeDefined();
+    expect(syncBody.decision ?? syncBody.recommended_actions).toBeUndefined();
 
-    expect(Number((aiCount as any).count)).toBe(0);
+    // Asynchronous proof (s-32 chain): the pipeline eventually attaches an AI
+    // decision to the resulting case — intelligence follows ingestion, it is
+    // never inline in the gateway response.
+    const [payment] = await db.execute(
+      sql`SELECT * FROM payments WHERE tenant_id = ${testTenantId} AND provider_payment_id = ${providerPaymentId}`,
+    );
+    expect(payment).toBeDefined();
+    const deadline = Date.now() + 45000;
+    let decisionCount = 0;
+    let caseCount = 0;
+    while (Date.now() < deadline) {
+      const [dec] = await db.execute(
+        sql`SELECT count(*) as count FROM ai_decisions WHERE tenant_id = ${testTenantId} AND case_id IN (SELECT id FROM recovery_cases WHERE tenant_id = ${testTenantId} AND source_entity_id = ${(payment as any).id})`,
+      );
+      const [cs] = await db.execute(
+        sql`SELECT count(*) as count FROM recovery_cases WHERE tenant_id = ${testTenantId} AND source_entity_id = ${(payment as any).id}`,
+      );
+      decisionCount = Number((dec as any).count);
+      caseCount = Number((cs as any).count);
+      if (decisionCount >= 1 && caseCount >= 1) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    expect(caseCount).toBeGreaterThanOrEqual(1);
+    expect(decisionCount).toBeGreaterThanOrEqual(1);
+
+    // No customer-facing messages are ever sent synchronously by the gateway.
+    const [msgCount] = await db.execute(
+      sql`SELECT count(*) as count FROM messages WHERE tenant_id = ${testTenantId} AND case_id IN (SELECT id FROM recovery_cases WHERE tenant_id = ${testTenantId} AND source_entity_id = ${(payment as any).id})`,
+    );
     expect(Number((msgCount as any).count)).toBe(0);
-    expect(Number((wfCount as any).count)).toBe(0);
-  });
+  }, 60000);
 
   it("11. Performance smoke test: sequential deliveries under budget", async () => {
     const latencies: number[] = [];

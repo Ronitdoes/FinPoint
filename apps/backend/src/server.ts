@@ -8,15 +8,53 @@ loadEnv({ path: path.resolve(import.meta.dirname, "../../../.env") });
 
 export async function startServer() {
   const config = apiConfig();
-  // Step 31: EXECUTING-stuck sweeper reconciles crash-window rows every 5
-  // minutes in every non-test environment (s-33 owns the durable schedule).
-  const enableSweeper = config.app.env !== "test";
+  // s-33 cron inventory: every background job runs in-process on this
+  // schedule in every non-test environment with CRON_ENABLED (platform
+  // schedulers may call the same job classes instead — docs/deploy/crons.md).
+  const jobsEnabled = config.app.env !== "test" && config.cron.enabled;
   const app = await buildApp({
     config,
-    jobs: enableSweeper
-      ? { executingSweeper: { enabled: true, intervalMs: 5 * 60 * 1000 } }
+    jobs: jobsEnabled
+      ? {
+          executingSweeper: { enabled: true, intervalMs: 5 * 60 * 1000 },
+          attributionSweeper: {
+            enabled: true,
+            intervalMs: config.cron.attributionSweepIntervalMs,
+          },
+          costCompleteness: {
+            enabled: true,
+            intervalMs: config.cron.costAuditIntervalMs,
+          },
+          auditRetention: {
+            enabled: true,
+            intervalMs: config.cron.retentionSweepIntervalMs,
+          },
+          kpiSnapshot: {
+            enabled: true,
+            intervalMs: config.monitoring.kpiSnapshotIntervalMs,
+            cohortLabel: config.monitoring.cohort,
+            pushGatewayUrl: config.monitoring.pushGatewayUrl,
+          },
+          infraSampler: {
+            enabled: true,
+            intervalMs: config.monitoring.infraSamplerIntervalMs,
+          },
+        }
       : undefined,
   });
+
+  // s-33 startup self-check log: prod-shape assertions an operator (or the
+  // staging smoke script) can verify without another request.
+  app.log.info(
+    {
+      version: process.env.APP_VERSION ?? "dev",
+      sha: process.env.GIT_SHA ?? "dev",
+      env: config.app.env,
+      mockProviders: config.demo.mockProviders,
+      demoRoutes: config.demo.mockProviders ? "enabled" : "omitted",
+    },
+    "backend boot config self-check",
+  );
 
   let isShuttingDown = false;
 

@@ -405,7 +405,7 @@ bun --filter frontend dev       # next dev (:3000)
 bun --filter @repo/eval run:eval -- --mock   # LLM eval harness (CI gate)
 ```
 
-Docker images: `apps/backend/Dockerfile` (multi-stage `oven/bun:1.4-alpine`, non-root, `CMD bun apps/backend/src/server.ts`), `apps/frontend/Dockerfile` (`NEXT_PUBLIC_API_URL` build-arg → `node:20-alpine` standalone runner).
+Docker images: `infra/docker/backend.Dockerfile` (unified API+worker image, multi-stage `oven/bun:1.4-alpine`, non-root, entrypoint modes `api`/`worker`/`migrate`), `infra/docker/frontend.Dockerfile` (`NEXT_PUBLIC_API_URL`-only build-arg → `node:20-alpine` standalone runner). Identical twins kept at `apps/backend/Dockerfile` + `apps/frontend/Dockerfile` (see `docs/deploy/`).
 
 ---
 

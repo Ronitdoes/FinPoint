@@ -1,0 +1,12 @@
+{
+  "name": "scenario-b-checkout-abandonment",
+  "description": "Pristine pre-trigger Scenario B (CUS-002): abandoned checkout past the inactivity threshold",
+  "customer_ref": "CUS-002",
+  "customer": { "name": "Rahul Verma", "email": "rahul@example.com", "phone": "+919876543211" },
+  "cart_value_minor": 799900,
+  "amount_display": "₹7,999.00",
+  "currency": "INR",
+  "age_minutes": 45,
+  "expected_zero_discount_touch1": true,
+  "expected_incentive_cap_minor": 50000
+}

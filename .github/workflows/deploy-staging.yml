@@ -1,0 +1,96 @@
+# ==============================================================================
+# AI Revenue Recovery — staging deploy (s-33).
+#
+# Callable from CI after `publish`, or manually via workflow_dispatch for
+# redeploys / drills. The `staging` environment MUST have protection rules
+# (required reviewers) in the repo settings — that rule IS the manual
+# approval gate from the s-33 pipeline diagram.
+#
+# Order: migrate (pre-deploy job on DIRECT_URL, advisory-locked) → deploy
+# (platform hook) → smoke (journey-lite, @smoke subset). Migrations run
+# BEFORE the new app version rolls, and app version N stays compatible with
+# schema N+1 during the roll (docs/deploy/migrations.md).
+#
+# Required environment secrets (platform secret store, never in the repo):
+#   STAGING_DATABASE_URL / STAGING_DIRECT_URL / STAGING_REDIS_URL
+#   STAGING_TEMPORAL_ADDRESS / STAGING_DEPLOY_HOOK_URL / STAGING_BASE_URL
+#   Staging provider TEST keys + webhook secrets (see docs/deploy/webhooks.md).
+# ==============================================================================
+
+name: Deploy staging
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: "Immutable backend image tag to deploy (e.g. sha-<sha>)"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Immutable backend image tag to deploy (e.g. sha-<sha>)"
+        required: true
+        type: string
+
+jobs:
+  migrate:
+    name: migrate (pre-deploy, DIRECT_URL)
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
+      REDIS_URL: ${{ secrets.STAGING_REDIS_URL }}
+      TEMPORAL_ADDRESS: ${{ secrets.STAGING_TEMPORAL_ADDRESS }}
+      TEMPORAL_NAMESPACE: revenue-recovery-staging
+      EVENT_BUS_DRIVER: redpanda
+      REDPANDA_BROKERS: ${{ secrets.STAGING_REDPANDA_BROKERS }}
+      MOCK_PROVIDERS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - run: bun install --frozen-lockfile
+      - name: Apply pending migrations (advisory-locked, forward-only)
+        run: bun run db:migrate
+      - name: Verify schema is current
+        run: bun run db:migrate:check
+
+  deploy:
+    name: deploy image to staging
+    runs-on: ubuntu-latest
+    needs: [migrate]
+    environment: staging
+    steps:
+      - name: Trigger platform redeploy on immutable tag
+        env:
+          HOOK_URL: ${{ secrets.STAGING_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK_URL" ]; then
+            echo "STAGING_DEPLOY_HOOK_URL is not configured; cannot deploy." >&2
+            exit 1
+          fi
+          echo "Deploying backend+worker image tag: ${{ inputs.image_tag }}"
+          curl --fail --show-error --retry 3 --max-time 60 \
+            -X POST "$HOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"image_tag\":\"${{ inputs.image_tag }}\"}"
+
+  smoke:
+    name: smoke (staging journey-lite)
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    environment: staging
+    env:
+      SMOKE_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+      SMOKE_EXPECT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - run: bun install --frozen-lockfile
+      - name: Run @smoke journey-lite against staging
+        run: bun scripts/smoke-staging.mjs

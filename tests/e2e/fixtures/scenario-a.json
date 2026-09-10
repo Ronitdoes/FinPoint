@@ -1,0 +1,13 @@
+{
+  "name": "scenario-a-payment-failure",
+  "description": "Pristine pre-trigger Scenario A (CUS-001): single failed payment driving the flagship journey",
+  "customer_ref": "CUS-001",
+  "customer": { "name": "Aditi Sharma", "email": "aditi@example.com", "phone": "+919876543210" },
+  "amount_minor": 1299900,
+  "amount_display": "₹12,999.00",
+  "currency": "INR",
+  "provider": "STRIPE",
+  "expected_risk_band": "HIGH",
+  "expected_ai_confidence": 0.86,
+  "expected_attribution_method": "WORKFLOW_LINKED"
+}

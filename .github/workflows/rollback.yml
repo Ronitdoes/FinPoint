@@ -1,0 +1,103 @@
+# ==============================================================================
+# AI Revenue Recovery — rollback (s-33, docs/deploy/rollback.md).
+#
+# Manual-only (workflow_dispatch). Redeploys a PREVIOUS immutable image tag
+# AFTER verifying the schema-compatibility flag. Migrations are forward-only:
+# rollback = previous APP version running on the CURRENT schema — the
+# database is never downgraded. DB point-in-time recovery is a last resort
+# requiring owner approval (documented in the runbook, not automated here).
+#
+# Inputs:
+#   target_tag — previous immutable tag to restore (e.g. sha-<sha>).
+#   reason     — why (recorded in the run output for the drill log).
+#   environment — staging (default) or production. Production additionally
+#                requires the `production` environment's protection rules.
+#
+# The compat gate (scripts/rollback-compat-check.mjs) requires:
+#   1. CONFIRM_SCHEMA_COMPAT=true (explicit human flag — see runbook), and
+#   2. migrate:check green against the target env (schema is at latest, i.e.
+#      the old app version is known-compatible per the N/N+1 rule).
+# ==============================================================================
+
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_tag:
+        description: "Previous immutable image tag to restore (e.g. sha-<abc123>)"
+        required: true
+        type: string
+      reason:
+        description: "Reason for the rollback (recorded for the drill log)"
+        required: true
+        type: string
+      environment:
+        description: "Target environment"
+        required: false
+        default: "staging"
+        type: choice
+        options: [staging, production]
+
+jobs:
+  compat-check:
+    name: schema compatibility gate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      DATABASE_URL: ${{ inputs.environment == 'production' && secrets.PROD_DATABASE_URL || secrets.STAGING_DATABASE_URL }}
+      DIRECT_URL: ${{ inputs.environment == 'production' && secrets.PROD_DIRECT_URL || secrets.STAGING_DIRECT_URL }}
+      REDIS_URL: ${{ inputs.environment == 'production' && secrets.PROD_REDIS_URL || secrets.STAGING_REDIS_URL }}
+      TEMPORAL_ADDRESS: ${{ inputs.environment == 'production' && secrets.PROD_TEMPORAL_ADDRESS || secrets.STAGING_TEMPORAL_ADDRESS }}
+      TEMPORAL_NAMESPACE: revenue-recovery-${{ inputs.environment }}
+      EVENT_BUS_DRIVER: redpanda
+      REDPANDA_BROKERS: ${{ inputs.environment == 'production' && secrets.PROD_REDPANDA_BROKERS || secrets.STAGING_REDPANDA_BROKERS }}
+      MOCK_PROVIDERS: "false"
+      ROLLBACK_TAG: ${{ inputs.target_tag }}
+      CONFIRM_SCHEMA_COMPAT: ${{ vars.CONFIRM_SCHEMA_COMPAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - run: bun install --frozen-lockfile
+      - name: Verify rollback is schema-compatible
+        run: |
+          echo "Rollback requested: tag=${{ inputs.target_tag }} env=${{ inputs.environment }} reason=${{ inputs.reason }}"
+          bun scripts/rollback-compat-check.mjs
+
+  rollback:
+    name: redeploy previous tag
+    runs-on: ubuntu-latest
+    needs: [compat-check]
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Trigger platform redeploy on previous tag
+        env:
+          HOOK_URL: ${{ inputs.environment == 'production' && secrets.PROD_DEPLOY_HOOK_URL || secrets.STAGING_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK_URL" ]; then
+            echo "Deploy hook URL is not configured for ${{ inputs.environment }}." >&2
+            exit 1
+          fi
+          echo "Rolling back to image tag: ${{ inputs.target_tag }} (reason: ${{ inputs.reason }})"
+          curl --fail --show-error --retry 3 --max-time 60 \
+            -X POST "$HOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"image_tag\":\"${{ inputs.target_tag }}\",\"rollback\":true}"
+
+  smoke:
+    name: smoke after rollback
+    runs-on: ubuntu-latest
+    needs: [rollback]
+    environment: ${{ inputs.environment }}
+    env:
+      SMOKE_BASE_URL: ${{ inputs.environment == 'production' && secrets.PROD_BASE_URL || secrets.STAGING_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - run: bun install --frozen-lockfile
+      - name: Run @smoke journey-lite after rollback
+        run: bun scripts/smoke-staging.mjs
