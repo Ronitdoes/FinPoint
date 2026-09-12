@@ -31,6 +31,7 @@ WORKDIR /app
 
 COPY package.json bun.lock turbo.json ./
 COPY apps/backend/package.json ./apps/backend/package.json
+COPY apps/frontend/package.json ./apps/frontend/package.json
 COPY packages/config/package.json ./packages/config/package.json
 COPY packages/db/package.json ./packages/db/package.json
 COPY packages/domain/package.json ./packages/domain/package.json
@@ -50,7 +51,15 @@ COPY packages/testing/package.json ./packages/testing/package.json
 # (see COPY --from), so installs here pin `--linker hoisted` to keep one
 # complete tree at /app/node_modules. Verified failure without it:
 # `bun build` cannot resolve "dotenv" in the build stage.
-RUN bun install --frozen-lockfile --linker hoisted
+# Every workspace manifest must be present or bun prints
+# `skipped 1 workspace listed in bun.lock but not on disk` and re-resolves;
+# keep this list in sync with the root workspaces (apps/*, packages/*,
+# services/*). The bun tarball cache is BuildKit-mounted so rebuilds do not
+# re-download every package (the prod-deps install is ~4min cold, silent
+# under BuildKit until the final summary — that silence is expected, not a
+# hang; use --progress=plain to watch it).
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile --linker hoisted
 
 # ---- build: compile what has a build step ------------------------------------
 FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS build
@@ -66,6 +75,7 @@ WORKDIR /app
 
 COPY package.json bun.lock turbo.json ./
 COPY apps/backend/package.json ./apps/backend/package.json
+COPY apps/frontend/package.json ./apps/frontend/package.json
 COPY packages/config/package.json ./packages/config/package.json
 COPY packages/db/package.json ./packages/db/package.json
 COPY packages/domain/package.json ./packages/domain/package.json
@@ -79,9 +89,28 @@ COPY packages/typescript-config/package.json ./packages/typescript-config/packag
 COPY packages/eslint-config/package.json ./packages/eslint-config/package.json
 COPY packages/testing/package.json ./packages/testing/package.json
 
-# Same hoisted-linker requirement as the deps stage: the runner transports
-# only the root /app/node_modules (see COPY --from below).
-RUN bun install --production --frozen-lockfile --linker hoisted
+# Slim runtime tree: the runner boots workspace SOURCE (see entrypoint:
+# `bun apps/backend/src/server.ts`, `bun services/worker/src/worker.ts`,
+# `bun --filter @repo/db db:migrate`), so prod-deps installs ONLY the
+# runtime closure below. Deliberately excluded: `frontend` (~80 pkgs,
+# Next/React — measured 973MB -> ~430MB node_modules), `@repo/eval`
+# (its only prod dep, zod, is already present), and the zero-prod-dep
+# workspaces (testing/eslint-config/typescript-config).
+# ADDING A WORKSPACE? If backend/worker imports it at runtime, append its
+# --filter here AND keep the COPY list above covering every workspace
+# (frozen-lockfile validity). The boot smoke test catches a missed entry
+# (MODULE_NOT_FOUND instead of a connection error).
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --production --frozen-lockfile --linker hoisted \
+      --filter backend \
+      --filter @repo/config \
+      --filter @repo/db \
+      --filter @repo/domain \
+      --filter @repo/integrations \
+      --filter @repo/observability \
+      --filter @repo/orchestration \
+      --filter @repo/policy \
+      --filter @repo/worker
 
 # ---- runner: slim non-root runtime -------------------------------------------
 FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runner
