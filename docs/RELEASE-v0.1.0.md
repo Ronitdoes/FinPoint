@@ -168,7 +168,7 @@ L1-bounded, not missing.
 | Chaos | `bun run test:chaos` | 13 files / 23 pass |
 | E2E | `bun run test:e2e` | 6 files / 14 pass (normal + FALLBACK flagship) |
 | E2E coverage audit | `bun run test:e2e:coverage` | 18/18 §29 + 7/7 §8 |
-| Migration gate | `bun run db:migrate:check` | 11/11 applied |
+| Migration gate | `bun run db:migrate:check` | 11/11 applied (release commit; post-release `0011_magical_pepper_potts` added → 12 files `0000…0011` in working tree) |
 | Chaos-on-image | — | ⚠ bounded by L1/L2: fault harness proven on source; packaging proven by image build + deploy-check, not by re-running chaos inside the image. Patch step will add it. |
 
 ---
@@ -185,8 +185,9 @@ L1-bounded, not missing.
 3. Rollback criteria (explicit): any `page` alert firing >5 min, webhook p95
    >300ms sustained 10 min, or smoke failure → `rollback.yml` workflow +
    `docs/deploy/rollback.md` (+ compat pre-check `rollback:compat-check` —
-   migration 0010 is additive/backward-compatible: trigger-function replace
-   only, safe to roll forward or back).
+   migrations 0010–0011 are additive/backward-compatible (0010: trigger-function
+   replace only; 0011: partial-unique index on `revenue_risks` open cases),
+   safe to roll forward or back).
 4. After 60 min clean: mark `verified` above, announce v0.1.0, file the L1
     patch step (L2 done 2026-09-28; L1 live-dispatch remains).
 

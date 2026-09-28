@@ -56,7 +56,7 @@ frontend reads only `NEXT_PUBLIC_*` via `webConfig`).
 | `NODE_ENV` | `development` | `production` | `production` | api, worker, migrate |
 | `DEPLOY_ENV` | `local` | `staging` | `production` | api, worker (log/metrics label) |
 | `APP_VERSION` / `GIT_SHA` | `dev` | baked (tag/sha) | baked (tag/sha) | api (`GET /version`, smoke check) |
-| `PORT` | `8000` (`4000` in compose) | platform-assigned | platform-assigned | api |
+| `PORT` | `8000` (compose overrides to `4000` and publishes `4000:4000`; effective local URL is `http://localhost:4000`) | platform-assigned | platform-assigned | api |
 | `LOG_LEVEL` | `info` | `info` | `warn` | api, worker |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | baked per env (staging API URL) | baked per env (prod API URL) | frontend ONLY (sole permitted build arg) |
 | `DATABASE_URL` | composed PG | secret ref (pooled) | secret ref (pooled, HA) | api, worker, migrate fallback |
@@ -89,9 +89,12 @@ frontend reads only `NEXT_PUBLIC_*` via `webConfig`).
 1. **Staging/prod force `MOCK_PROVIDERS=false`.** `@repo/config` fail-fast
    then requires every live provider key and lists precisely which are
    missing; the container exits before serving traffic.
-2. **Demo routes are absent in prod-shape.** When `NODE_ENV=production` AND
+2. **Demo routes are absent in prod-shape (two layers, env-dependent).** When `NODE_ENV=production` AND
    `MOCK_PROVIDERS=false`, `/demo/*` is not registered at all (missing
-   routes return 404, not 410). The API logs `demoRoutes: omitted` in the
+   routes return 404, not 410). Whenever `MOCK_PROVIDERS=false` in any env,
+   the runtime `demoGuard` additionally returns `410 MOCK_DISABLED`
+   (`apps/backend/src/modules/demo/routes.ts`). Net effect: 404 in
+   prod-shape, 410 otherwise. The API logs `demoRoutes: omitted` in the
    boot self-check line (`server.ts`); the staging smoke script asserts the
    404 (`scripts/smoke-staging.mjs`, strict mode).
 3. **Staging demo drill (temporary toggle, documented):** the ONE full demo

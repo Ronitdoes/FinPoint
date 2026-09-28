@@ -22,14 +22,16 @@ backend/worker pino JSON (stdout)
 - **Correlation keys preserved end-to-end** (CONVENTIONS §11): every record
   carries `correlation_id`, `tenant_id`, and — when in a recovery context —
   `event_id`, `case_id`, `workflow_id`, `decision_id`, `action_id`, plus
-  OTel `trace_id`/`span_id`. Promtail maps them to Loki labels
-  (`correlation_id`, `tenant_id`, `case_id`) with the remainder as detected
-  fields — never dropped, never renamed.
+  OTel `trace_id`/`span_id`. Promtail maps the low-cardinality cohort keys
+  (`tenant cohort`, `correlation_id`) to Loki labels with the remainder —
+  including `case_id` (raw UUID) — as detected fields (`| json |
+  case_id="…"`) — never dropped, never renamed.
 - **Redaction at the edge:** pino redacts `sk_*`, `whsec_*`, API keys,
   tokens, and non-allowlisted PII before emission (deny-by-default); the
   Loki `limits_config` additionally caps label cardinality (12 labels max)
-  so a tenant cohort — never a raw UUID, email, or phone — is the largest
-  identity key in storage. Runbooks contain rotation references only, never
+  so a tenant cohort — never a raw UUID, email, or phone — is used as a
+  label key. `case_id` stays a detected field (filterable, not a label).
+  Runbooks contain rotation references only, never
   secrets.
 
 ## 2. Saved queries — "trace this case_id across logs"

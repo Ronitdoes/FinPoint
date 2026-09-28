@@ -30,7 +30,7 @@ All audit and timeline entries attribute actions to an actor:
 
 | `actor_type` | Description | Typical `actor_id` |
 |---|---|---|
-| `SYSTEM` | Core platform automation, cron jobs, event bus | `"system"`, `"orchestrator"`, `"sla-sweeper"` |
+| `SYSTEM` | Core platform automation, cron jobs, event bus | `"system"`, `"orchestrator"`, `"reconciler"`, `"attribution-sweeper"` |
 | `AI` | LLM decision engines, recommendation services | Model identifier (e.g. `"gpt-4o@2024-08-06"`, `"claude-3-5-sonnet"`) |
 | `USER` | Human operators acting via dashboard / API sessions | `user_id` (UUID from `users` table) |
 | `CUSTOMER` | Customer responses, inbound webhooks, opt-outs | `customer_id` (UUID from `customers` table) |
@@ -87,7 +87,7 @@ Audit logs capture sensitive domain mutations and state transitions.
       "amount_minor": 129900,
       "currency": "INR",
       "status": "FAILED",
-      "failure_code": "card_declined"
+      "failure_code": "bank_decline"
     }
     ```
 

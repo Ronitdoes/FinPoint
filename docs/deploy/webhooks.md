@@ -78,10 +78,22 @@ Same four steps with LIVE credentials and the production `<BASE>`, plus:
 ## 3. Secret rotation (per provider, any env)
 
 1. Generate the new secret in the provider dashboard WITHOUT deleting the
-   old one (all four providers support overlapping secrets / grace).
-2. Add the new value to the platform secret store alongside the old; the
-   verifier accepts either during the overlap (see rotation runbooks above
-   for the dual-secret window mechanics per provider).
+   old one where the provider supports overlap. Overlap mechanics differ
+   per provider — do not assume a universal dual-secret window:
+   - **Stripe:** dual-signature roll — the verifier accepts any valid `v1=`
+     signature within one header (see
+     `apps/backend/src/modules/webhooks/verify-stripe.ts`); rotate the secret
+     in the dashboard, deploy the new value, and at least one of old/new
+     verifies at each phase of the roll.
+   - **Razorpay:** single-secret HMAC only — zero-downtime rotation uses a
+     **second webhook endpoint** (dual-endpoint migration), not overlapping
+     secrets (see `../runbooks/webhook-secrets-rotation.md` §2).
+   - **WhatsApp / Email:** single-secret rotation — update the store +
+     redeploy, then remove the old secret; expect a brief verify-fail window
+     on in-flight retries, covered by the s-30 IP-block budget.
+2. Add the new value to the platform secret store per the provider mechanics
+   above; confirm signed traffic verifies against the new secret in
+   logs/metrics before removing the old.
 3. Redeploy (same tag is fine — secrets inject at runtime), confirm signed
    traffic verifies against the new secret in logs/metrics.
 4. Remove the old secret from the provider + store. If verification fails
@@ -89,4 +101,4 @@ Same four steps with LIVE credentials and the production `<BASE>`, plus:
    never the code.
 5. Record the rotation (date, provider, env, operator) in the secret
    manager's audit trail; compromise-driven rotations additionally follow
-   the s-30 incident runbook (`docs/SECURITY-CHECKLIST.md` row 10).
+   the emergency revocation path in `../runbooks/webhook-secrets-rotation.md` §3.

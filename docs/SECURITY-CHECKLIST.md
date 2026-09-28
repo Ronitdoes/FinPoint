@@ -56,7 +56,7 @@ Single source of truth: `apps/backend/src/plugins/rate-limit-policy.ts`
 | Authenticated reads (cases, risks, customers, payments, messages, tasks, promises, outcomes, analytics, AI decisions, policies, audit, admin lists) | 120/min | API-key digest, else IP | route `config.rateLimit` + `rateLimitKeyGenerator` |
 | Event ingestion (`POST /events`, `POST /ai/decide`) | 60/min | key/IP | route `config.rateLimit` |
 | Provider status polling (`GET /payments/:id/status`) | 30/min | key/IP | route `config.rateLimit` (tighter: live fan-out) |
-| Demo/simulation (`/demo/*`) | 60/min | key/IP | route `config.rateLimit` + `demoGuard` + prod omission/410 |
+| Demo/simulation (`/demo/*`) | 60/min | key/IP | route `config.rateLimit` + `demoGuard` + prod omission (404 in prod-shape) / 410 otherwise |
 
 429s carry `Retry-After` (plugin `errorResponseBuilder`, `IpBlockedError`,
 central error handler). Rejections increment
@@ -138,9 +138,11 @@ Re-verified without behavior change: `modules/auth/routes.ts` still sets `rr_ses
   **digest-pinned** base images (verified this step), then runs the
   package-manager audit and fails on `critical` (threshold via
   `AUDIT_FAIL_LEVEL`). Current state: clean, 0 critical findings.
-- Base images pinned this step:
-  `oven/bun:1.4-alpine@sha256:d888c0ae…` (backend build+runner, frontend
-  build), `node:20-alpine@sha256:fb4cd12c…` (frontend runner).
+- Base images pinned this step (updated post s-35 L2 rebase 2026-09-28):
+  `oven/bun:1.4-slim@sha256:cb3bbbb0…` (backend build+runner, incl. twin
+  `apps/backend/Dockerfile`),
+  `oven/bun:1.4-alpine@sha256:d888c0ae…` (frontend build only),
+  `node:20-alpine@sha256:fb4cd12c…` (frontend runner).
 - Lockfile diff policy: every dependency change must keep `bun.lock` in
   sync — images build with `--frozen-lockfile`, so a stale lockfile fails
   before this gate; reviewers confirm the lockfile diff matches the
@@ -163,7 +165,10 @@ Security signals already emitted (WARN with structured keys +
 Prometheus): `auth_failures_total{reason}`, `webhook_deliveries_total{provider,status}`,
 `security_signature_failures_total{provider}`,
 `security_ratelimit_hits_total{route_class}`,
-`security_ip_blocks_total{reason}`. Suggested s-34 alert thresholds:
+`security_ip_blocks_total{reason}`. Superseded by s-34 shipped alerts — see
+`infra/prometheus/rules.yml`, `docs/SLO.md`, and per-alert runbooks for the
+canonical thresholds (e.g. webhook error >2%/5m, not the >5%/10m draft below).
+Original s-30 suggested thresholds (historical, do not use for tuning):
 signature-failure burst (> 20/5 min per provider), any `ip_blocks_total`
 increase, `ratelimit_hits_total` spike on `auth` class, and
 `invalid_signature` share of webhook deliveries > 5% over 10 min.

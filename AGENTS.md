@@ -33,6 +33,9 @@ ADR read triggers:
 - Anything LLM-related → ADR-008
 - Auth/sessions/API keys/roles → ADR-012
 - Tests/test runner setup → ADR-013
+- Observability/metrics/tracing/logs → ADR-014
+- RLS/tenant-isolation hardening → ADR-015
+- Dashboard data/pushgateway/KPI snapshot → ADR-016
 
 ## Hard rules
 

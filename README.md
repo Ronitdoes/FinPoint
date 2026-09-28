@@ -204,16 +204,16 @@ Target layout (`docs/ARCHITECTURE.md` §4). The `s-01` gap review assigns every 
 AI-Revenue-Recovery/
 ├── apps/
 │   ├── backend/                  # Fastify Event Gateway + internal REST APIs
-│   │   ├── Dockerfile            # oven/bun:1.4-alpine, port 4000, non-root appuser:1001
+│   │   ├── Dockerfile            # oven/bun:1.4-slim, port 4000, non-root appuser:1001
 │   │   ├── scripts/              # seed-admin.ts (5 personas), seed-policies.ts
 │   │   └── src/
-│   │       ├── app.ts            # buildApp() factory — 10 plugins + route registry + 2 consumers
+│   │       ├── app.ts            # buildApp() factory — 11 plugins + route registry + 2 consumers
 │   │       ├── server.ts         # listen + graceful shutdown (25s deadline, 20s in-flight drain)
 │   │       ├── index.ts          # re-exports
 │   │       ├── lib/              # routes.ts registry, errors.ts envelope, crypto.ts
-│   │       ├── plugins/          # auth, rbac, context, cors, rate-limit, db,
-│   │       │                     # error-handler, logger, otel, shutdown (10 total)
-│   │       ├── modules/          # 18 domain modules (see below)
+│   │       ├── plugins/          # auth, rbac, context, cors, rate-limit, rate-limit-policy, db,
+│   │       │                     # error-handler, logger, otel, shutdown (11 total)
+│   │       ├── modules/          # 19 domain modules (see below)
 │   │       └── tests/            # 19 integration test files
 │   └── frontend/                 # Next.js 16 dashboard (standalone output)
 │       ├── src/app/              # / (→/dashboard), /(auth)/login, /(dashboard)/{dashboard,cases,
@@ -233,7 +233,7 @@ AI-Revenue-Recovery/
 │   ├── domain/                   # @repo/domain — pure truth: enums, entities, state machines,
 │   │                             # event envelope, action catalog (zod only, no I/O)
 │   ├── db/                       # @repo/db — Drizzle schema (33 tables + 6 views),
-│   │                             # 11 migrations, 28 repos, seeds (factories/scenarios/reset)
+│   │                             # 12 migrations, 28 repos, seeds (factories/scenarios/reset)
 │   ├── policy/                   # @repo/policy — pure evaluator + 9 compiled rules
 │   ├── integrations/             # @repo/integrations — payments/, messaging/, events/
 │   │                             # (Stripe/Razorpay/Mock, WhatsApp/Email/Mock, InProcess/Redpanda)
@@ -243,11 +243,11 @@ AI-Revenue-Recovery/
 │   ├── eslint-config/            # base.js, next.js, react-internal.js, worker.js (determinism guard)
 │   └── typescript-config/        # base.json (strict), nextjs.json, react-library.json
 ├── infra/
-│   ├── docker/                   # docker-compose.yml (9 services), otel-collector-config.yaml, .env
+│   ├── docker/                   # docker-compose.yml (18 services), otel-collector-config.yaml, .env
 │   ├── temporal/                 # dynamicconfig.yaml
 │   └── grafana/                  # provisioning/ (datasources + dashboards stubs), README
-├── docs/                         # ARCHITECTURE, CONVENTIONS, TRACEABILITY, adr/ (14),
-│                                 # explanation/ (28 step explainers), runbooks/, demo-script.md,
+├── docs/                         # ARCHITECTURE, CONVENTIONS, TRACEABILITY, adr/ (16),
+│                                 # explanation/ (35 step explainers), runbooks/ (18), demo-script.md,
 │                                 # attribution.md, audit-field-contract.md, PROMPT_EVALUATION.md
 ├── specs/                        # Source of truth (DO NOT EDIT except steps/progress.md)
 │   ├── 00-brainstorm-and-product-vision.md / 01-implementation-0-to-100.md
@@ -258,7 +258,7 @@ AI-Revenue-Recovery/
 └── .env.example                  # Full env template (see §8)
 ```
 
-**Backend modules (18):** `admin` (users, api-keys) · `ai` (+ `governance/`, `llm/`, `prompts/`, `schemas/`, `validate/`) · `analytics` (+ `queries/`) · `audit` · `auth` · `cases` (pipeline/creation/control/consumer) · `customers` (+ `context/`) · `demo` (simulator, injections) · `events` (replay) · `human-tasks` (SLA sweeper) · `messaging` (+ `webhooks/whatsapp`, `webhooks/email`) · `meta` (health/ready/version) · `outcomes` (record, attribution sweeper, cost job) · `payments` (execution, refresh) · `policy` · `promises-to-pay` · `risk` (+ `engine/`) · `webhooks` (+ `normalize/stripe,razorpay,unmapped`).
+**Backend modules (19):** `admin` (users, api-keys) · `ai` (+ `governance/`, `llm/`, `prompts/`, `schemas/`, `validate/`) · `analytics` (+ `queries/`) · `audit` · `auth` · `cases` (pipeline/creation/control/consumer) · `customers` (+ `context/`) · `demo` (simulator, injections) · `events` (replay) · `human-tasks` (SLA sweeper) · `messaging` (+ `webhooks/whatsapp`, `webhooks/email`) · `meta` (health/ready/version) · `outcomes` (record, attribution sweeper, cost job) · `payments` (execution, refresh) · `policy` · `promises-to-pay` · `risk` (+ `engine/`) · `security` (IP block + webhook abuse) · `webhooks` (+ `normalize/stripe,razorpay,unmapped`).
 
 ---
 
@@ -306,7 +306,7 @@ git clone <repo-url> AI-Revenue-Recovery            # 1. clone
 cd AI-Revenue-Recovery && bun install              # 2. install (Bun only)
 cp .env.example .env                               # 3. configure (MOCK_PROVIDERS=true is enough for demo)
 bun run infra:up                                   # 4. start infra (postgres, redis, temporal, redpanda, collector, backend, frontend)
-bun run db:migrate                                 # 5. apply all 11 migrations
+bun run db:migrate                                 # 5. apply all 12 migrations
 bun run db:seed --reset                            # 6. seed volumes + Scenarios A/B/C (prints determinism hash)
 bun --filter @repo/worker start                    # 7. start Temporal worker (required for workflow execution scenes)
 bun --filter backend dev                           # 8. (if backend not via compose) Fastify :4000 — skip if composed
@@ -389,13 +389,13 @@ bun --filter frontend dev       # next dev (:3000)
 bun --filter @repo/eval run:eval -- --mock   # LLM eval harness (CI gate)
 ```
 
-Docker images: `infra/docker/backend.Dockerfile` (unified API+worker image, multi-stage `oven/bun:1.4-alpine`, non-root, entrypoint modes `api`/`worker`/`migrate`), `infra/docker/frontend.Dockerfile` (`NEXT_PUBLIC_API_URL`-only build-arg → `node:20-alpine` standalone runner). Identical twins kept at `apps/backend/Dockerfile` + `apps/frontend/Dockerfile` (see `docs/deploy/`).
+Docker images: `infra/docker/backend.Dockerfile` (unified API+worker image, multi-stage `oven/bun:1.4-slim` Debian/glibc per L2 fix — do not rebase to Alpine, non-root, entrypoint modes `api`/`worker`/`migrate`), `infra/docker/frontend.Dockerfile` (`NEXT_PUBLIC_API_URL`-only build-arg → `node:20-alpine` standalone runner). Stage-body identical twins kept at `apps/backend/Dockerfile` + `apps/frontend/Dockerfile` (headers differ; deploy-check diffs bodies; see `docs/deploy/`).
 
 ---
 
 ## 10. API Reference
 
-Base URL autodetects `NEXT_PUBLIC_API_URL`, default `http://localhost:4000`. Global: body limit **256 KB** (`413`), raw-body-preserving JSON parser, canonical error envelope (see §11.4), `404` handler, global rate limit **1000/min** (`rr:global:ratelimit:`), W3C `traceparent` + `x-correlation-id` echoed. `/demo/*` omitted in prod (`MOCK_PROVIDERS=false` → `410 MOCK_DISABLED`).
+Base URL autodetects `NEXT_PUBLIC_API_URL`, default `http://localhost:4000`. Global: body limit **256 KB** (`413`), raw-body-preserving JSON parser, canonical error envelope (see §11.4), `404` handler, global rate limit **1000/min** (`rr:global:ratelimit:`), W3C `traceparent` + `x-correlation-id` echoed. `/demo/*` omitted in prod-shape (`MOCK_PROVIDERS=false` → `404` unregistered; `410 MOCK_DISABLED` otherwise).
 
 ### 10.1 Meta (public)
 
@@ -594,7 +594,7 @@ Auth: `middleware.ts` guards all dashboard routes via `rr_session` cookie (HttpO
 Design reference: ADR-012.
 
 - **Sessions:** `rr_session` cookie (httpOnly, SameSite=Lax, Secure in prod), `user_sessions` table + Redis 60s hot path, 12h sliding renewal, argon2id passwords, login rate-limit 5/min per IP+email with lockout backoff. **API keys:** `Authorization: Bearer rrk_<tenant>_<random>`, SHA-256 lookup, async `last_used_at` touch, revocation.
-- **Plugin pipeline:** `request.auth = {kind: session|api_key|webhook, userId?, tenantId, role, scopes?}` → `requireAuth` (401) → `requireRole(...)` (403) → **`getTenantScope(request)` mandatory guard** (missing → `400 TENANT_CONTEXT_MISSING`; tenantId never taken from unverified params — cross-tenant access structurally impossible). Scopes: `events:write`, `ai:decide`, `policy:evaluate|worker`, `demo`, `*`.
+- **Plugin pipeline:** `request.auth = {kind: session|api_key, userId?, tenantId, role, scopes?}` → `requireAuth` (401) → `requireRole(...)` (403) → **`getTenantScope(request)` mandatory guard** (missing → `400 TENANT_CONTEXT_MISSING`; tenantId never taken from unverified params — cross-tenant access structurally impossible). Scopes: `events:write`, `ai:decide`, `policy:evaluate|worker`, `demo`, `*`. (`webhook` was removed from the auth-kind union per CONVENTIONS §15 — webhooks are provider-signed, never `request.auth` principals.)
 - **Role matrix:** most reads `VIEWER+`; mutations `OPERATIONS+`; money/policy/admin `FINANCE/ADMIN`; `/audit` ADMIN-only; human approve/reject additionally **session-only**. See §10 per-endpoint table (server authoritative; frontend `lib/rbac.ts` mirrors for UX).
 - **Webhooks:** signature verification precedes all processing (Stripe ±5m window, Razorpay/WhatsApp constant-time HMAC, email token); secrets rotatable zero-downtime (`docs/runbooks/webhook-secrets-rotation.md`); provider SDKs/creds confined to `packages/integrations`; `.env` gitignored; logs deny-by-default on secrets/PII.
 
@@ -621,7 +621,7 @@ bun --filter frontend test   # frontend suite (happy-dom + testing-library)
 (`s-04`–`s-06`, `@repo/db`, ADR-003/004.) Drizzle ORM on pooled `postgres.js`; **PostgreSQL is the source of truth** for outcomes + audit.
 
 - **33 tables + 6 analytics views.** Financial core (`s-04`, migration `0000`): `tenants, users, api_keys (+user_sessions s-09), customers, payments, payment_attempts, subscriptions, checkouts, checkout_events, invoices, invoice_events` (citext, pgEnums mirroring `@repo/domain`, check/unique constraints, spec indexes). Recovery domain (`s-05`, migration `0001`): `events, revenue_risks, recovery_cases, ai_decisions, recovery_actions, workflows, workflow_events, messages, message_delivery_events, customer_responses, promises_to_pay, human_tasks (+0006 overdue_at/escalation_count), policy_rules, policy_versions, policy_evaluations, audit_logs, case_events (+audit_archive/retention 0007/0008), recovery_outcomes (generated `net_recovered` column), recovery_cost_entries, idempotency_keys`. Analytics (`s-27`, migration `0009`): `v_recovery_summary, v_recovery_timeseries, v_intervention_performance, v_funnel, v_risk_mix, v_ai_performance`.
-- **5 anti-duplication anchors** proven (events `(source, external_event_id)`; payment-attempt + action/message idempotency keys; outcome uniqueness; case-event dedupe). **Migrations:** 11 forward-only SQL files in `packages/db/drizzle/` (`0000`–`0010` + journal), advisory-locked runner (`724193`) with transient retries, `db:migrate:check` CI gate (`0010`, s-35: transaction-local audit-reset hatch for the slug-guarded demo reset; triggers default-deny elsewhere).
+- **5 anti-duplication anchors** proven (events `(source, external_event_id)`; payment-attempt + action/message idempotency keys; outcome uniqueness; case-event dedupe). **Migrations:** 12 forward-only SQL files in `packages/db/drizzle/` (`0000`–`0011` + journal), advisory-locked runner (`724193`) with transient retries, `db:migrate:check` CI gate (`0011` post-release; `0010` at s-35: transaction-local audit-reset hatch for the slug-guarded demo reset; triggers default-deny elsewhere).
 - **Repositories:** 28 aggregate repos with tenant-first signatures, `withTransaction` wrapper, guarded state transitions, advisory-locked per-tenant case numbering, compile+runtime append-only enforcement; boundary table in `packages/db/README.md`.
 - **Outcomes (`s-26`):** `OutcomeRecordService` single choke point (idempotent no-op, competing-payment warnings, guarded `→RECOVERED`, `SUM(recovery_cost_entries)` rollup); `AttributionSweeper` (hourly, 4 strict conditions); `CostCompletenessJob` (daily gap audit, messaging pricing 50p/5p/25p); `docs/attribution.md` defines attribution.
 
@@ -674,9 +674,9 @@ Milestone gates (G1 data layer → G2 events flow → G3 headless loop → G4 du
 | `docs/RESILIENCE.md` | 14-scenario failure-handling evidence table (`s-31`) |
 | `docs/PERFORMANCE.md` | Measured values vs spec 03 §10 targets (`s-34`) |
 | `docs/SLO.md` + `docs/LOGGING.md` | SLOs/error-budget policy + case-tracing log queries (`s-34`) |
-| `docs/runbooks/` (14 + firing-drill) | Per-alert runbooks, each linked from its alert (`s-34`) |
+| `docs/runbooks/` (18) | Per-alert runbooks, each linked from its alert (`s-34`) — incl. `webhook-secrets-rotation.md` (canonical) + `webhook-secret-rotation.md` (s-30 companion) + `firing-drill.md` |
 | `docs/deploy/` (5 runbooks) | Environments, migrations, webhooks, crons, rollback (`s-33`) |
-| `docs/runbooks/webhook-secrets-rotation.md` | Zero-downtime Stripe/Razorpay secret rotation |
+| `docs/runbooks/webhook-secrets-rotation.md` | Zero-downtime Stripe/Razorpay secret rotation (canonical; companion: `webhook-secret-rotation.md` s-30 abuse-block signals) |
 | `specs/00…03` | Source of truth: vision, 0-to-100 plan, architecture/domain, MVP spec (**do not edit**) |
 | `specs/steps/s-01…s-35 + progress.md` | Ordered roadmap; `progress.md` is the resume point |
 | `AGENTS.md` | How to execute a step (binding on every change) |
@@ -693,7 +693,7 @@ Binding file: [`AGENTS.md`](./AGENTS.md). Summary (read the file itself before c
 2. Implement **only** what that step requires. No later-step features, no drive-by refactors. All state machines live in `packages/domain`; DB writes use guarded conditional updates (`CONVENTIONS` §9). Secrets never enter code/logs/git (§12).
 3. Verify with the step's checks + §23 commands.
 4. Finish by updating `specs/steps/progress.md` (status row, current position, completion log) + `docs/TRACEABILITY.md` + mandatory `docs/explanation/s-XX-explanation.md` (model on `s-2`/`s-3` explainers).
-5. Which docs when: `CONVENTIONS.md` every session; `ARCHITECTURE.md` before creating/wiring files (§4 layout, §5 gaps); ADRs on trigger (money→009, tables/ids→010, time→011, routes→002, DB→003/004, events→006, Redis→007, LLM→008, auth→012, tests→013); `specs/*.md` only the cited section.
+5. Which docs when: `CONVENTIONS.md` every session; `ARCHITECTURE.md` before creating/wiring files (§4 layout, §5 gaps); ADRs on trigger (money→009, tables/ids→010, time→011, routes→002, DB→003/004, events→006, Redis→007, LLM→008, auth→012, tests→013, observability→014, RLS→015, pushgateway→016); `specs/*.md` only the cited section.
 6. Git: branches `feat/<step-id>-<slug>` (fixes `fix/<slug>`); commits `s-07: …` with step prefix; one step per PR linking its DoD. Never modify `specs/` except `specs/steps/progress.md`. No behavior change outside step scope.
 
 ---
@@ -737,4 +737,4 @@ From spec 01 §30 + spec 03 §1 Later/No rows (`docs/TRACEABILITY.md` §7). **No
 
 ---
 
-*Sources: `specs/00…03`, `specs/steps/` (`README`, `progress`, `s-01…s-35`), `docs/ARCHITECTURE.md`, `docs/CONVENTIONS.md`, `docs/TRACEABILITY.md`, `docs/adr/ADR-001…014`, `.env.example`, `infra/docker/docker-compose.yml`, `apps/backend` (app/server/modules/plugins/routes), `apps/frontend` (routes/lib/middleware), `packages/*`, `services/worker` + `services/eval`, `docs/demo-script.md`. Previous root README was the Turborepo starter template and has been fully replaced.*
+*Sources: `specs/00…03`, `specs/steps/` (`README`, `progress`, `s-01…s-35`), `docs/ARCHITECTURE.md`, `docs/CONVENTIONS.md`, `docs/TRACEABILITY.md`, `docs/adr/ADR-001…016`, `.env.example`, `infra/docker/docker-compose.yml`, `apps/backend` (app/server/modules/plugins/routes), `apps/frontend` (routes/lib/middleware), `packages/*`, `services/worker` + `services/eval`, `docs/demo-script.md`. Previous root README was the Turborepo starter template and has been fully replaced.*

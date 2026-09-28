@@ -1,6 +1,6 @@
 # Architecture — AI Revenue Recovery
 
-Single-page system map for the implementation. Source of truth for *what/why* remains `specs/` (esp. `01-implementation-0-to-100.md` §0 and `02-architecture-and-domain.md`). This page maps every component to its concrete repo path and implementing roadmap step (`specs/steps/s-X.md`). Binding technology decisions live in [`adr/`](./adr/); engineering rules in [`CONVENTIONS.md`](./CONVENTIONS.md); requirement→step mapping in [`TRACEABILITY.md`](./TRACEABILITY.md).
+Single-page system map for the implementation. Source of truth for *what/why* remains `specs/` (esp. `01-implementation-0-to-100.md` §0 and `02-architecture-and-domain.md`). This page maps every component to its concrete repo path and implementing roadmap step (`specs/steps/s-01.md…s-35.md`). Binding technology decisions live in [`adr/`](./adr/); engineering rules in [`CONVENTIONS.md`](./CONVENTIONS.md); requirement→step mapping in [`TRACEABILITY.md`](./TRACEABILITY.md).
 
 ---
 
@@ -32,7 +32,7 @@ Adapted from spec 01 §0, annotated with repo paths:
                  ┌─────────────────────────────┐
                  │ Fastify Event Gateway       │   apps/backend
                  │ auth + validation           │   modules/webhooks, modules/events
-                 │ idempotency                 │   plugins/{authn,rateLimit}        (s-07..s-10)
+                  │ idempotency                 │   plugins/{auth,rate-limit}        (s-07..s-10)
                  └──────────────┬──────────────┘
                                 ▼
                  ┌─────────────────────────────┐
@@ -114,7 +114,7 @@ AI-Revenue-Recovery/
 │   ├── backend/            # Fastify Event Gateway + internal REST APIs
 │   │   └── src/
 │   │       ├── app.ts              # Fastify factory, plugin registration
-│   │       ├── server.ts           # listen + graceful shutdown (replaces index.ts)
+│   │       ├── server.ts           # listen + graceful shutdown (index.ts retained as launcher shim)
 │   │       ├── modules/
 │   │       │   ├── events/         # POST /events, /events/replay
 │   │       │   ├── webhooks/       # POST /webhooks/stripe, /webhooks/razorpay
@@ -126,11 +126,12 @@ AI-Revenue-Recovery/
 │   │       │   ├── analytics/
 │   │       │   ├── demo/           # simulation endpoints (mock mode)
 │   │       │   └── admin/          # users, api keys, tenants
-│   │       └── plugins/            # authn, rbac, rateLimit, audit, otel, errorHandler
+│   │       └── plugins/            # auth, rbac, rate-limit, rate-limit-policy, context, cors, db, error-handler, logger, otel, shutdown (11 total; audit lives in modules/audit, not plugins)
 │   └── frontend/           # Next.js dashboard (existing shell)
 │       └── src/app/(dashboard)/...
 ├── services/
 │   └── worker/             # Temporal worker: workflows/ + activities/
+│   └── eval/               # eval harness: runner.ts, run.ts, datasets/golden-v1.json (s-15)
 ├── packages/
 │   ├── domain/             # entities, enums, state machines, event envelope, action catalog
 │   ├── db/                 # exists — schema/, repositories/, migrations
@@ -138,18 +139,27 @@ AI-Revenue-Recovery/
 │   ├── integrations/       # payments/, messaging/ adapters
 │   ├── observability/      # otel setup, logger, metrics helpers
 │   ├── config/             # typed env loading + validation
+│   ├── orchestration/      # DB-backed workflow client (s-17)
+│   ├── eslint-config/      # shared lint configs
+│   ├── typescript-config/  # shared tsconfigs
 │   └── testing/            # fixtures, factories, test containers helpers
 ├── infra/
-│   ├── docker/             # compose (9-service default profile) + Dockerfiles + otel-collector config
+│   ├── docker/             # compose (18 services) + Dockerfiles + otel-collector config
 │   ├── temporal/           # dynamicconfig for local Temporal
 │   ├── grafana/            # 4 dashboards as code (executive/operations/ai/infra) + provisioning (s-34)
 │   ├── prometheus/         # Prometheus + Alertmanager rules (14 alerts, s-34)
-│   └── loki/               # Loki log aggregation config (s-34; KPI snapshot via pushgateway per ADR-016)
+│   ├── loki/               # Loki log aggregation config (s-34; KPI snapshot via pushgateway per ADR-016)
+│   └── load/               # load-test scenarios
+├── tests/                  # e2e + security + chaos suites
 ├── docs/                   # adr/, ARCHITECTURE.md, CONVENTIONS.md, TRACEABILITY.md
 └── specs/                  # untouched source-of-truth documents
 ```
 
 ## 5. Layout gap review (repo vs target)
+
+> Historical note: reviewed at s-01. Every gap below had an owning step at that
+> time and is now implemented (s-35). Do not treat this table as current
+> missing work — see §4 for the present layout.
 
 Reviewed at s-01. Every gap has an owning step; nothing is left unassigned.
 
@@ -171,11 +181,16 @@ Reviewed at s-01. Every gap has an owning step; nothing is left unassigned.
 
 ## 6. Appendix: Entity-Relationship Diagram (ERD)
 
-Complete relational schema implemented across `s-04` (Financial Core) and `s-05` (Recovery Domain).
+Relational schema implemented across `s-04` (Financial Core), `s-05` (Recovery
+Domain), and later deltas (migrations `0000…0011`: s-04/s-05 core, s-06…s-11 +
+s-27 views + s-35 reset hatch, `0011` post-release index; incl. `user_sessions`
+from s-09 and audit immutability from s-07). Tenant-scoped aggregates below
+include `user_sessions` alongside the s-04/s-05 core.
 
 ```mermaid
 erDiagram
     tenants ||--o{ users : "has"
+    tenants ||--o{ user_sessions : "holds"
     tenants ||--o{ api_keys : "issues"
     tenants ||--o{ customers : "owns"
     tenants ||--o{ subscriptions : "manages"

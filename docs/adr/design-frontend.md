@@ -1,4 +1,4 @@
-# FinPoint Design Language (`design-lang.md`)
+# FinPoint Design Language (`design-frontend.md`)
 
 Single source of truth for the frontend visual system. The old
 aurora/glassmorphism system (orbs, frosted panels, grain, conic rings) has

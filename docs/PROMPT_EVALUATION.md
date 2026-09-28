@@ -11,10 +11,12 @@ All modifications to LLM system prompts, user prompt templates, or inference hyp
 
 1. **Version Bump**:
    - Update prompt definition version identifier in `apps/backend/src/modules/ai/prompts/<surface>.ts` (e.g. `payment_failure@1` $\rightarrow$ `payment_failure@2`).
-2. **Execute Evaluation Suite**:
-   ```bash
-   bun services/eval/src/run.ts --dataset services/eval/src/datasets/golden-v1.json --out eval-report.md
-   ```
+2. **Execute Evaluation Suite** (canonical: workspace script; direct path is equivalent):
+    ```bash
+    bun run --filter @repo/eval run:eval -- --dataset services/eval/src/datasets/golden-v1.json --out eval-report.md
+    # equivalent direct invocation:
+    # bun services/eval/src/run.ts --dataset services/eval/src/datasets/golden-v1.json --out eval-report.md
+    ```
 3. **Review Quality Targets**:
    - **Schema Validity Rate**: Must be $\ge$ 95.0%.
    - **Must-Not Action Violations**: Must be **0** (e.g. no unauthorized incentives or actions outside allowed subsets).

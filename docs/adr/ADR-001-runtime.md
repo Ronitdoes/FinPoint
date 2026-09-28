@@ -7,7 +7,7 @@
 
 ## Context
 
-The repository is already Bun-locked: the root manifest pins Bun as package manager via `devEngines` and commits a `bun.lock`. The backend stub runs on `Bun.serve`. The frontend is Next.js and runs on its own runtime regardless of this decision.
+The repository is already Bun-locked: the root manifest pins Bun as package manager via `devEngines` and commits a `bun.lock`. The original backend stub ran on `Bun.serve` (historical; replaced by Fastify in s-07 per ADR-002). The frontend is Next.js and runs on its own runtime regardless of this decision.
 
 ## Decision
 
@@ -19,7 +19,7 @@ The repository is already Bun-locked: the root manifest pins Bun as package mana
 ## Consequences
 
 - Single toolchain for dev, test, and script execution; fast cold starts for workers.
-- Any library choice must be compatible with running under Bun (verified per step; Temporal SDK usage is confined to worker activities/workflows which run under Bun per ADR-013's testing strategy).
+- Any library choice must be compatible with running under Bun (verified per step; Temporal SDK usage is confined to worker activities/workflows which run under Bun; see ADR-013 for why workflow *tests* run under Vitest/Node instead).
 - Porting to plain Node remains cheap because application code avoids Bun-only APIs outside entrypoints.
 
 ## Alternatives considered

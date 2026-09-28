@@ -9,7 +9,7 @@ and *move money* is a finding — split it.
 | Credential | Lives in | Least privilege | Notes |
 |---|---|---|---|
 | `STRIPE_SECRET_KEY` | secret manager → `packages/integrations` only (CONVENTIONS §12) | **Restricted key**: read + refund/write only on the objects the recovery loop touches; no account-settings, no payouts | Live mode fails fast at boot without it (`@repo/config`); mock mode needs nothing |
-| `STRIPE_WEBHOOK_SECRET` | secret manager | Signing secret for exactly one webhook endpoint | Rotate via [webhook-secret-rotation](./webhook-secret-rotation.md); Stripe dual-signature roll = zero downtime |
+| `STRIPE_WEBHOOK_SECRET` | secret manager | Signing secret for exactly one webhook endpoint | Rotate via [webhook-secrets-rotation](./webhook-secrets-rotation.md); Stripe dual-signature roll = zero downtime |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | secret manager → `packages/integrations` | Key pair scoped to the merchant account that owns the payments; test vs live pairs must never mix | Same fail-fast/rotation story as Stripe |
 | `RAZORPAY_WEBHOOK_SECRET` | secret manager | One secret per webhook endpoint | Dual-endpoint migration = zero downtime |
 | `WHATSAPP_API_KEY` + `WHATSAPP_PHONE_NUMBER_ID` | secret manager → `packages/integrations` | System-user token with `whatsapp_business_messaging` only, bound to the single sender number | Webhook verification uses the separate `WHATSAPP_VERIFY_SECRET` |

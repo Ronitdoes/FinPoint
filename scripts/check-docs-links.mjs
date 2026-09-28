@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-const ROOTS = ["docs", "specs/steps", "."];
+const ROOTS = ["docs", "specs", "."];
 
 function collectMarkdown(dir) {
   const out = [];
@@ -20,7 +20,7 @@ let checked = 0;
 
 for (const root of ROOTS) {
   if (!existsSync(root)) continue;
-  const files = root === "." ? ["README.md"] : collectMarkdown(root);
+  const files = root === "." ? ["README.md", "AGENTS.md", "CHANGELOG.md"].filter((f) => existsSync(f)) : collectMarkdown(root);
   for (const file of files) {
     const content = readFileSync(file, "utf8");
     for (const match of content.matchAll(LINK)) {

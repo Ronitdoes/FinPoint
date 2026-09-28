@@ -11,7 +11,7 @@
 
 ## Diagnosis
 
-1. Which rules? `sum by (rule_code…) ` — use `policy_rejections_total{rule_code,reason}` top-k over 15m. One rule dominating ⇒ rule-side; spread across rules ⇒ recommender-side.
+1. Which rules? `sum by (rule_code, reason) (rate(policy_rejections_total[15m]))` top-k over 15m. One rule dominating ⇒ rule-side; spread across rules ⇒ recommender-side. (Aggregate alert uses `policy_evaluations_total{result="REJECTED"}`; per-rule drill-down needs `policy_rejections_total`, which carries `rule_code`/`reason` labels.)
 2. Rule-side: correlate with the latest `policy_versions` row (`GET /policies/:id/versions`) — who deployed what, when. Diff the AST against the previous version.
 3. Recommender-side: check `GET /ai/decisions` recent items — confidence distribution shift, new prompt version without eval-gate evidence (`docs/PROMPT_EVALUATION.md`), or a model change emitting novel action shapes.
 4. Blast radius: funnel `POLICY_REVIEW` pile-up (`case_funnel_total`) and approval-queue growth (over-rejection can starve automation into manual review).

@@ -23,7 +23,7 @@ Slow-burn companions (ticket/warn, same windows): `BusDLQDepth`,
 
 - Budgets derive from SLO 1 (0.5% monthly ≈ 3.6h downtime) and SLO 2 (1%
   weekly ≈ 100 min of failed journeys per 10k starts).
-- **Burn >2× baseline for 1h** (fast burn, paging alerts above): Robin —
+- **Burn >2× baseline for 1h** (fast burn, paging alerts above): Platform on-call —
   acknowledge, mitigate per runbook, freeze non-urgent deploys until the
   burn rate returns under 1× for 6h.
 - **Burn >1× baseline for 6h** (slow burn, warn alerts): next-business-day

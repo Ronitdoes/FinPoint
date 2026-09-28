@@ -7,14 +7,14 @@
 
 ## Context
 
-Spec 01 §3 mandates Fastify as the backend HTTP framework. The current `apps/backend/src/index.ts` is a raw `Bun.serve` stub with hand-rolled routing. The system needs schema validation, hooks, lifecycle management, structured error mapping, rate limiting, and plugin encapsulation for webhook ingestion (spec 01 §7) and the internal API surface (spec 02 §13).
+Spec 01 §3 mandates Fastify as the backend HTTP framework. Pre-s-07, `apps/backend/src/index.ts` was a raw `Bun.serve` stub with hand-rolled routing. The system needs schema validation, hooks, lifecycle management, structured error mapping, rate limiting, and plugin encapsulation for webhook ingestion (spec 01 §7) and the internal API surface (spec 02 §13).
 
 ## Decision
 
 1. Fastify v5 is the HTTP framework for `apps/backend`.
-2. The raw `Bun.serve` stub in `apps/backend/src/index.ts` is replaced in step s-07 by:
+2. The raw `Bun.serve` stub in `apps/backend/src/index.ts` is superseded in step s-07 by:
    - `src/app.ts` — Fastify factory + plugin registration (buildable in tests without listening), and
-   - `src/server.ts` — listen + graceful shutdown (replaces `index.ts`).
+   - `src/server.ts` — listen + graceful shutdown (`src/index.ts` retained as a launcher shim re-exporting both).
 3. Fastify plugins carry cross-cutting concerns: JSON Schema validation, hooks, lifecycle, error handler mapping domain errors to HTTP status (see `docs/CONVENTIONS.md`), authn/RBAC/rate-limit/audit/otel plugins (implemented s-07…s-09).
 4. Route modules follow the module layout in `docs/CONVENTIONS.md` (`*.controller.ts` / `*.service.ts` / `*.types.ts`).
 

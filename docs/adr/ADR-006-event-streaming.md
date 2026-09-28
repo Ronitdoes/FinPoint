@@ -7,14 +7,14 @@
 
 ## Context
 
-Consumers (risk engine, context assembly, analytics) are decoupled from ingestion via asynchronous propagation (spec 02 §1). Spec 30 explicitly defers Kafka cluster complexity, yet milestone gate G2 requires the same consumer code to be proven under **both** bus drivers.
+Consumers (risk engine, context assembly, analytics) are decoupled from ingestion via asynchronous propagation (spec 02 §1). Spec 01 §3 explicitly defers Kafka cluster complexity, yet milestone gate G2 requires the same consumer code to be proven under **both** bus drivers.
 
 ## Decision
 
 1. All producers/consumers depend on an `EventBus` interface owned by `packages/domain` (envelope) / backend infra — never on a concrete broker client.
 2. Two implementations exist:
    - `redpanda` — real driver producing to topic `revenue-events.v1` (single topic, event-type keyed partitioning), selected when `EVENT_BUS_DRIVER=redpanda`;
-   - `inprocess` — in-process fallback (durable outbox table + loopback dispatch) selected when `EVENT_BUS_DRIVER=inprocess` (the default for the earliest prototype).
+    - `inprocess` — in-process fallback (loopback dispatch; no separate durable outbox table — durability comes from the DB + `POST /events/replay`) selected when `EVENT_BUS_DRIVER=inprocess` (the default for the earliest prototype).
 3. Selection is env-driven only; application code paths are identical either way.
 4. Redpanda runs via Docker Compose when enabled (s-02); no managed broker dependency for MVP.
 

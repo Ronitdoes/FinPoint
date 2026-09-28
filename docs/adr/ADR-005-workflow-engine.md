@@ -17,6 +17,11 @@ The architectural contract assigns "execution + durability" exclusively to the w
 4. The worker lives in `services/worker` (`workflows/` + `activities/`). Activities are small, side-effect-only units; no external network calls inside workflow code (spec 01 §13).
 5. No other scheduling mechanism (cron jobs, queue-based schedulers) may execute recovery business logic; anything needing durability belongs in a workflow.
 
+> Amendment (2026-09-29) — standing exception for idempotent sweeps/samplers (s-33 inventory, no re-litigation of the Temporal decision):
+> The ban in item 5 covers **durable recovery execution**: `recover:<caseId>` lifecycle, multi-day timers, retries, compensation, human-signal waits. It does **not** ban the in-process cron fleet in `docs/deploy/crons.md` (`apps/backend/src/jobs/`, `services/worker/src/cron/`: `executing-sweeper`, `attribution-sweeper`, `cost-completeness`, invoice reconciler + PTP expiry, `audit-retention`, `kpi-snapshot`, `infra-sampler`).
+> Those jobs are allowed because each is overlap-guarded (tick skipped while a pass runs), idempotent (status-query guarded, `recordOutcome` no-ops, keyed remediation, read-only aggregations/gauges), DB-truth-backed (Temporal never bypassed for lifecycle state), and HA-safe (`CRON_ENABLED=false` + platform-scheduler mapping, never both modes).
+> Rule for new work: default to a Temporal workflow/schedule; a new in-process cron carrying business logic must document why it is reconciliation/observation rather than lifecycle, plus its idempotency + overlap + HA story. KPI/sampler jobs must stay outside Temporal so observability survives a Temporal outage.
+
 ## Consequences
 
 - Workflow logic is deterministic and unit-testable with the Temporal SDK test environment (see ADR-013).
