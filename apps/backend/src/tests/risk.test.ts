@@ -341,6 +341,74 @@ describe("Step 12 Integration: Risk Engine v1 (Deterministic Scoring)", { timeou
       expect(closedRisk?.status).toBe("EXPIRED");
       expect(closedRisk?.expiresAt).toBeDefined();
     }, 30000);
+
+    it("checkout.completed carrying the provider sourceRef closes the OPEN risk anchored on the canonical checkout id", async () => {
+      // Stripe's checkout.session.completed normalizer emits entity_id = the
+      // provider session/client reference (source_ref), not the DB UUID.
+      const sourceRef = `cs_test_${randomUUID().slice(0, 8)}`;
+      const checkout = await createCheckout(
+        { db },
+        {
+          tenantId: tenantAId,
+          customerId: customerCheckoutId,
+          sourceRef,
+          cartValue: 700_000n,
+          currency: "INR",
+          status: "PAYMENT_STARTED",
+          startedAt: new Date(),
+          lastActivityAt: new Date(),
+        },
+      );
+
+      // 1. Trigger abandonment with the canonical id -> creates OPEN risk
+      await app.eventBus.publish({
+        id: randomUUID(),
+        type: "checkout.abandoned",
+        occurred_at: new Date().toISOString(),
+        source: "internal",
+        tenant_id: tenantAId,
+        customer_id: customerCheckoutId,
+        entity_id: checkout.id,
+        entity_type: "CHECKOUT",
+        payload: { checkout_id: checkout.id },
+        correlation_id: randomUUID(),
+      });
+
+      const openRiskBefore = await app.repos.findLatestRiskForSubject(
+        { db },
+        {
+          tenantId: tenantAId,
+          subjectType: "CHECKOUT",
+          subjectId: checkout.id,
+        },
+      );
+      expect(openRiskBefore?.status).toBe("OPEN");
+
+      // 2. Resolve with the provider reference (as the webhook envelope does)
+      await app.eventBus.publish({
+        id: randomUUID(),
+        type: "checkout.completed",
+        occurred_at: new Date().toISOString(),
+        source: "STRIPE",
+        tenant_id: tenantAId,
+        customer_id: customerCheckoutId,
+        entity_id: sourceRef,
+        entity_type: "CHECKOUT",
+        payload: { source_ref: sourceRef },
+        correlation_id: randomUUID(),
+      });
+
+      // 3. Verify the canonically-anchored risk is now EXPIRED
+      const closedRisk = await app.repos.findLatestRiskForSubject(
+        { db },
+        {
+          tenantId: tenantAId,
+          subjectType: "CHECKOUT",
+          subjectId: checkout.id,
+        },
+      );
+      expect(closedRisk?.status).toBe("EXPIRED");
+    }, 30000);
   });
 
   describe("4. Checkout Abandonment & Invoice Overdue Triggers", () => {

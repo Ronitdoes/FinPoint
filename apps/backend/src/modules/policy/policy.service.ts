@@ -10,10 +10,12 @@ import {
   policyRejectionsTotal,
 } from "@repo/observability";
 import type { Database } from "@repo/db";
+import { isUniqueViolation, withTransaction } from "@repo/db";
 import type { ActorType } from "@repo/domain";
 import type { Repositories } from "../../plugins/db";
 import {
   CaseNotFoundError,
+  ConcurrentVersionError,
   PolicyEvaluationFailedError,
   PolicyNotFoundError,
   ValidationError,
@@ -82,6 +84,35 @@ export class PolicyService {
         caseId,
       });
 
+      // 3b. Derive retry_count + payment_status from the case-linked payment
+      // (s-16 audit G1: previously never fed, leaving POL-MAXRETRY dead and
+      // POL-PAYMENT-SUCCESS half-dead). Source of truth: payments.status plus
+      // COUNT(payment_attempts) for the payment referenced by
+      // (source_entity_type=PAYMENT, source_entity_id). Non-payment cases keep
+      // retry_count=0 / payment_status="" — the case status alone still drives
+      // POL-PAYMENT-SUCCESS via RECOVERED/RESOLVED_UPSTREAM. DB errors here
+      // propagate to the fail-closed handler below (never fail open).
+      let retryCount = 0;
+      let paymentStatus = "";
+      if (
+        recoveryCase.sourceEntityType === "PAYMENT" &&
+        recoveryCase.sourceEntityId
+      ) {
+        const linkedPayment = await this.repos.findPaymentById(
+          { db: this.db },
+          { tenantId, paymentId: recoveryCase.sourceEntityId },
+        );
+        if (linkedPayment) {
+          paymentStatus = linkedPayment.status ?? "";
+          const attempts =
+            await this.repos.findPaymentAttemptsByPaymentId(
+              { db: this.db },
+              { tenantId, paymentId: linkedPayment.id },
+            );
+          retryCount = attempts.length;
+        }
+      }
+
       // 4. Resolve AI decision if linked
       const decisionId = request.decision_id || request.decisionId;
       let decisionRow: any = null;
@@ -92,39 +123,43 @@ export class PolicyService {
         );
       }
 
-      // 5. Load active policy rules & versions (tenant rules + platform defaults)
+      // 5. Load active policy rules & versions (tenant rules + platform defaults).
+      // s-16 audit: latest versions are batch-loaded in ONE query instead of
+      // N× getLatestPolicyVersion round trips (see getLatestPolicyVersionsForRules).
       const allRules = await this.repos.listPolicyRules(
         { db: this.db },
         { tenantId },
       );
 
+      const enabledRules = allRules.filter((rule) => rule.enabled);
+      const latestByRuleId =
+        await this.repos.getLatestPolicyVersionsForRules(
+          { db: this.db },
+          { ruleIds: enabledRules.map((rule) => rule.id) },
+        );
+
       const activeRulesWithVersions: ActivePolicyRule[] = [];
       const versionIds: string[] = [];
 
-      for (const rule of allRules) {
-        if (rule.enabled) {
-          const latestVersion = await this.repos.getLatestPolicyVersion(
-            { db: this.db },
-            { ruleId: rule.id },
-          );
+      for (const rule of enabledRules) {
+        const latestVersion = latestByRuleId.get(rule.id);
 
-          if (latestVersion) {
-            versionIds.push(latestVersion.id);
-          }
-
-          activeRulesWithVersions.push({
-            id: rule.id,
-            tenantId: rule.tenantId,
-            code: rule.code,
-            name: rule.name,
-            description: rule.description,
-            ruleKind: rule.ruleKind,
-            definition: rule.definition as any,
-            enabled: rule.enabled,
-            activeVersionId: latestVersion?.id,
-            activeVersionNumber: latestVersion?.version ?? 1,
-          });
+        if (latestVersion) {
+          versionIds.push(latestVersion.id);
         }
+
+        activeRulesWithVersions.push({
+          id: rule.id,
+          tenantId: rule.tenantId,
+          code: rule.code,
+          name: rule.name,
+          description: rule.description,
+          ruleKind: rule.ruleKind,
+          definition: rule.definition as any,
+          enabled: rule.enabled,
+          activeVersionId: latestVersion?.id,
+          activeVersionNumber: latestVersion?.version ?? 1,
+        });
       }
 
       // 6. Build PolicyInput
@@ -136,6 +171,8 @@ export class PolicyService {
           amount_at_risk: Number(recoveryCase.amountAtRisk),
           currency: recoveryCase.currency,
           risk_score: recoveryCase.riskScore,
+          retry_count: retryCount,
+          payment_status: paymentStatus,
           status: recoveryCase.status,
           stop_conditions: recoveryCase.stopConditions,
         },
@@ -215,26 +252,26 @@ export class PolicyService {
    */
   async listPolicies(tenantId: string) {
     const rules = await this.repos.listPolicyRules({ db: this.db }, { tenantId });
-    const result = [];
-
-    for (const rule of rules) {
-      const latestVersion = await this.repos.getLatestPolicyVersion(
-        { db: this.db },
-        { ruleId: rule.id },
-      );
-      result.push({
+    // s-16 audit: single batch query for latest versions (was N× round trips).
+    const latestByRuleId = await this.repos.getLatestPolicyVersionsForRules(
+      { db: this.db },
+      { ruleIds: rules.map((rule) => rule.id) },
+    );
+    return rules.map((rule) => {
+      const latestVersion = latestByRuleId.get(rule.id);
+      return {
         ...rule,
         activeVersion: latestVersion?.version ?? 1,
         activeVersionId: latestVersion?.id,
         snapshot: latestVersion?.snapshot ?? rule.definition,
-      });
-    }
-
-    return result;
+      };
+    });
   }
 
   /**
    * Creates a tenant-scoped custom policy rule and its initial version snapshot.
+   * Runs inside ONE transaction (CONVENTIONS §9, s-16 fix): rule + version-1 +
+   * audit are atomic, so a crash can never leave a rule without history.
    */
   async createPolicyRule(
     tenantId: string,
@@ -243,53 +280,63 @@ export class PolicyService {
   ) {
     const ruleKind = (body.ruleKind || body.rule_kind || "REJECT") as any;
 
-    const createdRule = await this.repos.createPolicyRule(
-      { db: this.db },
-      {
-        tenantId,
-        code: body.code,
-        name: body.name,
-        description: body.description,
-        ruleKind,
-        definition: body.definition,
-        enabled: body.enabled ?? true,
-      },
-    );
-
-    const version = await this.repos.createPolicyVersion(
-      { db: this.db },
-      {
-        ruleId: createdRule.id,
-        version: 1,
-        snapshot: body.definition,
-        createdBy: actor?.userId,
-      },
-    );
-
-    await this.repos.recordAuditLog(
-      { db: this.db },
-      {
-        tenantId,
-        actorType: actor?.actorType || "USER",
-        actorId: actor?.userId,
-        event: "POLICY_RULE_CREATED",
-        metadata: {
-          ruleId: createdRule.id,
-          code: createdRule.code,
-          version: 1,
+    return withTransaction({ db: this.db }, async (tx) => {
+      const txCtx = { tx };
+      const createdRule = await this.repos.createPolicyRule(
+        txCtx,
+        {
+          tenantId,
+          code: body.code,
+          name: body.name,
+          description: body.description,
+          ruleKind,
+          definition: body.definition,
+          enabled: body.enabled ?? true,
         },
-      },
-    );
+      );
 
-    return {
-      ...createdRule,
-      activeVersion: version.version,
-      activeVersionId: version.id,
-    };
+      const version = await this.repos.createPolicyVersion(
+        txCtx,
+        {
+          ruleId: createdRule.id,
+          version: 1,
+          snapshot: body.definition,
+          createdBy: actor?.userId,
+        },
+      );
+
+      await this.repos.recordAuditLog(
+        txCtx,
+        {
+          tenantId,
+          actorType: actor?.actorType || "USER",
+          actorId: actor?.userId,
+          event: "POLICY_RULE_CREATED",
+          metadata: {
+            ruleId: createdRule.id,
+            code: createdRule.code,
+            version: 1,
+          },
+        },
+      );
+
+      return {
+        ...createdRule,
+        activeVersion: version.version,
+        activeVersionId: version.id,
+      };
+    });
   }
 
   /**
    * Updates an existing policy rule and creates an immutable snapshot version.
+   *
+   * s-16 audit: the rule update + version insert + audit write run inside ONE
+   * explicit transaction (CONVENTIONS §9) so a crash can never leave a rule
+   * row ahead of its snapshot history. Optimistic concurrency implements the
+   * contracted 409 CONCURRENT_VERSION: callers may pass expected_version; a
+   * stale expectation — or a lost version-number race (23505) — fails with
+   * ConcurrentVersionError instead of forking version history.
    */
   async updatePolicyRule(
     tenantId: string,
@@ -315,52 +362,80 @@ export class PolicyService {
       { db: this.db },
       { ruleId },
     );
+
+    const expectedVersion =
+      (body as { expected_version?: number }).expected_version ??
+      (body as { expectedVersion?: number }).expectedVersion;
+    if (
+      expectedVersion !== undefined &&
+      latestVersion &&
+      expectedVersion !== latestVersion.version
+    ) {
+      throw new ConcurrentVersionError(
+        `Policy rule '${ruleId}' was modified concurrently: expected version ${expectedVersion}, current version is ${latestVersion.version}`,
+        { ruleId, expectedVersion, currentVersion: latestVersion.version },
+      );
+    }
+
     const nextVersion = (latestVersion?.version ?? 0) + 1;
 
-    const updatedRule = await this.repos.updatePolicyRule(
-      { db: this.db },
-      {
-        ruleId,
-        tenantId: existingRule.tenantId ?? undefined,
-        name: body.name,
-        description: body.description,
-        definition: body.definition,
-        enabled: body.enabled,
-      },
-    );
-
-    const snapshot = body.definition ?? (updatedRule?.definition || existingRule.definition);
-
-    const version = await this.repos.createPolicyVersion(
-      { db: this.db },
-      {
-        ruleId,
-        version: nextVersion,
-        snapshot: snapshot as Record<string, unknown>,
-        createdBy: actor?.userId,
-      },
-    );
-
-    await this.repos.recordAuditLog(
-      { db: this.db },
-      {
-        tenantId,
-        actorType: actor?.actorType || "USER",
-        actorId: actor?.userId,
-        event: "POLICY_RULE_UPDATED",
-        metadata: {
+    return await withTransaction({ db: this.db }, async (tx) => {
+      const updatedRule = await this.repos.updatePolicyRule(
+        { tx },
+        {
           ruleId,
-          version: nextVersion,
-          changes: body,
+          tenantId: existingRule.tenantId ?? undefined,
+          name: body.name,
+          description: body.description,
+          definition: body.definition,
+          enabled: body.enabled,
         },
-      },
-    );
+      );
 
-    return {
-      ...updatedRule,
-      activeVersion: version.version,
-      activeVersionId: version.id,
-    };
+      const snapshot = body.definition ?? (updatedRule?.definition || existingRule.definition);
+
+      let version;
+      try {
+        version = await this.repos.createPolicyVersion(
+          { tx },
+          {
+            ruleId,
+            version: nextVersion,
+            snapshot: snapshot as Record<string, unknown>,
+            createdBy: actor?.userId,
+          },
+        );
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new ConcurrentVersionError(
+            `Policy rule '${ruleId}' was modified concurrently (version ${nextVersion} already exists)`,
+            { ruleId, nextVersion },
+          );
+        }
+        throw error;
+      }
+
+      await this.repos.recordAuditLog(
+        { tx },
+        {
+          tenantId,
+          actorType: actor?.actorType || "USER",
+          actorId: actor?.userId,
+          event: "POLICY_RULE_UPDATED",
+          metadata: {
+            ruleId,
+            version: nextVersion,
+            changes: body,
+          },
+        },
+      );
+
+      return {
+        ...updatedRule,
+        activeVersion: version.version,
+        activeVersionId: version.id,
+      };
+    });
   }
 
   /**
@@ -390,6 +465,8 @@ export class PolicyService {
     let created = 0;
     let existing = 0;
     let versionsCreated = 0;
+
+    const foundRules: { id: string; definition: unknown }[] = [];
 
     for (const def of DEFAULT_POLICY_RULES) {
       const found = await this.repos.findPolicyRuleByCode(
@@ -423,18 +500,26 @@ export class PolicyService {
         versionsCreated++;
       } else {
         existing++;
-        // Verify version 1 exists
-        const latest = await this.repos.getLatestPolicyVersion(
+        foundRules.push(found);
+      }
+    }
+
+    // s-16 audit: verify missing version-1 snapshots in ONE batch query
+    // (startup-only path; was N× getLatestPolicyVersion round trips).
+    if (foundRules.length > 0) {
+      const latestByRuleId =
+        await this.repos.getLatestPolicyVersionsForRules(
           { db: this.db },
-          { ruleId: found.id },
+          { ruleIds: foundRules.map((r) => r.id) },
         );
-        if (!latest) {
+      for (const found of foundRules) {
+        if (!latestByRuleId.has(found.id)) {
           await this.repos.createPolicyVersion(
             { db: this.db },
             {
               ruleId: found.id,
               version: 1,
-              snapshot: found.definition,
+              snapshot: found.definition as Record<string, unknown>,
             },
           );
           versionsCreated++;

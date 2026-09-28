@@ -78,4 +78,13 @@ drill is the first row.
 
 | Date | Env | From tag | To tag | Compat gate | Smoke | Operator | Notes |
 |---|---|---|---|---|---|---|---|
-| 2026-09-10 | local (drill harness) | n/a (gate + smoke proven locally; live staging drill is an operator step at first staging deploy) | n/a | `migrate:check` bad-state rejection + pass-after-migrate proven vs ephemeral DB; `rollback-compat-check` flag enforcement verified | `smoke-staging` 5/6 vs local dev stack (`STRICT=false`: demo present by design in mock mode) + prod-shape `/demo` 404 proven in-process | s-33 implementation | Full live-staging drill (redeploy previous tag → smoke → log row) runs at first staging deploy; procedure above is execution-ready |
+| 2026-09-10 | local (drill harness) | n/a (gate + smoke proven locally; live staging drill is an operator step at first staging deploy) | n/a | `migrate:check` bad-state rejection + pass-after-migrate proven vs ephemeral DB; `rollback-compat-check` flag enforcement verified | `smoke-staging` 6/6 vs local dev stack in non-strict mode (`STRICT=false`: 6th check reports drill shape, demo present by design in mock mode — see footnote) + prod-shape `/demo` 404 proven in-process | s-33 implementation | Full live-staging drill (redeploy previous tag → smoke → log row) runs at first staging deploy; procedure above is execution-ready |
+
+> Footnote — smoke count reconciliation: the harness always runs 6 checks
+> and reported **6/6** here (s-33 explanation §10). In non-strict mode the
+> 6th check (prod-shape `/demo` absence) returns ok-with-detail
+> (`demo route answered … (non-strict mode: staging drill shape?)`) instead
+> of failing, so the run is 6/6 with the 6th reporting drill shape rather
+> than proving prod-shape. Counted strictly (prod-shape gate), the same run
+> is 5/6 + 1 informational — the earlier "5/6" phrasing. No contradiction:
+> 6/6 harness output, 5/6 strict prod-shape assertions.

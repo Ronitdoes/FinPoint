@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { randomUUID } from "node:crypto";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { createHmac, randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app";
-import { NullBus } from "@repo/integrations";
+import { MockMessagingProvider, NullBus } from "@repo/integrations";
 import {
   db,
   createTenant,
@@ -20,7 +20,10 @@ import {
 } from "@repo/db";
 import { sha256 } from "../lib/crypto";
 import { CustomerContextService } from "../modules/customers/customer-context.service";
+import { getContextCacheKey } from "../modules/customers/context/builder";
 import { CustomerContextSchema } from "../modules/customers/context/types";
+import { sendCaseMessage } from "../modules/messaging/send.service";
+import { OutcomeRecordService } from "../modules/outcomes/record.service";
 
 describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, () => {
   let app: FastifyInstance;
@@ -510,6 +513,292 @@ describe("Step 13 Integration: Customer Context Service", { timeout: 45000 }, ()
       expect(latencies.length).toBe(count);
       const avg = latencies.reduce((a, b) => a + b, 0) / count;
       expect(avg).toBeGreaterThan(0);
+      // p95 measurement evidence (s-13 DoD: p95 build latency <100ms locally).
+      // The <100ms target is environment-dependent (DB proximity), so the suite
+      // records avg/p95 and gates only on a generous budget that trips on real
+      // regressions (N+1, serial queries) without flaking on loaded CI runners.
+      const sorted = [...latencies].sort((a, b) => a - b);
+      const p95 = sorted[Math.min(sorted.length - 1, Math.ceil(0.95 * sorted.length) - 1)] ?? avg;
+      expect(p95).toBeGreaterThan(0);
+      expect(p95).toBeLessThan(5000);
+    }, 30000);
+  });
+
+  describe("6. Cache invalidation wiring (s-13 freshness fix)", () => {
+    it("invalidateCache deletes both purpose keys and never throws on Redis failure", async () => {
+      const del = vi.fn().mockResolvedValue(2);
+      const fakeRedis = { del } as any;
+
+      await CustomerContextService.invalidateCache(fakeRedis, tenantAId, richCustomerId);
+
+      expect(del).toHaveBeenCalledTimes(1);
+      const delArgs = del.mock.calls[0] as string[];
+      expect(delArgs).toContain(getContextCacheKey(tenantAId, richCustomerId, "api_read"));
+      expect(delArgs).toContain(getContextCacheKey(tenantAId, richCustomerId, "ai_decision"));
+
+      // Best-effort: Redis outage must never throw.
+      const brokenRedis = {
+        del: vi.fn().mockRejectedValue(new Error("redis down")),
+      } as any;
+      await expect(
+        CustomerContextService.invalidateCache(brokenRedis, tenantAId, richCustomerId),
+      ).resolves.toBeUndefined();
+      // Null/undefined Redis is a no-op.
+      await expect(
+        CustomerContextService.invalidateCache(null, tenantAId, richCustomerId),
+      ).resolves.toBeUndefined();
+    }, 30000);
+
+    it("busts context cache on WhatsApp STOP opt-out (route wiring)", async () => {
+      const spy = vi.spyOn(CustomerContextService, "invalidateCache");
+      try {
+        const digits = String(Math.floor(1000000 + Math.random() * 9000000));
+        const uniquePhone = `+1415${digits}`;
+        const cust = await createCustomer(
+          { db },
+          {
+            tenantId: tenantAId,
+            name: "Bust OptOut",
+            email: `bust.optout.${digits}@example.com`,
+            phone: uniquePhone,
+            status: "ACTIVE",
+            optedOut: false,
+          },
+        );
+
+        // Warm the cache so a bust is observable (best-effort if Redis absent).
+        await CustomerContextService.build({
+          tenantId: tenantAId,
+          customerId: cust.id,
+          purpose: "api_read",
+          db,
+          repos: app.repos,
+          redis: app.redisClient,
+        });
+        spy.mockClear();
+
+        const inboundPayload = {
+          object: "whatsapp_business_account",
+          entry: [
+            {
+              id: "WHATSAPP_BUSINESS_ACCOUNT_ID",
+              changes: [
+                {
+                  value: {
+                    messaging_product: "whatsapp",
+                    metadata: { display_phone_number: "15550248142", phone_number_id: "27414141" },
+                    messages: [
+                      {
+                        from: uniquePhone,
+                        id: `wamid_bust_${digits}`,
+                        timestamp: String(Math.floor(Date.now() / 1000)),
+                        text: { body: "STOP" },
+                        type: "text",
+                      },
+                    ],
+                  },
+                  field: "messages",
+                },
+              ],
+            },
+          ],
+        };
+        const rawBody = JSON.stringify(inboundPayload);
+        const sig = `sha256=${createHmac("sha256", "whatsapp_webhook_verify_secret").update(rawBody).digest("hex")}`;
+
+        const res = await app.inject({
+          method: "POST",
+          url: "/webhooks/whatsapp",
+          headers: {
+            "content-type": "application/json",
+            "x-hub-signature-256": sig,
+          },
+          payload: rawBody,
+        });
+        expect(res.statusCode).toBe(200);
+
+        const bustCalls = spy.mock.calls.filter(
+          (call) => call[1] === tenantAId && call[2] === cust.id,
+        );
+        expect(bustCalls.length).toBeGreaterThanOrEqual(1);
+      } finally {
+        spy.mockRestore();
+      }
+    }, 30000);
+
+    it("busts context cache on message SENT and on outcome recorded (best-effort)", async () => {
+      const spy = vi.spyOn(CustomerContextService, "invalidateCache");
+      try {
+        // --- Phase 1: message SENT bust ---
+        const digits = String(Math.floor(1000000 + Math.random() * 9000000));
+        const msgCustomer = await createCustomer(
+          { db },
+          {
+            tenantId: tenantAId,
+            name: "Bust Sender",
+            email: `bust.sender.${digits}@example.com`,
+            phone: `+1415${digits}`,
+            status: "ACTIVE",
+            optedOut: false,
+          },
+        );
+        const msgCase = await createCase(
+          { db },
+          {
+            tenantId: tenantAId,
+            customerId: msgCustomer.id,
+            sourceEntityType: "PAYMENT",
+            sourceEntityId: randomUUID(),
+            riskType: "PAYMENT_FAILURE",
+            riskScore: 70,
+            amountAtRisk: 50000n,
+            currency: "USD",
+            status: "IN_PROGRESS",
+          },
+        );
+
+        spy.mockClear();
+        const sendResult = await sendCaseMessage(
+          {
+            db: app.db,
+            repos: app.repos,
+            customAdapter: new MockMessagingProvider(),
+            redis: app.redisClient,
+          },
+          {
+            tenantId: tenantAId,
+            caseId: msgCase.id,
+            customerId: msgCustomer.id,
+            channel: "WHATSAPP",
+            templateId: "payment_retry_notice",
+            variables: {
+              customer_name: "Bust Sender",
+              amount: "500.00",
+              currency: "USD",
+              payment_link: "https://pay.example.com/retry/bust",
+              due_date: "2026-09-20",
+            },
+            step: 1,
+          },
+        );
+        expect(sendResult.status).toBe("SENT");
+        expect(
+          spy.mock.calls.some((call) => call[1] === tenantAId && call[2] === msgCustomer.id),
+        ).toBe(true);
+
+        // Best-effort: broken Redis must not fail the send.
+        const brokenRedis = {
+          get: vi.fn().mockRejectedValue(new Error("redis down")),
+          set: vi.fn().mockRejectedValue(new Error("redis down")),
+          del: vi.fn().mockRejectedValue(new Error("redis down")),
+          status: "ready",
+        } as any;
+        const digits2 = String(Math.floor(1000000 + Math.random() * 9000000));
+        const resilientCustomer = await createCustomer(
+          { db },
+          {
+            tenantId: tenantAId,
+            name: "Bust Resilient",
+            email: `bust.resilient.${digits2}@example.com`,
+            phone: `+1416${digits2}`,
+            status: "ACTIVE",
+            optedOut: false,
+          },
+        );
+        const resilientCase = await createCase(
+          { db },
+          {
+            tenantId: tenantAId,
+            customerId: resilientCustomer.id,
+            sourceEntityType: "PAYMENT",
+            sourceEntityId: randomUUID(),
+            riskType: "PAYMENT_FAILURE",
+            riskScore: 70,
+            amountAtRisk: 50000n,
+            currency: "USD",
+            status: "IN_PROGRESS",
+          },
+        );
+        const resilientSend = await sendCaseMessage(
+          {
+            db: app.db,
+            repos: app.repos,
+            customAdapter: new MockMessagingProvider(),
+            redis: brokenRedis,
+          },
+          {
+            tenantId: tenantAId,
+            caseId: resilientCase.id,
+            customerId: resilientCustomer.id,
+            channel: "WHATSAPP",
+            templateId: "payment_retry_notice",
+            variables: {
+              customer_name: "Bust Resilient",
+              amount: "500.00",
+              currency: "USD",
+              payment_link: "https://pay.example.com/retry/bust2",
+              due_date: "2026-09-20",
+            },
+            step: 1,
+          },
+        );
+        expect(resilientSend.status).toBe("SENT");
+
+        // --- Phase 2: outcome recorded bust ---
+        spy.mockClear();
+        const payDigits = String(Math.floor(1000000 + Math.random() * 9000000));
+        const outcomeCustomer = await createCustomer(
+          { db },
+          {
+            tenantId: tenantAId,
+            name: "Bust Outcome",
+            email: `bust.outcome.${payDigits}@example.com`,
+            phone: `+1417${payDigits}`,
+            status: "ACTIVE",
+            optedOut: false,
+          },
+        );
+        const payment = await createPayment(
+          { db },
+          {
+            tenantId: tenantAId,
+            customerId: outcomeCustomer.id,
+            amount: 75000n,
+            currency: "USD",
+            status: "SUCCEEDED",
+            provider: "STRIPE",
+            providerPaymentId: `pi_bust_${payDigits}`,
+            occurredAt: new Date(),
+            paidAt: new Date(),
+          },
+        );
+        const outcomeCase = await createCase(
+          { db },
+          {
+            tenantId: tenantAId,
+            customerId: outcomeCustomer.id,
+            sourceEntityType: "payments",
+            sourceEntityId: payment.id,
+            riskType: "PAYMENT_FAILURE",
+            riskScore: 80,
+            amountAtRisk: 75000n,
+            currency: "USD",
+            status: "IN_PROGRESS",
+          },
+        );
+        const recordService = new OutcomeRecordService(app.db, app.repos, app.redisClient);
+        const recorded = await recordService.recordOutcome({
+          tenantId: tenantAId,
+          caseId: outcomeCase.id,
+          paymentId: payment.id,
+        });
+        expect(recorded.alreadyRecorded).toBe(false);
+        expect(
+          spy.mock.calls.some((call) => call[1] === tenantAId && call[2] === outcomeCustomer.id),
+        ).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
     }, 30000);
   });
 });

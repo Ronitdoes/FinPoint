@@ -56,11 +56,41 @@ jobs:
       ROLLBACK_TAG: ${{ inputs.target_tag }}
       CONFIRM_SCHEMA_COMPAT: ${{ vars.CONFIRM_SCHEMA_COMPAT }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"
       - run: bun install --frozen-lockfile
+      - name: Preflight — target DB secrets present and remote
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          missing=0
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Database URL is empty — set the secret on the '$TARGET_ENV' environment (see docs/deploy/environments.md). Refusing to migrate localhost."
+            missing=1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::Direct URL is empty — set the secret on the '$TARGET_ENV' environment (DDL must bypass the pooler; see docs/deploy/migrations.md §1). Refusing to migrate localhost."
+            missing=1
+          fi
+          # Same localhost trap as deploy-staging: runners have no local DB.
+          for var_name in DATABASE_URL DIRECT_URL; do
+            if [ "$var_name" = "DATABASE_URL" ]; then
+              val="${DATABASE_URL:-}"
+            else
+              val="${DIRECT_URL:-}"
+            fi
+            if [ -z "$val" ]; then continue; fi
+            lower="$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')"
+            case "$lower" in
+              *localhost*|*127.0.0.1*|*0.0.0.0*)
+                echo "::error::$var_name for '$TARGET_ENV' points at localhost — GitHub runners have no DB on localhost (ECONNREFUSED). Set the $TARGET_ENV database secrets to the managed host; see docs/deploy/environments.md §2."
+                missing=1
+                ;;
+            esac
+          done
+          exit $missing
       - name: Verify rollback is schema-compatible
         run: |
           echo "Rollback requested: tag=${{ inputs.target_tag }} env=${{ inputs.environment }} reason=${{ inputs.reason }}"
@@ -94,7 +124,7 @@ jobs:
     env:
       SMOKE_BASE_URL: ${{ inputs.environment == 'production' && secrets.PROD_BASE_URL || secrets.STAGING_BASE_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"

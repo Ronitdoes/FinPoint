@@ -1,4 +1,5 @@
 import type Redis from "ioredis";
+import { connect } from "node:net";
 
 export interface ReadinessChecks {
   db: "up" | "down";
@@ -39,8 +40,11 @@ export class MetaService {
   constructor(opts: MetaServiceOptions) {
     this.name = opts.name || "AI-Revenue-Recovery Backend";
     this.version = opts.version || "0.1.0";
-    this.gitSha = opts.gitSha || process.env.GIT_SHA || "dev";
-    this.env = opts.env || process.env.NODE_ENV || "development";
+    // Typed-config injection only (CONVENTIONS §1): callers pass
+    // `config.release.gitSha` / `config.app.env` (see meta/routes.ts).
+    // Defaults preserve standalone/test usage without env reads.
+    this.gitSha = opts.gitSha || "dev";
+    this.env = opts.env || "development";
     this.dbHealthCheck = opts.dbHealthCheck;
     this.redisClient = opts.redisClient;
     this.temporalAddress = opts.temporalAddress;
@@ -104,10 +108,24 @@ export class MetaService {
       }
     }
 
-    // 3. Check Temporal (best-effort configuration check)
+    // 3. Check Temporal — real TCP reachability probe against the configured
+    // address (host:port). `unconfigured` only when no address is set;
+    // reachable within the probe timeout ⇒ `up`, otherwise `down`.
+    // Note: informational only — `isReady` below deliberately gates on DB/Redis
+    // (the API serves requests without Temporal; the worker has its own
+    // supervision). Operators still see a truthful `temporal: down`.
     let temporalStatus: "up" | "down" | "unconfigured" = "unconfigured";
     if (this.temporalAddress) {
-      temporalStatus = "up"; // reachability will be fully tested in worker harness s-20
+      try {
+        temporalStatus = await Promise.race([
+          this.temporalReachable(this.temporalAddress),
+          new Promise<"down">((_, reject) =>
+            setTimeout(() => reject(new Error("Temporal probe timeout")), 1500),
+          ),
+        ]);
+      } catch {
+        temporalStatus = "down";
+      }
     }
 
     const isReady = dbStatus === "up" && (redisStatus === "up" || redisStatus === "disabled");
@@ -127,5 +145,26 @@ export class MetaService {
     this.lastReadinessCheckTime = now;
 
     return result;
+  }
+
+  /** TCP connect probe against `host:port`; `down` on error/timeout/malformed. */
+  private temporalReachable(address: string): Promise<"up" | "down"> {
+    const sep = address.lastIndexOf(":");
+    const host = sep > 0 ? address.slice(0, sep) : "";
+    const port = sep > 0 ? Number(address.slice(sep + 1)) : Number.NaN;
+    if (!host || !Number.isInteger(port) || port <= 0 || port > 65535) {
+      return Promise.resolve("down"); // malformed address — surface, don't crash
+    }
+    return new Promise<"up" | "down">((resolve) => {
+      const socket = connect({ host, port });
+      const settle = (status: "up" | "down") => {
+        socket.removeAllListeners();
+        socket.destroy();
+        resolve(status);
+      };
+      socket.setTimeout(1000, () => settle("down"));
+      socket.once("connect", () => settle("up"));
+      socket.once("error", () => settle("down"));
+    });
   }
 }

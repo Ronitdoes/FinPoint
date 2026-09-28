@@ -96,6 +96,19 @@ export async function findCheckoutBySourceRef(
   return checkout ?? null;
 }
 
+/**
+ * App-guarded status write (NOT a DB-guarded transition — intentional).
+ *
+ * Checkout rows mirror shopper-side state where recovery can legitimately move a cart
+ * backwards (ABANDONED → PAYMENT_STARTED → COMPLETED). The transition allowlist lives
+ * app-side in `apps/backend/src/modules/webhooks/core-upserts.ts`
+ * (CHECKOUT_ALLOWED_TRANSITIONS), which skips regressions and records an
+ * order-regression metric instead of writing.
+ *
+ * Dedupe anchor: `checkouts_tenant_source_ref_unique` — one row per shop cart, so
+ * concurrent ingests converge on the existing row before this write runs.
+ * See packages/db/README.md §4 for the DB-guarded vs app-guarded split.
+ */
 export async function updateCheckoutStatus(
   ctx: RepoContext,
   input: UpdateCheckoutStatusInput,
@@ -227,9 +240,19 @@ export async function markContacted(
 }
 
 /**
- * Transactional check-and-flag completion race guard (Spec 23 §7).
- * Re-reads checkout status and completedAt; if completed between check and send,
- * flags safeToSend=false so the workflow aborts outbound communication.
+ * Best-effort completion race guard (Spec 23 §7; s-23.md:41 concedes a best-effort window).
+ * Re-reads checkout status and completedAt immediately before send; if completed between
+ * check and send, returns safeToSend=false so the workflow aborts outbound communication.
+ *
+ * Step labels: "1" = REMINDER (Touch 1), "2" = INCENTIVE (Touch 2). The legacy
+ * "REMINDER"/"INCENTIVE" names are accepted as aliases and normalized to "1"/"2" for
+ * ledger consistency (message keys are `{tenant}:{case}:{channel}:{template}:1|2`).
+ *
+ * Best-effort note: the check and the RECOVERY_CONTACTED ledger insert run in the
+ * caller's transaction but WITHOUT SELECT FOR UPDATE row locking, and the actual
+ * provider send happens in a later activity. A purchase landing in that window is caught
+ * by the post-wait fresh-DB re-read + external-checkout-completed signal wakeup, which
+ * converges to RECOVERED without duplicate sends. Do not claim full atomicity here.
  */
 export async function completeRaceGuard(
   ctx: RepoContext,
@@ -239,6 +262,9 @@ export async function completeRaceGuard(
     step = "1",
   }: { tenantId: string; checkoutId: string; step?: string },
 ): Promise<{ safeToSend: boolean; checkout: Checkout | null; completedAt?: Date }> {
+  // Normalize legacy labels: REMINDER -> "1", INCENTIVE -> "2".
+  const normalizedStep =
+    step === "REMINDER" ? "1" : step === "INCENTIVE" ? "2" : step;
   const checkout = await findCheckoutById(ctx, { tenantId, checkoutId });
   if (!checkout) {
     return { safeToSend: false, checkout: null };
@@ -251,8 +277,8 @@ export async function completeRaceGuard(
     };
   }
 
-  // Record contact attempt to ledger
-  await markContacted(ctx, { tenantId, checkoutId, step });
+  // Record contact attempt to ledger (best-effort flag, not an atomic send gate).
+  await markContacted(ctx, { tenantId, checkoutId, step: normalizedStep });
 
   return { safeToSend: true, checkout };
 }

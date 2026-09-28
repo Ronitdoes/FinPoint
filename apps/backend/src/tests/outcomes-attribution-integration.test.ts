@@ -246,6 +246,97 @@ describe("Step 26 Integration: Outcomes, Attribution & Cost Model", { timeout: 6
       expect(res3.outcome.id).toBe(res1.outcome.id);
       expect(res3.outcome.paymentId).toBe(payment.id); // preserved original payment
     });
+
+    it("RECOVERED wins over STOPPED for live WORKFLOW_LINKED but STOPPED persists for ATTRIBUTION_WINDOW (race precedence)", async () => {
+      const customer = await createCustomer(
+        { db },
+        {
+          tenantId: tenantA.id,
+          externalRef: `cust_race_${randomUUID()}`,
+          name: "Race Customer",
+          email: "race@example.com",
+        },
+      );
+
+      // Live race: STOPPED case + WORKFLOW_LINKED recovery -> RECOVERED wins
+      const livePayment = await createPayment(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          amount: 120000n,
+          currency: "INR",
+          status: "SUCCEEDED",
+          provider: "STRIPE",
+          providerPaymentId: `pi_race_live_${randomUUID()}`,
+          occurredAt: new Date(),
+        },
+      );
+      const stoppedLiveCase = await createCase(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          riskType: "PAYMENT_FAILURE",
+          sourceEntityType: "PAYMENT",
+          sourceEntityId: livePayment.id,
+          amountAtRisk: 120000n,
+          currency: "INR",
+          riskScore: 70,
+          status: "STOPPED",
+          statusReason: "CUSTOMER_REQUESTED",
+        },
+      );
+      const liveRes = await recordService.recordOutcome({
+        tenantId: tenantA.id,
+        caseId: stoppedLiveCase.id,
+        paymentId: livePayment.id,
+        attributionMethod: "WORKFLOW_LINKED",
+      });
+      expect(liveRes.alreadyRecorded).toBe(false);
+      const liveAfter = await findCaseById({ db }, { tenantId: tenantA.id, caseId: stoppedLiveCase.id });
+      expect(liveAfter?.status).toBe("RECOVERED");
+
+      // Late attribution: STOPPED case + ATTRIBUTION_WINDOW -> stays STOPPED, outcome still counted
+      const latePayment = await createPayment(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          amount: 90000n,
+          currency: "INR",
+          status: "SUCCEEDED",
+          provider: "STRIPE",
+          providerPaymentId: `pi_race_late_${randomUUID()}`,
+          occurredAt: new Date(),
+        },
+      );
+      const stoppedLateCase = await createCase(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          riskType: "PAYMENT_FAILURE",
+          sourceEntityType: "PAYMENT",
+          sourceEntityId: latePayment.id,
+          amountAtRisk: 90000n,
+          currency: "INR",
+          riskScore: 60,
+          status: "STOPPED",
+          statusReason: "MAX_RETRIES_EXCEEDED",
+        },
+      );
+      const lateRes = await recordService.recordOutcome({
+        tenantId: tenantA.id,
+        caseId: stoppedLateCase.id,
+        paymentId: latePayment.id,
+        attributionMethod: "ATTRIBUTION_WINDOW",
+      });
+      expect(lateRes.alreadyRecorded).toBe(false);
+      const lateAfter = await findCaseById({ db }, { tenantId: tenantA.id, caseId: stoppedLateCase.id });
+      expect(lateAfter?.status).toBe("STOPPED");
+      expect(lateRes.outcome.recoveredAmount).toBe(90000n);
+    });
   });
 
   describe("2. Recovery Cost Rollup Math & Zero-Cost Edge Case", () => {
@@ -835,6 +926,110 @@ describe("Step 26 Integration: Outcomes, Attribution & Cost Model", { timeout: 6
         },
       });
       expect(resAdmin.statusCode).toBe(200);
+    });
+
+    it("GET /outcomes/cases/:id alias mirrors canonical outcome (200/404/tenant-404)", async () => {
+      // Canonical is GET /cases/:id/outcome; this alias is kept for compat (see routes.ts).
+      const customer = await createCustomer(
+        { db },
+        {
+          tenantId: tenantA.id,
+          externalRef: `cust_alias_${randomUUID()}`,
+          name: "Alias Customer",
+          email: "alias@example.com",
+        },
+      );
+      const payment = await createPayment(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          amount: 77700n,
+          currency: "INR",
+          status: "SUCCEEDED",
+          provider: "STRIPE",
+          providerPaymentId: `pi_alias_${randomUUID()}`,
+          occurredAt: new Date(),
+        },
+      );
+      const caseWithOutcome = await createCase(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          riskType: "PAYMENT_FAILURE",
+          sourceEntityType: "PAYMENT",
+          sourceEntityId: payment.id,
+          amountAtRisk: 77700n,
+          currency: "INR",
+          riskScore: 60,
+          status: "IN_PROGRESS",
+        },
+      );
+      const caseWithoutOutcome = await createCase(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          riskType: "PAYMENT_FAILURE",
+          sourceEntityType: "PAYMENT",
+          sourceEntityId: randomUUID(),
+          amountAtRisk: 11100n,
+          currency: "INR",
+          riskScore: 40,
+          status: "IN_PROGRESS",
+        },
+      );
+      await recordService.recordOutcome({
+        tenantId: tenantA.id,
+        caseId: caseWithOutcome.id,
+        paymentId: payment.id,
+      });
+
+      // 200 for owner via alias
+      const res200 = await app.inject({
+        method: "GET",
+        url: `/outcomes/cases/${caseWithOutcome.id}`,
+        headers: { cookie: viewerCookie },
+      });
+      expect(res200.statusCode).toBe(200);
+      expect(JSON.parse(res200.body).case_id).toBe(caseWithOutcome.id);
+
+      // 404 NO_OUTCOME for case without outcome via alias
+      const res404 = await app.inject({
+        method: "GET",
+        url: `/outcomes/cases/${caseWithoutOutcome.id}`,
+        headers: { cookie: viewerCookie },
+      });
+      expect(res404.statusCode).toBe(404);
+      expect(JSON.parse(res404.body).error?.code).toBe("NO_OUTCOME");
+
+      // Tenant isolation: Tenant B gets 404 on Tenant A case via alias
+      const tenantBUser = await createUser(
+        { db },
+        {
+          tenantId: tenantB.id,
+          email: `alias-b-${randomUUID().slice(0, 8)}@example.com`,
+          name: "Alias B",
+          passwordHash: "mock_hash",
+          role: "VIEWER",
+        },
+      );
+      const tokenB = `session-alias-b-${randomUUID()}`;
+      await createSession(
+        { db },
+        {
+          userId: tenantBUser.id,
+          tokenHash: sha256(tokenB),
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+      );
+      const resTenant404 = await app.inject({
+        method: "GET",
+        url: `/outcomes/cases/${caseWithOutcome.id}`,
+        headers: { cookie: `rr_session=${tokenB}` },
+      });
+      expect(resTenant404.statusCode).toBe(404);
     });
   });
 });

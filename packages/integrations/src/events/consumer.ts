@@ -21,6 +21,16 @@ export const MAX_BACKOFF_MS = 60000; // 60 seconds
 export const MAX_RETRY_ATTEMPTS = 5;
 
 /**
+ * Default ceiling for a single handler invocation (CONVENTIONS §8, s-11 gaps).
+ * A handler that neither resolves nor rejects within this window is treated
+ * as a transient failure: the wait is abandoned with a RETRYABLE error so the
+ * bus framework retries/DLQs instead of blocking the partition (Redpanda
+ * `eachMessage`) or the per-tenant chain (InProcess `enqueuePerTenant`)
+ * forever. Override per call via `ProcessMessageParams.handlerTimeoutMs`.
+ */
+export const HANDLER_TIMEOUT_MS = 30000; // 30 seconds
+
+/**
  * Explicit error indicating the operation is transient and safe to retry.
  */
 export class RetryableError extends Error {
@@ -147,6 +157,60 @@ export interface ProcessMessageParams {
     headers: BusMessageHeaders,
   ) => Promise<void>;
   commit: () => Promise<void>;
+  /**
+   * Ceiling for a single handler invocation in ms (default
+   * HANDLER_TIMEOUT_MS). A hung handler yields a RETRYABLE timeout error so
+   * the message is retried/DLQ'd instead of head-of-line blocking the
+   * consumer. Values <= 0 disable the timeout (not recommended).
+   */
+  handlerTimeoutMs?: number;
+}
+
+/**
+ * Races a handler invocation against a timeout (CONVENTIONS §8).
+ *
+ * On timeout the wait is abandoned with a `RetryableError` so the shared
+ * consumer engine classifies it RETRYABLE and routes to the retry topic /
+ * DLQ. Asymmetry note: JavaScript cannot cancel the underlying handler —
+ * a hung handler keeps running in the background and its eventual result is
+ * ignored. Handlers MUST therefore be idempotent (at-least-once delivery
+ * already requires this): a timed-out handler that later completes must be
+ * a safe duplicate of the retry. The timer is always cleared once the race
+ * settles so timed-out waits never leak handles.
+ */
+export async function invokeHandlerWithTimeout(
+  handler: EventHandler,
+  event: DomainEvent,
+  ctx: EventContext,
+  timeoutMs: number = HANDLER_TIMEOUT_MS,
+): Promise<void> {
+  if (!(timeoutMs > 0) || !Number.isFinite(timeoutMs)) {
+    await handler(event, ctx);
+    return;
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new RetryableError(
+          `Event handler timed out after ${timeoutMs}ms ` +
+            `(group=${ctx.group} topic=${ctx.topic} event=${event.id}); ` +
+            `abandoning wait so the message can retry/DLQ`,
+        ),
+      );
+    }, timeoutMs);
+    // Don't hold the process open for a wait we've already abandoned.
+    (timer as unknown as { unref?: () => void }).unref?.();
+  });
+
+  try {
+    await Promise.race([handler(event, ctx), timeoutPromise]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 /**
@@ -165,6 +229,7 @@ export async function processConsumerMessage(
     publishToRetry,
     publishToDlq,
     commit,
+    handlerTimeoutMs = HANDLER_TIMEOUT_MS,
   } = params;
 
   const attempt = parseInt(headers["x-attempt"] || "1", 10);
@@ -213,9 +278,10 @@ export async function processConsumerMessage(
     correlationId: event.correlation_id,
   };
 
-  // 2. Invoke Handler
+  // 2. Invoke Handler (bounded: hung handlers time out RETRYABLE instead
+  // of head-of-line blocking the consumer forever).
   try {
-    await handler(event, ctx);
+    await invokeHandlerWithTimeout(handler, event, ctx, handlerTimeoutMs);
 
     // Handler succeeded -> record metric and commit offset
     recordBusConsumed(group, "success");

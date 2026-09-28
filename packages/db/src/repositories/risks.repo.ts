@@ -91,6 +91,8 @@ export async function createRevenueRisk(
  * Idempotently computes/updates OPEN risk for a subject anchor (tenantId, subjectType, subjectId).
  * Recomputation replaces OPEN risk and bumps computed_at.
  * Terminal risks (ASSESSED, EXPIRED) are never resurrected.
+ * Race-safe (s-12 fix): partial unique index on OPEN per subject + 23505
+ * fallback re-read, so concurrent redeliveries cannot insert duplicates.
  */
 export async function upsertOpenRisk(
   ctx: RepoContext,
@@ -156,30 +158,50 @@ export async function upsertOpenRisk(
     return existingTerminal;
   }
 
-  // 3. No existing risk -> create a new OPEN risk
-  const [created] = await executor
-    .insert(revenueRisks)
-    .values({
-      tenantId: input.tenantId,
-      customerId: input.customerId,
-      riskType: input.riskType,
-      subjectType: input.subjectType,
-      subjectId: input.subjectId,
-      score: input.score,
-      band: input.band,
-      factors: input.factors,
-      status: "OPEN",
-      computedAt: input.computedAt,
-      expiresAt: input.expiresAt,
-    })
-    .returning();
+  // 3. No existing risk -> create a new OPEN risk (race-safe: 23505 -> re-read winner)
+  try {
+    const [created] = await executor
+      .insert(revenueRisks)
+      .values({
+        tenantId: input.tenantId,
+        customerId: input.customerId,
+        riskType: input.riskType,
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        score: input.score,
+        band: input.band,
+        factors: input.factors,
+        status: "OPEN",
+        computedAt: input.computedAt,
+        expiresAt: input.expiresAt,
+      })
+      .returning();
 
-  return created;
+    return created;
+  } catch (err: any) {
+    // Partial-unique violation on OPEN per subject: loser re-reads winner.
+    if (err?.code === "23505") {
+      const [winner] = await executor
+        .select()
+        .from(revenueRisks)
+        .where(
+          and(
+            eq(revenueRisks.tenantId, input.tenantId),
+            eq(revenueRisks.subjectType, input.subjectType),
+            eq(revenueRisks.subjectId, input.subjectId),
+            eq(revenueRisks.status, "OPEN"),
+          ),
+        )
+        .limit(1);
+      if (winner) return winner;
+    }
+    throw err;
+  }
 }
 
 /**
  * Closes all OPEN risks for a subject on resolution events (payment.succeeded, invoice.paid, checkout.completed).
- * Marks matching OPEN risks as EXPIRED (status_reason = 'resolved_upstream').
+ * Marks matching OPEN risks as EXPIRED.
  */
 export async function closeRisksForSubject(
   ctx: RepoContext,

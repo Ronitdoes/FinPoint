@@ -13,6 +13,8 @@ import {
   recordProviderCall,
   recordWorkflowStarted,
   recordWorkflowOutcome,
+  recordAiCost,
+  recordRequiresApproval,
 } from "./metrics";
 
 describe("Observability Metrics", () => {
@@ -91,6 +93,19 @@ describe("Observability Metrics", () => {
     expect(metricsText).toContain('workflow_outcome_total{type="FAILED_PAYMENT",result="RECOVERED"} 1');
   });
 
+  it("records s-15 AI governance cost and approval-gate metrics", async () => {
+    recordAiCost("gpt-4o", "COMPLETED", 106n);
+    recordAiCost("gpt-4o", "FALLBACK_RULE_BASED", 0);
+    recordRequiresApproval("required");
+    recordRequiresApproval("not_required");
+
+    const metricsText = await getMetricsText();
+    expect(metricsText).toContain("ai_cost_case_minor");
+    expect(metricsText).toContain('ai_cost_case_minor_count{model="gpt-4o",status="COMPLETED"} 1');
+    expect(metricsText).toContain('ai_requires_approval_total{result="required"} 1');
+    expect(metricsText).toContain('ai_requires_approval_total{result="not_required"} 1');
+  });
+
   it("includes all Spec 01 §20 metric definitions in registry", () => {
     const metricNames = metricsRegistry.getMetricsAsArray().map((m: { name: string }) => m.name);
 
@@ -110,6 +125,8 @@ describe("Observability Metrics", () => {
       "provider_latency_ms",
       "workflow_started_total",
       "workflow_outcome_total",
+      "ai_cost_case_minor",
+      "ai_requires_approval_total",
     ];
 
     for (const name of requiredMetrics) {

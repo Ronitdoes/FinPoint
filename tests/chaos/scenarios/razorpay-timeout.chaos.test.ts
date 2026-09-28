@@ -126,9 +126,14 @@ describe("chaos: Razorpay provider timeout", { timeout: 90000 }, () => {
           { db },
           { tenantId, idempotencyKey },
         );
-        return attempt?.status === "FAILED";
+        if (attempt?.status !== "FAILED") return false;
+        // Converge the action row too: the poll commits payment + attempt +
+        // action atomically, so waiting on both guards against reading the
+        // action before its write lands.
+        const act = await findActionById({ db }, { tenantId, actionId: action.id });
+        return act?.status === "FAILED";
       },
-      { timeoutMs: 20000, label: "attempt resolves to FAILED via status poll" },
+      { timeoutMs: 20000, label: "attempt + action resolve to FAILED via status poll" },
     );
 
     // Exactly one attempt row with the provider's decline taxonomy preserved.

@@ -268,7 +268,7 @@ To guarantee bulletproof resilience against duplicate events, retries, and race 
 
 ## 18. Migration pipeline & DDL execution (`drizzle/`, `migrate.ts`)
 
-1. Drizzle Kit compiled `drizzle/0001_glamorous_goblin_queen.sql` containing all 18 tables, 18 enums, foreign keys, check constraints, partial indexes, and generated columns.
+1. Drizzle Kit compiled `drizzle/0001_glamorous_goblin_queen.sql` containing all 20 tables, 25 enums, foreign keys, check constraints, partial indexes, and generated columns (audit fix: 20 tables verified via `CREATE TABLE` count in migration 0001; 25 s-05 enums per §3 table; see progress.md:120-121 deferred rows).
 2. `bun run db:migrate` connects via `DIRECT_URL` to execute the migration transaction safely.
 3. Re-running `bun run db:migrate` completes with zero errors, verifying 100% idempotent migration execution.
 

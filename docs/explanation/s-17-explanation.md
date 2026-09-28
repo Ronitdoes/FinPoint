@@ -36,9 +36,9 @@ Key requirements from `specs/steps/s-17.md`:
    - Transitions to `FAILED` (when AI decision fails and fallback is disabled).
    - Resumable: Re-invoking `runPipeline` resumes from current state without duplicating already completed stages.
 4. **Case Control Service**:
-   - Pause case (`IN_PROGRESS` → `PAUSED` with reason).
-   - Resume case (`PAUSED` → `IN_PROGRESS`).
-   - Escalate case (`IN_PROGRESS` | `PAUSED` → `ESCALATED` with reason + creates `GENERAL` human task).
+   - Pause case (`IN_PROGRESS` → `WAITING` with reason).
+   - Resume case (`WAITING` → `IN_PROGRESS`).
+   - Escalate case (`IN_PROGRESS` | `WAITING` → `ESCALATED` with reason + creates `GENERAL` human task).
    - Stop case (`*` except terminal → `STOPPED` with mandatory non-empty reason).
    - Terminal guard: Terminal cases (`RECOVERED`, `STOPPED`, `FAILED`) reject control operations with `409 CASE_TERMINAL`.
    - RBAC enforcement: `VIEWER`/`SUPPORT` cannot mutate; `FINANCE` can mutate finance actions; `ADMIN` full access.
@@ -161,9 +161,9 @@ The pipeline runner inspects the case's current status and executes strictly rem
 
 ### State Transition & Terminal Invariants
 All mutations flow through guarded repository calls (`transitionCaseStatus`):
-- `pauseCase`: Transitions `IN_PROGRESS` → `PAUSED`.
-- `resumeCase`: Transitions `PAUSED` → `IN_PROGRESS`.
-- `escalateCase`: Transitions `IN_PROGRESS` | `PAUSED` → `ESCALATED` and creates a `GENERAL` human task for agent review.
+- `pauseCase`: Transitions `IN_PROGRESS` → `WAITING`.
+- `resumeCase`: Transitions `WAITING` → `IN_PROGRESS`.
+- `escalateCase`: Transitions `IN_PROGRESS` | `WAITING` → `ESCALATED` and creates a `GENERAL` human task for agent review.
 - `stopCase`: Transitions any non-terminal case to `STOPPED` with a mandatory non-empty reason.
 - Any attempt to mutate a case in a terminal status (`RECOVERED`, `STOPPED`, `FAILED`) is rejected with HTTP `409 CASE_TERMINAL`.
 
@@ -171,7 +171,7 @@ All mutations flow through guarded repository calls (`transitionCaseStatus`):
 | Role | Pause | Resume | Escalate | Stop | Read Detail | Timeline |
 |---|---|---|---|---|---|---|
 | `VIEWER` | ❌ 403 | ❌ 403 | ❌ 403 | ❌ 403 | ✅ 200 | ✅ 200 |
-| `SUPPORT` | ❌ 403 | ❌ 403 | ❌ 403 | ❌ 403 | ✅ 200 | ✅ 200 |
+| `SUPPORT` | ❌ 403 | ❌ 403 | ✅ 200 | ❌ 403 | ✅ 200 | ✅ 200 |
 | `OPERATIONS` | ✅ 200 | ✅ 200 | ✅ 200 | ❌ 403 | ✅ 200 | ✅ 200 |
 | `FINANCE` | ✅ 200 | ✅ 200 | ✅ 200 | ✅ 200 | ✅ 200 | ✅ 200 |
 | `ADMIN` | ✅ 200 | ✅ 200 | ✅ 200 | ✅ 200 | ✅ 200 | ✅ 200 |
@@ -251,3 +251,17 @@ All mutations flow through guarded repository calls (`transitionCaseStatus`):
 1. **Deterministic Mock LLM in Test Harness**: In `case-orchestration-integration.test.ts`, a deterministic structured mock fetch was configured to ensure instantaneous and isolated test runs without network latency or external API key dependencies.
 2. **Graceful Workflow Fallback in Development**: When Temporal is running in mock mode or standalone environments, `@repo/orchestration` generates a valid synthetic run identifier and transitions the case to `IN_PROGRESS`, ensuring end-to-end integration flows without requiring an active external Temporal daemon during local unit testing.
 3. **Explicit Rule Fallback Toggle**: Added `enableRuleFallback?: boolean` to `AiConfig` in `@repo/config` to allow tests and environments to explicitly disable fallback when evaluating failure recovery modes.
+
+---
+
+## 12. Audit Fixes (post-implementation review)
+
+1. **Stage ledger implemented as status + append-only events (spec `metadata.pipeline[]` never migrated).**
+   Spec s-17 §Stage ledger describes `recovery_cases.metadata.pipeline[]`, but no `metadata` column was ever migrated on `recovery_cases` — and a mutable JSONB blob would violate the append-only audit conventions (CONVENTIONS §9). The durable ledger is therefore:
+   - the guarded case status (resume anchor: `runPipeline` resumes from the first incomplete stage, including `POLICY_REVIEW` resume), plus
+   - `PIPELINE_STAGE` rows in the append-only `case_events` timeline carrying `StageLedgerEntry` payloads (`{stage, status, at, ref}`, type in `apps/backend/src/modules/cases/case.types.ts`).
+   - `CasePipelineService.recordStageLedger` persists one entry per completed stage **inside the same transaction** as the stage's guarded transition + timeline + audit writes: `CONTEXT`+`AI_DECISION` with the `QUALIFIED`→`DECISION_PENDING` transition; `POLICY` with the `POLICY_REVIEW`→`STOPPED`/`ESCALATED` transition on rejection/approval, or with the final `POLICY_REVIEW`→`IN_PROGRESS` transition on allow; `ACTIONS`+`WORKFLOW` also with the final `IN_PROGRESS` transition on allow — so a crash can never halve a stage. `getPipelineLedger(tenantId, caseId)` reads the ledger back chronologically. Happy path yields 5 DONE entries in order (`CONTEXT`, `AI_DECISION`, `POLICY`, `ACTIONS`, `WORKFLOW`); rejection/approval yields 3 DONE (`CONTEXT`, `AI_DECISION`, `POLICY`); AI failure yields `AI_DECISION` `FAILED`. Re-invoking a completed pipeline appends nothing.
+2. **Sync consumer dispatched to background.**
+   `cases/consumer.ts` `handleCaseOpened` previously `await`ed the full pipeline (LLM + policy + workflow start) inside the event-bus handler, contradicting s-17 §Requirements 1 ("no long work inside consumer handler"). It now schedules `runPipeline` via `setImmediate` (`queueMicrotask` fallback where `setImmediate` is unavailable) and returns immediately without `await`ing the pipeline; failures are logged via pino with `tenant_id`/`case_id`/`correlation_id` (CONVENTIONS §7), and recovery is via `case.opened` redelivery or manual rerun (both resume-safe through the ledger). The `risk.calculated` → `tryCreateCase` → publish `case.opened` path still awaits only the lightweight creation transaction and is unchanged.
+3. **AI → adapters boundary test.**
+   The step requires "no code path connects AI module directly to adapters (lint boundary test added)". Enforcement is two-layer: the repo-wide static gate `bun run boundaries:audit` (`scripts/audit-boundaries.ts`, Rule 1: `apps/backend/src/modules/ai/**` must not import `@repo/integrations`/provider SDKs/dispatch workflows/call execution), plus the in-suite unit test `apps/backend/src/tests/ai-adapter-boundary.test.ts` mirroring Rule 1 so `bun run test` keeps the requirement green.

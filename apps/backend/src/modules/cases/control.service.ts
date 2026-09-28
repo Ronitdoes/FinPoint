@@ -1,9 +1,9 @@
 import type { Database } from "@repo/db";
 import { isTerminal } from "@repo/domain";
 import {
-  DefaultWorkflowClient,
   type RecoveryWorkflowClient,
 } from "@repo/orchestration";
+import { LiveWorkflowClient } from "../../lib/live-workflow-client";
 import { getLogger } from "@repo/observability";
 import type { Repositories } from "../../plugins/db";
 import {
@@ -23,7 +23,8 @@ export class CaseControlService {
     private readonly repos: Repositories,
     workflowClient?: RecoveryWorkflowClient,
   ) {
-    this.workflowClient = workflowClient ?? new DefaultWorkflowClient(db);
+    // L1: live Temporal dispatch via worker client with DB-row fallback.
+    this.workflowClient = workflowClient ?? new LiveWorkflowClient(db);
   }
 
   /**

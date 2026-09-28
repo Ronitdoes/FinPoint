@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { Database, Tx } from "@repo/db";
+import type Redis from "ioredis";
 import type { Repositories } from "../../plugins/db";
 import type { MessagingConfig, DemoConfig } from "@repo/config";
 import type { SendCaseMessageInput, SendCaseMessageResult } from "./types";
@@ -10,6 +11,7 @@ import {
 } from "@repo/integrations";
 import { DuplicateMessageError } from "@repo/db";
 import { maskEmail, maskPhone } from "../customers/context/allowlist";
+import { CustomerContextService } from "../customers/customer-context.service";
 
 export interface SendMessageServiceDeps {
   db: Database;
@@ -18,6 +20,7 @@ export interface SendMessageServiceDeps {
   messagingConfig?: MessagingConfig | null;
   demoConfig?: DemoConfig | null;
   customAdapter?: MessagingProvider;
+  redis?: Redis | null;
 }
 
 export class CustomerOptedOutError extends Error {
@@ -77,7 +80,7 @@ export async function sendCaseMessage(
   deps: SendMessageServiceDeps,
   input: SendCaseMessageInput,
 ): Promise<SendCaseMessageResult> {
-  const { db, repos, logger, messagingConfig, demoConfig, customAdapter } = deps;
+  const { db, repos, logger, messagingConfig, demoConfig, customAdapter, redis } = deps;
   const tenantId = input.tenantId;
 
   // 1. Resolve Customer & Case
@@ -285,6 +288,17 @@ export async function sendCaseMessage(
         raw: sendResult.rawResponse,
       },
     });
+
+    // s-13 freshness: bust cached customer context (communication counters changed).
+    // Best-effort — cache failure must never fail the send path.
+    try {
+      await CustomerContextService.invalidateCache(redis, tenantId, customerId);
+    } catch (err: any) {
+      logger?.warn(
+        { err: err?.message, tenantId, customerId },
+        "Customer context cache bust failed after message SENT (best-effort)",
+      );
+    }
 
     return {
       messageId: messageRecord.id,

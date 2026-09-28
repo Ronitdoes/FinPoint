@@ -1,6 +1,6 @@
 # s-22 — Workflow A: Failed Payment Recovery — Implementation Explanation
 
-This document provides a comprehensive, deep-dive explanation of everything implemented for `specs/steps/s-22.md`. It serves as the authoritative reference for the core `FailedPaymentRecoveryWorkflow`, the event-driven signal bridge, Temporal activity bindings, AI replan evaluation, anti-double-charge safety mechanisms, and the complete 12-scenario test harness.
+This document provides a comprehensive, deep-dive explanation of everything implemented for `specs/steps/s-22.md`. It serves as the authoritative reference for the core `FailedPaymentRecoveryWorkflow`, the event-driven signal bridge, Temporal activity bindings, AI replan evaluation, anti-double-charge safety mechanisms, and the complete 14-scenario test harness.
 
 ---
 
@@ -14,7 +14,7 @@ This document provides a comprehensive, deep-dive explanation of everything impl
 6. [Single Bounded AI Replan Path & Human Approval Hook](#6-single-bounded-ai-replan-path--human-approval-hook)
 7. [Activity Registry & Replan Activity Implementation](#7-activity-registry--replan-activity-implementation)
 8. [Anti-Double-Charge & Concurrency Idempotency Guarantees](#8-anti-double-charge--concurrency-idempotency-guarantees)
-9. [Comprehensive 12-Scenario Matrix Verification](#9-comprehensive-12-scenario-matrix-verification)
+9. [Comprehensive 14-Scenario Matrix Verification](#9-comprehensive-14-scenario-matrix-verification)
 10. [Traceability & Forward Alignment](#10-traceability--forward-alignment)
 
 ---
@@ -38,9 +38,19 @@ Step s-22 implements the first production Temporal recovery workflow: **Workflow
 
 `FailedPaymentRecoveryWorkflow` coordinates automated recovery of failed subscription and invoice charges across multi-channel communication, smart retry timing, payment execution, and operator intervention.
 
+### Workflow input contract (audit s-22 fix)
+
+Spec s-22.md §Requirements 1 states input `{ caseId }` only. The implemented contract
+is `RecoveryWorkflowInput` (`services/worker/src/workflows/shared.ts`): deterministic
+ids + metadata strings only — `{ tenantId, caseId, workflowType, paymentId?, amountMinor?,
+currency?, traceparent?, metadata? }` — with everything else loaded via activities
+(`loadCaseSnapshot`) for deterministic replay safety. No case objects, amounts as objects,
+or provider payloads cross the workflow boundary; `amountMinor` travels as a string
+(bigint-safe) and decline details are stored redacted in the timeline.
+
 ```text
 [Risk Engine / Case Pipeline] 
-              │ (StartWorkflow: paymentId, amountMinor, currency)
+              │ (StartWorkflow: RecoveryWorkflowInput ids+metadata strings)
               ▼
   ┌─────────────────────────────────────────────────────────────┐
   │ failedPaymentRecoveryWorkflow (recover:<case_id>)          │
@@ -132,8 +142,15 @@ In each round:
 2. **Communication Dispatch**: If a communication action (`SEND_WHATSAPP` / `SEND_EMAIL`) was planned, verifies policy (`checkPolicyAgain`) and sends the message template.
 3. **Smart Wait Delay**: Waits for the calculated delay (default: 24h, configurable via metadata).
 4. **Retry Policy Verification**: Calls `checkPolicyAgain` for `RETRY_PAYMENT`. If approval is required, spawns an `APPROVAL` task and pauses via `awaitHumanApproval`.
-5. **Execution & Status Resolution**: Calls `executeRetryPayment`. If `status === "UNKNOWN"` or `"ACCEPTED_ASYNC"`, executes up to 3 polling attempts via `refreshPaymentStatus`.
-6. **Outcome Recording**: On success, immediately calls `recordOutcome` with `outcome: "RECOVERED"`, emits metrics, and terminates the workflow.
+5. **Pre-Retry Fresh-State Re-check (audit s-22 fix)**: Immediately before money movement,
+   reloads `loadCaseSnapshot` again to catch external success / opt-out / dispute that
+   landed during the wait without a signal (missed webhook). Terminal cases exit without
+   charging. Provider-level status reconciliation for `UNKNOWN` outcomes is handled
+   post-attempt via `refreshPaymentStatus` poll loop; crash-window duplicates are covered
+   by the idempotency-key claim + s-31 `EXECUTING`-stuck sweeper backstop (sweeper resolves
+   via provider status query, never blind re-executes).
+6. **Execution & Status Resolution**: Calls `executeRetryPayment`. If `status === "UNKNOWN"` or `"ACCEPTED_ASYNC"`, executes up to 3 polling attempts via `refreshPaymentStatus`.
+7. **Outcome Recording**: On success, immediately calls `recordOutcome` with `outcome: "RECOVERED"`, emits metrics, and terminates the workflow. See §8 for `WORKFLOW_LINKED` vs external-signal source mapping.
 
 ---
 
@@ -169,14 +186,31 @@ When all 3 payment attempts fail (`attemptsCount === 3`):
 To ensure customers are never double-charged:
 1. **Workflow Idempotency**: Temporal workflow IDs are deterministic (`recover:<case_id>`), guaranteeing only one recovery workflow runs per case.
 2. **Deterministic Attempt Keys**: Every retry activity invocation uses a deterministic idempotency key format:
-   `"${tenantId}:${caseId}:RETRY_PAYMENT:${attemptNumber}"`
-3. **Claim-Based Protection**: `executeRetryPayment` checks existing payment attempts in the database. If an attempt with the same idempotency key exists and is `SUCCEEDED` or `PENDING`, the activity refuses duplicate submission and returns the existing result.
+   `"${tenantId}:${caseId}:RETRY_PAYMENT:${attemptNumber}"` (CONVENTIONS §8).
+3. **Claim-Based Protection**: `executeRetryPayment` (`services/worker/src/activities/execute-retry-payment.ts`)
+   pre-checks `findPaymentAttemptByIdempotencyKey`; if a row with the same key already exists,
+   it returns the existing result without re-invoking the provider. Concurrent racers that both
+   pass the pre-check are caught by the DB unique constraints
+   (`payment_attempts_idempotency_key_unique`, `payment_attempts_payment_attempt_number_unique`):
+   the loser catches the 23505/unique violation and returns the winner's row. Full crash-window
+   coverage (kill between claim and provider call, kill after provider before persist) is owned
+   by the s-31 chaos suite (`FAULT_POINTS=claim:after_provider_call`, `EXECUTING`-stuck sweeper
+   resolving via provider status query, worker SIGKILL drill asserting provider called exactly once).
+4. **Attribution source mapping (audit s-22 clarification)**: `recordOutcome` persists
+   `attribution_method=WORKFLOW_LINKED` when the retried payment succeeded inside the workflow.
+   External-channel success (customer paid via original link/portal during WAIT) is passed as
+   `recoverySource: "EXTERNAL_PAYMENT_SIGNAL"` for observability/timeline, but the ledger row
+   still records `WORKFLOW_LINKED` when linked to the recovered payment; unattributed late
+   successes after close are handled by the s-26 attribution-window sweeper post-close
+   (`ATTRIBUTION_WINDOW` method). In short: `WORKFLOW_LINKED` = ledger attribution method for
+   payments linked to this case; `EXTERNAL_PAYMENT_SIGNAL` = runtime signal source flag, not a
+   separate ledger method.
 
 ---
 
-## 9. Comprehensive 12-Scenario Matrix Verification
+## 9. Comprehensive 14-Scenario Matrix Verification
 
-The full 12-scenario test harness in `services/worker/src/workflows/failed-payment.test.ts` passes 100% on the Temporal time-skipping test server:
+The full 14-scenario test harness in `services/worker/src/workflows/failed-payment.test.ts` passes 100% on the Temporal time-skipping test server (12 spec scenarios + 13b per-round `retry_count` counters probe + Signal Bridge probe):
 
 | # | Scenario | Tested Flow | Assertion Verified | Result |
 |---|---|---|---|:---:|
@@ -185,14 +219,15 @@ The full 12-scenario test harness in `services/worker/src/workflows/failed-payme
 | 3 | **Retry Then Success** | FAILED round 1 → SUCCEEDED round 2 | Outcome `RECOVERED` at attempt #2 | **PASS** |
 | 4 | **Permanent Failure** | `do_not_honor` ×3 → replan STOP | Stop reason `PERMANENT_DECLINE` | **PASS** |
 | 5 | **Duplicate Execution** | Same workflow ID started twice | Idempotent start returns `accepted: false` on second start | **PASS** |
-| 6 | **Concurrent Attempts** | Deterministic key collision | Anti-double-charge idempotency key match verified | **PASS** |
+| 6 | **Concurrent Attempts** | Two concurrent `claimedExecute` with same `tenant:case:RETRY_PAYMENT:1` key (DB-backed) | Provider spy called exactly once; both callers converge on same `attemptId`; unique-constraint loser returns existing without charging | **PASS** |
 | 7 | **Provider Timeout** | Timeout → `UNKNOWN` → poll loop | Status resolved to `SUCCEEDED`, outcome `RECOVERED` | **PASS** |
 | 8 | **Provider Error** | Fatal 503 error | Activity error caught, `escalateWorkflowFailure` task created | **PASS** |
 | 9 | **Opt-out Mid-Flight** | Stop signal during round wait | Immediate `STOPPED(CUSTOMER_OPTED_OUT)`, no further attempts | **PASS** |
 | 10 | **External Success** | External payment signal during wait | Instant `RECOVERED` without consuming retry attempts | **PASS** |
 | 11 | **Approval Flow** | Replan proposes incentive → operator rejects | Signal `humanDecisionSignal(approved: false)` → `STOPPED(HUMAN_REJECTED)` | **PASS** |
 | 12 | **Restart Survival** | Worker killed mid-flight → Worker 2 resumes | Workflow recovers from timer and completes to `RECOVERED` | **PASS** |
-| 13 | **Signal Bridge** | `payment.succeeded` event received | Bridge signals active workflow with payment details | **PASS** |
+| 13b | **Policy counters** | Per-round `retry_count` threading in `checkPolicyAgain` | `RETRY_PAYMENT` re-checks carry `{retry_count: 0}` then `{retry_count: 1}` | **PASS** |
+| 14 | **Signal Bridge** | `payment.succeeded` event received | Bridge signals active workflow with payment details | **PASS** |
 
 ---
 

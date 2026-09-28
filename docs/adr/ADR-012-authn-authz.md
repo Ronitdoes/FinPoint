@@ -12,7 +12,7 @@ Three caller classes hit the system: dashboard users (interactive), machine clie
 ## Decision
 
 1. **Dashboard users:** email + password authentication; server-side session records referenced by an httpOnly cookie. Passwords hashed with a modern KDF (argon2id preferred). Sessions revocable server-side.
-2. **Machine clients:** tenant-scoped bearer API keys (`Authorization: Bearer rr_…`), stored hashed, with tenant binding and optional scope/role metadata. Key issuance/rotation lives in the admin module.
+2. **Machine clients:** tenant-scoped bearer API keys (`Authorization: Bearer rrk_<tenant>_<random>`), stored hashed, with tenant binding and optional scope/role metadata. Key issuance/rotation lives in the admin module. Format matches implementation (`apps/backend/src/lib/crypto.ts`) and s-09 spec.
 3. **Webhooks:** verified by provider signature (Stripe `stripe-signature`, Razorpay HMAC) before any processing; unsigned/replayed requests rejected (s-10).
 4. **RBAC roles are exactly:** `ADMIN`, `FINANCE`, `OPERATIONS`, `SUPPORT`, `VIEWER`. Role checks are enforced by a Fastify pre-handler plugin with per-route required roles; no ad-hoc role checks in controllers.
 5. **Tenant context is mandatory** for every authenticated request: resolved from session/API key into request context (`tenant_id`), propagated to repositories; requests without tenant context fail with stable error code `TENANT_CONTEXT_MISSING`.

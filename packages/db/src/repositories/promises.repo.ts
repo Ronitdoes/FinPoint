@@ -38,7 +38,7 @@ export interface ListPromisesToPayInput {
 export interface MarkPromiseHonoredInput {
   tenantId: string;
   promiseId: string;
-  paymentId: string;
+  paymentId?: string;
   resolvedAt?: Date;
 }
 
@@ -204,7 +204,7 @@ export async function markPromiseHonored(
     .update(promisesToPay)
     .set({
       status: "HONORED",
-      honoredPaymentId: input.paymentId,
+      honoredPaymentId: input.paymentId ?? null,
       resolvedAt: input.resolvedAt ?? new Date(),
       updatedAt: new Date(),
     })

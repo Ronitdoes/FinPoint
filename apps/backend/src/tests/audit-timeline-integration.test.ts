@@ -18,9 +18,14 @@ import {
   createHumanTask,
   recordAuditLog,
   recordCaseEvent,
+  findAuditLogById,
+  findCaseEventById,
   listCaseEvents,
+  createPayment,
+  createPaymentAttempt,
   type Tenant,
   auditArchive,
+  getCombinedErrorMessage,
 } from "@repo/db";
 import { sha256 } from "../lib/crypto";
 import {
@@ -175,15 +180,21 @@ describe("Step 25 Integration: Audit Trail & Case Timeline (Completion & Immutab
       expect(log.id).toBeDefined();
 
       // 2. Attempt UPDATE -> MUST throw PostgreSQL trigger exception
+      // NOTE: drizzle wraps the PG error in DrizzleQueryError ("Failed query: ...");
+      // the trigger text lives on `.cause`, so rethrow with the combined chain.
       await expect(
         db.execute(
           sql`UPDATE audit_logs SET event = 'tampered.event' WHERE id = ${log.id}`,
-        ),
+        ).catch((e) => {
+          throw new Error(getCombinedErrorMessage(e));
+        }),
       ).rejects.toThrow(/Audit records and case events are append-only and immutable/i);
 
       // 3. Attempt DELETE -> MUST throw PostgreSQL trigger exception
       await expect(
-        db.execute(sql`DELETE FROM audit_logs WHERE id = ${log.id}`),
+        db.execute(sql`DELETE FROM audit_logs WHERE id = ${log.id}`).catch((e) => {
+          throw new Error(getCombinedErrorMessage(e));
+        }),
       ).rejects.toThrow(/Audit records and case events are append-only and immutable/i);
     });
 
@@ -218,15 +229,20 @@ describe("Step 25 Integration: Audit Trail & Case Timeline (Completion & Immutab
       );
 
       // Attempt UPDATE -> exception
+      // (drizzle wraps PG trigger text on `.cause`; unwrap for the assertion)
       await expect(
         db.execute(
           sql`UPDATE case_events SET description = 'tampered' WHERE id = ${event.id}`,
-        ),
+        ).catch((e) => {
+          throw new Error(getCombinedErrorMessage(e));
+        }),
       ).rejects.toThrow(/Audit records and case events are append-only and immutable/i);
 
       // Attempt DELETE -> exception
       await expect(
-        db.execute(sql`DELETE FROM case_events WHERE id = ${event.id}`),
+        db.execute(sql`DELETE FROM case_events WHERE id = ${event.id}`).catch((e) => {
+          throw new Error(getCombinedErrorMessage(e));
+        }),
       ).rejects.toThrow(/Audit records and case events are append-only and immutable/i);
     });
 
@@ -244,15 +260,20 @@ describe("Step 25 Integration: Audit Trail & Case Timeline (Completion & Immutab
         .returning();
 
       // Attempt UPDATE -> exception
+      // (drizzle wraps PG trigger text on `.cause`; unwrap for the assertion)
       await expect(
         db.execute(
           sql`UPDATE audit_archive SET event = 'tampered' WHERE id = ${archived.id}`,
-        ),
+        ).catch((e) => {
+          throw new Error(getCombinedErrorMessage(e));
+        }),
       ).rejects.toThrow(/Audit records and case events are append-only and immutable/i);
 
       // Attempt DELETE -> exception
       await expect(
-        db.execute(sql`DELETE FROM audit_archive WHERE id = ${archived.id}`),
+        db.execute(sql`DELETE FROM audit_archive WHERE id = ${archived.id}`).catch((e) => {
+          throw new Error(getCombinedErrorMessage(e));
+        }),
       ).rejects.toThrow(/Audit records and case events are append-only and immutable/i);
     });
   });
@@ -310,6 +331,104 @@ describe("Step 25 Integration: Audit Trail & Case Timeline (Completion & Immutab
       expect(redacted.cardNumber).toContain("*");
       expect(redacted.secretToken).toBe("[REDACTED]");
       expect(redacted.safeNote).toBe("Payment failed due to NSF");
+    });
+
+    it("masks PII/secrets at write time: stored audit_logs.metadata and case_events.payload contain no raw PII", async () => {
+      // s-25 MED fix: recordAuditLog/recordCaseEvent must sanitize BEFORE
+      // insert so the persisted row itself is masked (read-path redactPii in
+      // timeline.service.ts is defense-in-depth only).
+      const dirtyPayload = {
+        customerEmail: "john.doe@company.com",
+        customerPhone: "+919876543210",
+        creditCard: "4111222233334444",
+        apiKey: "sk_live_99998888777766665555",
+        nested: {
+          contactEmail: "nested@domain.org",
+          // Phone under a generic (non-phone-named) key: must still be masked.
+          callback: "+919876543210",
+          tags: ["Payment failed due to NSF"],
+        },
+        safeNote: "Payment failed due to NSF",
+      };
+      const rawSecrets = [
+        "john.doe@company.com",
+        "+919876543210",
+        "4111222233334444",
+        "sk_live_99998888777766665555",
+        "nested@domain.org",
+      ];
+
+      // 1. audit_logs.metadata is masked on write
+      const log = await recordAuditLog(
+        { db },
+        {
+          tenantId: tenantA.id,
+          actorType: "SYSTEM",
+          event: "test.pii.writepath",
+          metadata: dirtyPayload,
+        },
+      );
+      const storedLog = await findAuditLogById(
+        { db },
+        { tenantId: tenantA.id, id: log.id },
+      );
+      expect(storedLog).not.toBeNull();
+      const storedMeta = JSON.stringify(storedLog!.metadata);
+      for (const secret of rawSecrets) {
+        expect(storedMeta).not.toContain(secret);
+      }
+      expect(scanForPii(storedLog!.metadata).hasPii).toBe(false);
+      expect((storedLog!.metadata as Record<string, unknown>).safeNote).toBe(
+        "Payment failed due to NSF",
+      );
+
+      // 2. case_events.payload is masked on write
+      const customer = await createCustomer(
+        { db },
+        {
+          tenantId: tenantA.id,
+          externalRef: `cus_pii_${randomUUID().slice(0, 8)}`,
+          name: "PII Customer",
+          email: "pii-customer@example.com",
+        },
+      );
+      const testCase = await createCase(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          riskType: "PAYMENT_FAILURE",
+          sourceEntityType: "payment",
+          sourceEntityId: randomUUID(),
+          riskScore: 60,
+          amountAtRisk: 5000n,
+          currency: "INR",
+        },
+      );
+      const event = await recordCaseEvent(
+        { db },
+        {
+          tenantId: tenantA.id,
+          caseId: testCase.id,
+          eventType: "NOTE_ADDED",
+          actorType: "SYSTEM",
+          description: "Agent note for PII write-path check",
+          payload: dirtyPayload,
+        },
+      );
+      const storedEvent = await findCaseEventById(
+        { db },
+        { tenantId: tenantA.id, id: event.id },
+      );
+      expect(storedEvent).not.toBeNull();
+      const storedPayload = JSON.stringify(storedEvent!.payload);
+      for (const secret of rawSecrets) {
+        expect(storedPayload).not.toContain(secret);
+      }
+      expect(scanForPii(storedEvent!.payload).hasPii).toBe(false);
+      expect((storedEvent!.payload as Record<string, unknown>).safeNote).toBe(
+        "Payment failed due to NSF",
+      );
     });
   });
 
@@ -788,6 +907,72 @@ describe("Step 25 Integration: Audit Trail & Case Timeline (Completion & Immutab
       // Re-running backfill on the same tenant is idempotent
       const secondRun = await backfillCaseTimelineGaps({ db }, { tenantId: tenantA.id });
       expect(secondRun.details.some((d) => d.caseId === c.id && d.entityId === orphanMsg.id)).toBe(false);
+    });
+
+    it("reconstructs PAYMENT_RETRY_* timeline events from orphan payment_attempts", async () => {
+      const customer = await createCustomer(
+        { db },
+        { tenantId: tenantA.id, externalRef: `cus_orphan_att_${randomUUID().slice(0, 8)}`, name: "Orphan Attempt Customer", email: "orphan-attempt@example.com" },
+      );
+      const payment = await createPayment(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          amount: 75000n,
+          currency: "INR",
+          status: "SUCCEEDED",
+          provider: "STRIPE",
+          providerPaymentId: `pi_orphan_att_${randomUUID().slice(0, 8)}`,
+          occurredAt: new Date(),
+        },
+      );
+      const c = await createCase(
+        { db },
+        {
+          tenantId: tenantA.id,
+          customerId: customer.id,
+          riskType: "PAYMENT_FAILURE",
+          sourceEntityType: "PAYMENT",
+          sourceEntityId: payment.id,
+          riskScore: 55,
+          amountAtRisk: 75000n,
+          currency: "INR",
+        },
+      );
+
+      // Orphan attempt: no case_event written at request time
+      const orphanAttempt = await createPaymentAttempt(
+        { db },
+        {
+          tenantId: tenantA.id,
+          paymentId: payment.id,
+          attemptNumber: 2,
+          initiatedBy: "RECOVERY_WORKFLOW",
+          idempotencyKey: `${tenantA.id}:${c.id}:retry:2:${randomUUID().slice(0, 8)}`,
+          status: "FAILED",
+          failureCode: "card_declined",
+          requestedAt: new Date(),
+          resolvedAt: new Date(),
+        },
+      );
+
+      const beforeEvents = await listCaseEvents({ db }, { tenantId: tenantA.id, caseId: c.id });
+      expect(beforeEvents.filter((e) => (e.payload as any)?.attemptId === orphanAttempt.id)).toHaveLength(0);
+
+      const result = await backfillCaseTimelineGaps({ db }, { tenantId: tenantA.id });
+      expect(result.details.some((d) => d.caseId === c.id && d.entityId === orphanAttempt.id)).toBe(true);
+
+      const afterEvents = await listCaseEvents({ db }, { tenantId: tenantA.id, caseId: c.id });
+      const reconstructed = afterEvents.find((e) => (e.payload as any)?.attemptId === orphanAttempt.id);
+      expect(reconstructed).toBeDefined();
+      expect(reconstructed?.eventType).toBe("PAYMENT_RETRY_STARTED");
+      expect((reconstructed?.payload as any)?.reconstructed).toBe(true);
+      expect(reconstructed?.description).toContain("[Reconstructed]");
+
+      // Idempotent second run
+      const secondRun = await backfillCaseTimelineGaps({ db }, { tenantId: tenantA.id });
+      expect(secondRun.details.some((d) => d.caseId === c.id && d.entityId === orphanAttempt.id)).toBe(false);
     });
   });
 

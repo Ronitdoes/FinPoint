@@ -28,7 +28,7 @@ Step 18 implements the **Payment Gateway Integration Adapters and Financial Exec
 
 Key requirements from `specs/steps/s-18.md`:
 1. **`PaymentProvider` Interface**: Unified interface supporting `retryPayment`, `createPaymentLink`, and `getPaymentStatus` across Stripe, Razorpay, and Mock implementations.
-2. **Standard Decline Taxonomy**: Pure normalization mapping heterogeneous gateway failure responses (Stripe decline codes, Razorpay error codes) into internal taxonomies (`insufficient_funds`, `card_expired`, `invalid_card_number`, `do_not_honor`, `stale_card`, `processing_error`, `risk_blocked`, `network_error`, `rate_limited`).
+2. **Standard Decline Taxonomy**: Pure normalization mapping heterogeneous gateway failure responses (Stripe decline codes, Razorpay error codes) into the canonical `INTERNAL_DECLINE_CODES` (`insufficient_funds`, `stale_card`, `bank_decline`, `do_not_honor`, `incorrect_cvc`, `lost_or_stolen`, `fraudulent`, `invalid_account`, `processing_error`, `unknown_decline` — see `packages/integrations/src/payments/types.ts`).
 3. **Anti-Double-Charging & Idempotency**: Idempotency key format `{tenant}:{case}:RETRY_PAYMENT:{attempt}`. The execution layer guarantees that a duplicate invocation or concurrent race condition never triggers multiple financial charges against the customer or gateway.
 4. **Deterministic Mock Provider**: Out-of-the-box support for mock execution with attempt-based scripting (e.g., attempt 1 fails `insufficient_funds`, attempt 2 succeeds), `SIMULATE_PAYMENT_TIMEOUT` failure injection, and runtime outcome overrides via `setOutcomeOverride` and demo REST endpoints.
 5. **Payment Execution Service**: Orchestrates guarded action claiming (`claimActionForExecution`), idempotency row reservation (`payment_attempts` with status `REQUESTED`), network retries with exponential backoff (up to 2 retries on 5xx/network errors), payment record status updates, and fee capture into `recovery_cost_entries` (`category: 'PAYMENT_PROCESSING'`).
@@ -105,9 +105,9 @@ export interface PaymentProvider {
 ```
 
 ### Standard Taxonomy & Error Mappings
-- **Internal Decline Codes**: `insufficient_funds`, `card_expired`, `invalid_card_number`, `do_not_honor`, `stale_card`, `processing_error`, `risk_blocked`, `network_error`, `rate_limited`, `generic_decline`.
-- **`mapStripeDeclineCode(code)`**: Translates Stripe error strings (`insufficient_funds` -> `insufficient_funds`, `expired_card` -> `card_expired`, `incorrect_number` -> `invalid_card_number`, `do_not_honor` -> `do_not_honor`, `fraudulent` -> `risk_blocked`).
-- **`mapRazorpayErrorCode(code)`**: Translates Razorpay error strings (`BAD_REQUEST_ERROR` with insufficient balance -> `insufficient_funds`, `GATEWAY_ERROR` -> `processing_error`, etc.).
+- **Internal Decline Codes** (canonical, see `packages/integrations/src/payments/types.ts` `INTERNAL_DECLINE_CODES`): `insufficient_funds`, `stale_card`, `bank_decline`, `do_not_honor`, `incorrect_cvc`, `lost_or_stolen`, `fraudulent`, `invalid_account`, `processing_error`, `unknown_decline`.
+- **`mapStripeDeclineCode(code)`**: Translates Stripe error strings (`insufficient_funds` -> `insufficient_funds`, `expired_card` -> `stale_card`, `incorrect_cvc`/`invalid_cvc` -> `incorrect_cvc`, `lost_card`/`stolen_card` -> `lost_or_stolen`, `do_not_honor` -> `do_not_honor`, `card_declined`/`generic_decline` -> `bank_decline`, `fraudulent` -> `fraudulent`, `incorrect_number` -> `invalid_account`, `processing_error` -> `processing_error`, unknown -> `unknown_decline`).
+- **`mapRazorpayErrorCode(code)`**: Translates Razorpay error strings (insufficient-balance text -> `insufficient_funds`, expired/expiry -> `stale_card`, CVV text -> `incorrect_cvc`, lost/stolen -> `lost_or_stolen`, bank-decline text -> `bank_decline`, fraud/risk text -> `fraudulent`, invalid-account/card -> `invalid_account`, gateway/server text -> `processing_error`, else `unknown_decline`).
 
 ---
 
@@ -208,7 +208,7 @@ Location: `apps/backend/src/modules/payments/routes.ts`
 |---|---|---|---|
 | `/payments/:id` | `GET` | `VIEWER+` | Retrieves payment details, customer info, and full attempts timeline. Enforces multi-tenant 404 isolation. |
 | `/payments/:id/status` | `GET` | `OPERATIONS+` | Queries upstream gateway status, updates database if changed, records fee entry, and returns refresh status. Rate limited to 30 requests/minute. |
-| `/demo/mock/payments/:key/next-outcome` | `POST` | Open / Demo | Injects scripted override into `MockPaymentProvider` for automated testing and sandbox demonstrations. |
+| `/demo/mock/payments/:key/next-outcome` | `POST` | `demoGuard` + auth + demo rate-limit (s-30 fix; unauthenticated route removed — see `apps/backend/src/modules/payments/routes.ts` comment) | Injects scripted override into `MockPaymentProvider` for automated testing and sandbox demonstrations. |
 
 ---
 
@@ -234,7 +234,7 @@ Location: `apps/backend/src/modules/payments/routes.ts`
    - **Result**: `17 passed, 0 failed` (13ms).
 
 2. **Backend Payment Execution Integration Tests (`apps/backend/src/tests/payment-execution-integration.test.ts`)**:
-   - 11 comprehensive tests verifying:
+    - 12 comprehensive tests (as of <2026-09-10>) verifying:
      - Idempotency short-circuiting on duplicate key.
      - Concurrent race safety preventing duplicate charges.
      - Full success lifecycle: action claiming, payment updates, and fee capture.
@@ -245,15 +245,16 @@ Location: `apps/backend/src/modules/payments/routes.ts`
      - `GET /payments/:id` 404 cross-tenant isolation.
      - `GET /payments/:id/status` `OPERATIONS+` permission and DB refresh.
      - `GET /payments/:id/status` `403 Forbidden` rejection for `VIEWER`.
-     - `POST /demo/mock/payments/:key/next-outcome` scripted overrides.
-   - **Result**: `11 passed, 0 failed` (35.1s).
+      - `POST /demo/mock/payments/:key/next-outcome` scripted overrides.
+      - `POST /demo/mock/payments/:key/next-outcome` rejects unauthenticated scripting with 401 (s-30 `demoGuard` regression test).
+    - **Result**: `12 passed, 0 failed` (as of <2026-09-10>).
 
 ### Verification Commands Run
 
 ```bash
 bun run check-types   # PASSED (11/11 packages & apps clean)
 bun run lint          # PASSED (0 errors)
-bunx vitest run       # PASSED (28/28 Step 18 tests passing)
+bunx vitest run       # PASSED (29/29 Step 18 tests passing: 17 contract + 12 integration, as of <2026-09-10>, verified via grep; drift note: progress.md s-18 row cites historical 28 — current 29 reflects s-30 demoGuard regression test as 12th integration test)
 bun run check-docs    # PASSED (19 doc links OK)
 ```
 

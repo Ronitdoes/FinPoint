@@ -33,6 +33,7 @@ import {
 import { createWorkflow, recordWorkflowEvent, listWorkflowEvents } from "./workflows.repo";
 import {
   insertMessage,
+  findMessageById,
   updateMessageStatus,
   recordDeliveryEvent,
   listDeliveryEvents,
@@ -425,6 +426,128 @@ describe("Step 06 — Repository Layer & Concurrency Guards", () => {
           idempotencyKey: key,
         }),
       ).rejects.toThrow(DuplicateMessageError);
+    }, 15000);
+
+    it("updateMessageStatus enforces legal transitions and returns null on illegal/terminal writes", async () => {
+      const msg = await insertMessage({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+        channel: "WHATSAPP",
+        templateId: "guard_test",
+        toAddress: "+14155550001",
+        provider: "MOCK",
+        idempotencyKey: `guard-msg-${Date.now()}-${randomUUID()}`,
+      });
+      expect(msg.status).toBe("QUEUED");
+
+      // Illegal skip: QUEUED -> READ must be refused, row untouched
+      const skipped = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: msg.id,
+        status: "READ",
+      });
+      expect(skipped).toBeNull();
+      expect(
+        (await findMessageById({}, { tenantId: testTenantId, messageId: msg.id }))?.status,
+      ).toBe("QUEUED");
+
+      // Legal chain: QUEUED -> SENT -> DELIVERED -> READ
+      const sent = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: msg.id,
+        status: "SENT",
+        providerMessageId: `wa_${randomUUID()}`,
+        sentAt: new Date(),
+      });
+      expect(sent?.status).toBe("SENT");
+
+      const delivered = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: msg.id,
+        status: "DELIVERED",
+      });
+      expect(delivered?.status).toBe("DELIVERED");
+
+      const read = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: msg.id,
+        status: "READ",
+      });
+      expect(read?.status).toBe("READ");
+
+      // Terminal: READ -> FAILED must be refused, row stays READ
+      const raced = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: msg.id,
+        status: "FAILED",
+        finalStatusAt: new Date(),
+      });
+      expect(raced).toBeNull();
+      expect(
+        (await findMessageById({}, { tenantId: testTenantId, messageId: msg.id }))?.status,
+      ).toBe("READ");
+    }, 15000);
+
+    it("updateMessageStatus allows QUEUED->FAILED and SENT->REJECTED, then freezes terminals", async () => {
+      const failMsg = await insertMessage({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+        channel: "EMAIL",
+        templateId: "guard_fail_test",
+        toAddress: "guard@example.com",
+        provider: "MOCK",
+        idempotencyKey: `guard-fail-${Date.now()}-${randomUUID()}`,
+      });
+
+      const failed = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: failMsg.id,
+        status: "FAILED",
+        finalStatusAt: new Date(),
+      });
+      expect(failed?.status).toBe("FAILED");
+
+      // Terminal: FAILED -> DELIVERED must be refused
+      const afterFailed = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: failMsg.id,
+        status: "DELIVERED",
+      });
+      expect(afterFailed).toBeNull();
+
+      const rejectMsg = await insertMessage({}, {
+        tenantId: testTenantId,
+        customerId: testCustomerId,
+        channel: "EMAIL",
+        templateId: "guard_reject_test",
+        toAddress: "guard@example.com",
+        provider: "MOCK",
+        idempotencyKey: `guard-reject-${Date.now()}-${randomUUID()}`,
+      });
+
+      const sent = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: rejectMsg.id,
+        status: "SENT",
+        providerMessageId: `mail_${randomUUID()}`,
+        sentAt: new Date(),
+      });
+      expect(sent?.status).toBe("SENT");
+
+      const rejected = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: rejectMsg.id,
+        status: "REJECTED",
+      });
+      expect(rejected?.status).toBe("REJECTED");
+
+      // Terminal: REJECTED -> READ must be refused
+      const afterRejected = await updateMessageStatus({}, {
+        tenantId: testTenantId,
+        messageId: rejectMsg.id,
+        status: "READ",
+      });
+      expect(afterRejected).toBeNull();
     }, 15000);
   });
 

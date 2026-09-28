@@ -45,10 +45,12 @@ export async function startServer() {
 
   // s-33 startup self-check log: prod-shape assertions an operator (or the
   // staging smoke script) can verify without another request.
+  // Release stamps come from typed config (packages/config `release` group),
+  // not raw process.env (CONVENTIONS §1).
   app.log.info(
     {
-      version: process.env.APP_VERSION ?? "dev",
-      sha: process.env.GIT_SHA ?? "dev",
+      version: config.release.version,
+      sha: config.release.gitSha,
       env: config.app.env,
       mockProviders: config.demo.mockProviders,
       demoRoutes: config.demo.mockProviders ? "enabled" : "omitted",

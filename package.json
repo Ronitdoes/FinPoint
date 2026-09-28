@@ -12,20 +12,21 @@
     "test:e2e:coverage": "bun scripts/e2e-coverage-check.mjs",
     "security:sweep": "bun scripts/security-sweep.mjs",
     "security:audit": "bun scripts/dependency-audit.mjs",
+    "boundaries:audit": "bun scripts/audit-boundaries.ts",
     "deploy:check": "bun scripts/deploy-check.mjs",
     "smoke:staging": "bun scripts/smoke-staging.mjs",
     "rollback:compat-check": "bun scripts/rollback-compat-check.mjs",
     "check-docs": "bun scripts/check-docs-links.mjs",
+    "audit:coverage": "bun apps/backend/src/modules/audit/coverage.check.ts",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
     "db:migrate": "bun --filter @repo/db db:migrate",
     "db:migrate:check": "bun --filter @repo/db db:migrate:check",
     "db:seed": "bun --filter @repo/db db:seed",
-    "infra:up": "docker compose -f infra/docker/docker-compose.yml up -d --wait",
-    "infra:up:build": "docker compose -f infra/docker/docker-compose.yml up -d --build --wait",
-    "infra:build": "docker compose -f infra/docker/docker-compose.yml build",
-    "infra:down": "docker compose -f infra/docker/docker-compose.yml down"
+    "infra:up": "docker compose --profile worker -f infra/docker/docker-compose.yml up -d --wait",
+    "infra:up:build": "docker compose --profile worker -f infra/docker/docker-compose.yml up -d --build --wait",
+    "infra:down": "docker compose --profile worker -f infra/docker/docker-compose.yml down"
   },
   "devDependencies": {
     "@repo/config": "workspace:*",
@@ -34,14 +35,14 @@
     "@repo/integrations": "workspace:*",
     "@repo/observability": "workspace:*",
     "@repo/worker": "workspace:*",
-    "@types/node": "^20",
-    "fastify": "^5.2.1",
-    "ioredis": "^5.4.2",
-    "pino": "^9.6.0",
-    "prettier": "^3.7.4",
-    "turbo": "^2.10.11",
-    "typescript": "5.9.2",
-    "vitest": "^3.2.4"
+    "@types/node": "^22.20.2",
+    "fastify": "^5.12.4",
+    "ioredis": "^6.0.0",
+    "pino": "^10.3.1",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.12",
+    "typescript": "5.9.3",
+    "vitest": "^3.2.7"
   },
   "engines": {
     "node": ">=18"

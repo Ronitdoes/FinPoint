@@ -112,6 +112,41 @@ export class RiskService {
   }
 
   /**
+   * Checkout counterpart of `resolvePaymentForRisk` (Stripe
+   * `checkout.session.completed` publishes the provider session/client
+   * reference as `entity_id`, while the checkouts table is keyed by DB UUID
+   * with the provider reference in `source_ref`). Without this fallback the
+   * close path anchors on the raw provider id and never matches the OPEN risk
+   * anchored on the canonical checkout id. Returns the canonical DB id for
+   * downstream anchoring.
+   */
+  private async resolveCheckoutForRisk(
+    tenantId: string,
+    entityId: string,
+  ): Promise<{ checkout: any | null; checkoutId: string }> {
+    try {
+      const byId = await this.app.repos.findCheckoutById(
+        { db: this.app.db },
+        { tenantId, checkoutId: entityId },
+      );
+      if (byId) return { checkout: byId, checkoutId: byId.id };
+    } catch {
+      // Non-UUID provider id — fall through to the source-ref filter.
+    }
+    try {
+      const bySourceRef = await this.app.repos.findCheckoutBySourceRef(
+        { db: this.app.db },
+        { tenantId, sourceRef: entityId },
+      );
+      if (bySourceRef)
+        return { checkout: bySourceRef, checkoutId: bySourceRef.id };
+    } catch {
+      // Keep the raw entity id as the anchor.
+    }
+    return { checkout: null, checkoutId: entityId };
+  }
+
+  /**
    * Handles inbound domain events from the bus (consumer group: risk-engine).
    */
   async handleDomainEvent(
@@ -163,13 +198,21 @@ export class RiskService {
         break;
       }
 
-      case "checkout.completed":
+      case "checkout.completed": {
+        // Webhook envelopes carry the provider session/client reference;
+        // resolve to the DB anchor so previously calculated OPEN risks
+        // actually close (mirror of the payment/invoice close paths).
+        const { checkoutId } = await this.resolveCheckoutForRisk(
+          event.tenant_id,
+          event.entity_id,
+        );
         await this.closeOpenRisksForSubject(
           event.tenant_id,
           "CHECKOUT",
-          event.entity_id,
+          checkoutId,
         );
         break;
+      }
 
       default:
         // Other events are non-trigger events for the risk engine
@@ -264,16 +307,14 @@ export class RiskService {
     startTime: number,
   ): Promise<void> {
     const tenantId = event.tenant_id;
-    const checkoutId = event.entity_id;
-
-    const [customer, checkout] = await Promise.all([
+    // Canonical DB anchor (provider source-ref fallback for webhook
+    // envelopes), so the trigger anchor matches the checkout.completed close
+    // anchor resolved via resolveCheckoutForRisk.
+    const [{ checkout, checkoutId }, customer] = await Promise.all([
+      this.resolveCheckoutForRisk(tenantId, event.entity_id),
       this.app.repos.findCustomerById(
         { db: this.app.db },
         { tenantId, customerId: event.customer_id },
-      ),
-      this.app.repos.findCheckoutById(
-        { db: this.app.db },
-        { tenantId, checkoutId },
       ),
     ]);
 

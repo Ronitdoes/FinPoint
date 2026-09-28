@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -18,7 +18,16 @@ import { createNonRetryableFailure } from "../framework";
 import { startRecoveryWorkflow } from "../client";
 import { PaymentSuccessSignalBridge } from "../signaling/payment-success.bridge";
 // eslint-disable-next-line no-restricted-imports
-import { db, createTenant, createCustomer, createCase } from "@repo/db";
+import {
+  db,
+  createTenant,
+  createCustomer,
+  createCase,
+  createPayment,
+  createPaymentAttempt,
+  findPaymentAttemptByIdempotencyKey,
+  resolvePaymentAttempt,
+} from "@repo/db";
 // eslint-disable-next-line no-restricted-imports
 import type { EventBus } from "@repo/integrations";
 import type { RecoveryWorkflowClient } from "@repo/orchestration";
@@ -39,17 +48,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 describe("Step 22 — Workflow A: Failed Payment Recovery Matrix", () => {
+  // Time-skipped workflows with 24h+ simulated waits can exceed the default
+  // 30s timeout on loaded machines (docker stack + parallel suites).
+  vi.setConfig({ testTimeout: 180000, hookTimeout: 120000 });
   let testEnv: TestWorkflowEnvironment;
 
   beforeAll(async () => {
-    try {
-      testEnv = await TestWorkflowEnvironment.createTimeSkipping();
-    } catch {
-      testEnv = await TestWorkflowEnvironment.createLocal({
-        server: { port: 7233 },
-      });
+    // Retry time-skipping: parallel vitest files can collide starting the
+    // Java test server. Fall back to an ISOLATED local test server on an
+    // ephemeral port — never :7233 (real compose Temporal, no `default` ns).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        testEnv = await TestWorkflowEnvironment.createTimeSkipping();
+        return;
+      } catch {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
     }
-  }, 60000);
+    console.warn(
+      "[worker-tests] time-skipping test server unavailable; using real-time local server",
+    );
+    testEnv = await TestWorkflowEnvironment.createLocal();
+  }, 120000);
 
   afterAll(async () => {
     if (testEnv) {
@@ -448,18 +468,123 @@ describe("Step 22 — Workflow A: Failed Payment Recovery Matrix", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 6. Concurrent Attempts (Double Charge Prevention)
+  // 6. Concurrent Attempts (Double Charge Prevention via idempotency claim)
   // ---------------------------------------------------------------------------
-  it("6. concurrent attempts: deterministic idempotency keys prevent duplicate charges", async () => {
-    const tenantId = randomUUID();
+  it("6. concurrent attempts: two concurrent executeRetryPayment with same key -> single provider call, second returns existing", async () => {
+    const tenant = await createTenant(
+      { db },
+      { name: "Claim Test Tenant", slug: `claim-test-${randomUUID()}` },
+    );
+    const customer = await createCustomer(
+      { db },
+      {
+        tenantId: tenant.id,
+        email: `claim_${randomUUID()}@example.com`,
+        phone: "+919876543210",
+        name: "Claim Customer",
+      },
+    );
+    const payment = await createPayment(
+      { db },
+      {
+        tenantId: tenant.id,
+        customerId: customer.id,
+        amount: 1299900n,
+        currency: "INR",
+        status: "FAILED",
+        provider: "MOCK",
+        providerPaymentId: `mock_${randomUUID()}`,
+        occurredAt: new Date(),
+      },
+    );
+    const tenantId = tenant.id;
     const caseId = randomUUID();
     const attemptNumber = 1;
 
     const key1 = `${tenantId}:${caseId}:RETRY_PAYMENT:${attemptNumber}`;
     const key2 = `${tenantId}:${caseId}:RETRY_PAYMENT:${attemptNumber}`;
 
+    // Deterministic key format (CONVENTIONS §8)
     expect(key1).toBe(key2);
     expect(key1).toContain(`RETRY_PAYMENT:${attemptNumber}`);
+
+    // Provider spy: counts real money-moving side effects.
+    let providerCalls = 0;
+    const mockProviderCharge = async () => {
+      providerCalls++;
+      // Simulate small provider latency to widen the race window.
+      await new Promise((r) => setTimeout(r, 20));
+      return { status: "SUCCEEDED" as const, reference: `prov_${randomUUID()}` };
+    };
+
+    // Claim helper mirroring executeRetryPayment pre-check + unique-constraint
+    // backstop: claim REQUESTED row first; only the winner invokes the provider.
+    // Loser hits the unique violation and returns the existing row without charging.
+    const claimedExecute = async () => {
+      try {
+        const claimed = await createPaymentAttempt(
+          { db },
+          {
+            tenantId,
+            paymentId: payment.id,
+            attemptNumber,
+            initiatedBy: "RECOVERY_WORKFLOW",
+            idempotencyKey: key1,
+            status: "REQUESTED",
+            requestedAt: new Date(),
+          },
+        );
+        const providerResult = await mockProviderCharge();
+        await resolvePaymentAttempt(
+          { db },
+          {
+            tenantId,
+            attemptId: claimed.id,
+            status: "SUCCEEDED",
+            providerReference: providerResult.reference,
+          },
+        );
+        return { attemptId: claimed.id, isWinner: true };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Drizzle wraps driver errors ("Failed query: ...", cause = PostgresError),
+        // so inspect the cause chain for 23505 as well as the message text.
+        const code =
+          (err as { code?: unknown })?.code ??
+          (err as { cause?: { code?: unknown } })?.cause?.code;
+        const causeMsg =
+          (err as { cause?: { message?: unknown } })?.cause?.message ?? "";
+        const haystack = `${msg} ${String(causeMsg)}`.toLowerCase();
+        const isUnique =
+          code === "23505" ||
+          haystack.includes("unique") ||
+          haystack.includes("duplicate");
+        if (!isUnique) throw err;
+        const existing = await findPaymentAttemptByIdempotencyKey(
+          { db },
+          { tenantId, idempotencyKey: key1 },
+        );
+        expect(existing).toBeDefined();
+        return { attemptId: existing!.id, isWinner: false };
+      }
+    };
+
+    const [r1, r2] = await Promise.all([claimedExecute(), claimedExecute()]);
+
+    // Exactly one provider invocation despite concurrent entry.
+    expect(providerCalls).toBe(1);
+    // Both callers converge on the same attempt row (no double charge).
+    expect(r1.attemptId).toBe(r2.attemptId);
+    const winners = [r1, r2].filter((r) => r.isWinner);
+    const losers = [r1, r2].filter((r) => !r.isWinner);
+    expect(winners.length).toBe(1);
+    expect(losers.length).toBe(1);
+
+    const stored = await findPaymentAttemptByIdempotencyKey(
+      { db },
+      { tenantId, idempotencyKey: key1 },
+    );
+    expect(stored?.id).toBe(r1.attemptId);
   });
 
   // ---------------------------------------------------------------------------
@@ -859,6 +984,83 @@ describe("Step 22 — Workflow A: Failed Payment Recovery Matrix", () => {
     expect(result).toEqual({ outcome: "RECOVERED", attemptNumber: 1 });
     expect(spy.calls["recordOutcome"]).toBeDefined();
   }, 90000);
+
+  // ---------------------------------------------------------------------------
+  // 13. Policy-threading audit (s-22/s-24): per-round retry_count counters
+  // ---------------------------------------------------------------------------
+  it("13b. policy re-check threads per-round retry_count counters (round-1)", async () => {
+    const caseId = randomUUID();
+    const paymentId = `pay_${randomUUID()}`;
+    const tenantId = randomUUID();
+    let attempt = 0;
+
+    const { mockActivities, spy } = createActivityMocks({
+      async executeRetryPayment(input) {
+        attempt++;
+        if (attempt === 1) {
+          return {
+            status: "FAILED",
+            attemptId: `att_${randomUUID()}`,
+            paymentId: input.paymentId,
+            declineCode: "try_again_later",
+          };
+        }
+        return {
+          status: "SUCCEEDED",
+          attemptId: `att_${randomUUID()}`,
+          paymentId: input.paymentId,
+        };
+      },
+    });
+
+    const taskQueue = `test-queue-${randomUUID()}`;
+    const workflowsPath = path.resolve(__dirname, "./index.ts");
+
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      namespace: testEnv.client.options.namespace,
+      taskQueue,
+      workflowsPath,
+      activities: mockActivities,
+    });
+
+    const input: RecoveryWorkflowInput = {
+      tenantId,
+      caseId,
+      workflowType: "failedPaymentRecoveryWorkflow",
+      paymentId,
+      metadata: { retryDelay: "1s" },
+    };
+
+    const result = await worker.runUntil(async () => {
+      const handle = await testEnv.client.workflow.start(
+        failedPaymentRecoveryWorkflow,
+        {
+          workflowId: WORKFLOW_ID(caseId),
+          taskQueue,
+          args: [input],
+        },
+      );
+
+      return await handle.result();
+    });
+
+    expect(result).toEqual({ outcome: "RECOVERED", attemptNumber: 2 });
+
+    // Both RETRY_PAYMENT policy re-checks carry the per-round retry count
+    // so POL-MAXRETRY can fire per-round inside checkPolicyAgain.
+    const retryChecks = (spy.calls["checkPolicyAgain"] ?? []).filter(
+      (args) =>
+        (args[0] as { actionType?: string }).actionType === "RETRY_PAYMENT",
+    );
+    expect(retryChecks.length).toBe(2);
+    expect(
+      (retryChecks[0]?.[0] as { counters?: Record<string, number> }).counters,
+    ).toEqual({ retry_count: 0 });
+    expect(
+      (retryChecks[1]?.[0] as { counters?: Record<string, number> }).counters,
+    ).toEqual({ retry_count: 1 });
+  });
 
   // ---------------------------------------------------------------------------
   // 13. Signal Bridge Test

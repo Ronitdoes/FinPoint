@@ -56,7 +56,7 @@ export class RazorpayAdapter implements PaymentProvider {
     try {
       const url = `${this.baseUrl}/v1/orders`;
       const body = {
-        amount: Number(input.amount),
+        amount: input.amount.toString(),
         currency: input.currency.toUpperCase(),
         receipt: input.idempotencyKey,
         notes: {
@@ -131,7 +131,7 @@ export class RazorpayAdapter implements PaymentProvider {
     try {
       const url = `${this.baseUrl}/v1/payment_links`;
       const body: Record<string, any> = {
-        amount: Number(input.amount),
+        amount: input.amount.toString(),
         currency: input.currency.toUpperCase(),
         reference_id: input.idempotencyKey,
         description: input.description || "Revenue Recovery Invoice Payment",

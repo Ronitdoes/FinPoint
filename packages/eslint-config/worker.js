@@ -75,6 +75,39 @@ export const config = [
           message: "fetch() is non-deterministic and prohibited in workflow code. Use proxyActivities instead.",
         },
       ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']",
+          message:
+            "Date.now() wall-clock is non-deterministic and prohibited in workflow code. Use Temporal workflow time (sleep/condition) or pass timestamps via activities.",
+        },
+        {
+          selector: "CallExpression[callee.object.name='Math'][callee.property.name='random']",
+          message:
+            "Math.random() is non-deterministic and prohibited in workflow code. Generate randomness inside activities.",
+        },
+        {
+          selector: "NewExpression[callee.name='Date']",
+          message:
+            "new Date() wall-clock is prohibited in workflow code. Use Temporal workflow time APIs or activity-provided timestamps.",
+        },
+        {
+          selector: "CallExpression[callee.object.name='Date'][callee.property.name='parse']",
+          message:
+            "Date.parse() wall-clock parsing is prohibited in workflow code. Parse dates inside activities.",
+        },
+      ],
+    },
+  },
+  {
+    // Workflow co-located tests need DB fakes, wall-clock, and randomness to
+    // drive the time-skipping harness — exclude them from determinism bans.
+    files: ["**/workflows/**/*.test.ts", "**/workflows/**/*.spec.ts"],
+    rules: {
+      "no-restricted-imports": "off",
+      "no-restricted-globals": "off",
+      "no-restricted-syntax": "off",
     },
   },
 ];

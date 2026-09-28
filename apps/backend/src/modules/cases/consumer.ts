@@ -2,13 +2,15 @@ import type { FastifyInstance } from "fastify";
 import type { DomainEvent, RiskType } from "@repo/domain";
 import {
   GROUP_ORCHESTRATOR,
+  GROUP_ORCHESTRATOR_RETRY,
   TOPIC_MAIN,
+  TOPIC_RETRY,
   type EventContext,
 } from "@repo/integrations";
 import {
-  DefaultWorkflowClient,
   type RecoveryWorkflowClient,
 } from "@repo/orchestration";
+import { LiveWorkflowClient } from "../../lib/live-workflow-client";
 import { getLogger } from "@repo/observability";
 import { CaseCreationService } from "./creation.service";
 import { CasePipelineService } from "./pipeline.service";
@@ -32,8 +34,10 @@ export class CaseConsumerHandler {
       config: app.config,
       redis: (app as any).redisClient,
     });
+    // L1: live Temporal dispatch via worker client with DB-row fallback
+    // (LiveWorkflowClient); injectable for tests via (app as any).workflowClient.
     this.workflowClient =
-      (app as any).workflowClient ?? new DefaultWorkflowClient(app.db);
+      (app as any).workflowClient ?? new LiveWorkflowClient(app.db);
   }
 
   async handleDomainEvent(
@@ -198,38 +202,66 @@ export class CaseConsumerHandler {
 
   /**
    * Handles case.opened: Triggers the multi-stage qualification and recovery pipeline asynchronously.
+   *
+   * Non-blocking: schedules the heavy pipeline (LLM + policy + workflow start)
+   * in the background via setImmediate (queueMicrotask fallback) and returns
+   * immediately so the bus handler acks fast. Duplicate redelivery is safe:
+   * runPipeline resumes from the first incomplete stage via guarded status +
+   * append-only ledger.
    */
   private async handleCaseOpened(event: DomainEvent): Promise<void> {
     const payload = event.payload as { caseId?: string };
     const caseId = payload.caseId ?? event.entity_id;
+    const tenantId = event.tenant_id;
+    const correlationId = event.correlation_id;
+    const traceparent = event.traceparent;
 
     logger.info(
-      { tenantId: event.tenant_id, caseId },
-      "Received case.opened; starting asynchronous recovery pipeline",
+      { tenant_id: tenantId, case_id: caseId, correlation_id: correlationId },
+      "Received case.opened; scheduling asynchronous recovery pipeline",
     );
 
-    await this.pipelineService.runPipeline({
-      tenantId: event.tenant_id,
-      caseId,
-      correlationId: event.correlation_id,
-      traceparent: event.traceparent,
-    });
+    const runInBackground = (): void => {
+      this.pipelineService
+        .runPipeline({ tenantId, caseId, correlationId, traceparent })
+        .catch((err: unknown) => {
+          logger.error(
+            {
+              tenant_id: tenantId,
+              case_id: caseId,
+              correlation_id: correlationId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            "Background recovery pipeline failed; awaiting case.opened redelivery or manual rerun",
+          );
+        });
+    };
+
+    if (typeof setImmediate !== "undefined") {
+      setImmediate(runInBackground);
+    } else {
+      queueMicrotask(runInBackground);
+    }
   }
 }
 
 /**
  * Wires the orchestrator consumer group to the revenue-events.v1 topic (Spec 01 §0, s-17 §Requirements 1).
+ * Also subscribes to RETRY (s-11 fix) so backoff retries are consumed.
  */
 export function registerCaseConsumer(app: FastifyInstance): void {
   const handler = new CaseConsumerHandler(app);
 
-  app.eventBus.subscribe(
-    TOPIC_MAIN,
-    GROUP_ORCHESTRATOR,
-    async (event: DomainEvent, ctx: EventContext) => {
-      await handler.handleDomainEvent(event, ctx);
-    },
-  );
+  const onEvent = async (event: DomainEvent, ctx: EventContext) => {
+    await handler.handleDomainEvent(event, ctx);
+  };
+
+  app.eventBus.subscribe(TOPIC_MAIN, GROUP_ORCHESTRATOR, onEvent);
+
+  // Retry topic on its own group (s-11 fix v3 — see risk/consumer.ts).
+  void Promise.resolve(
+    app.eventBus.subscribe(TOPIC_RETRY, GROUP_ORCHESTRATOR_RETRY, onEvent),
+  ).catch(() => {});
 
   app.log.info(
     { group: GROUP_ORCHESTRATOR, topic: TOPIC_MAIN },

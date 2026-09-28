@@ -9,10 +9,13 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "lint": "eslint .",
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "eslint": "^9",
     "typescript": "^5"
   }
 }

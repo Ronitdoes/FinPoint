@@ -16,7 +16,7 @@ This document explains, in complete depth, everything implemented for `specs/ste
 8. [Event-Reactive Signal Bridge (`CustomerResponseSignalBridge`)](#8-event-reactive-signal-bridge)
 9. [Worker-Side Cron Reconciler (`DailyReconciler`)](#9-worker-side-cron-reconciler)
 10. [Backend REST Endpoints (`/promises-to-pay`)](#10-backend-rest-endpoints)
-11. [Verification Evidence & 9-Scenario Test Matrix](#11-verification-evidence--9-scenario-test-matrix)
+11. [Verification Evidence & 11-Scenario Test Matrix](#11-verification-evidence--11-scenario-test-matrix)
 12. [Deviations & Judgment Calls](#12-deviations--judgment-calls)
 
 ---
@@ -35,7 +35,7 @@ Step `s-24` implements **Workflow C** (Surface 3: Overdue Invoice & Promise-to-P
 - [x] Signal bridge listening on `revenue-events.v1` for customer replies, disputes, payments, and opt-outs.
 - [x] Daily cron reconciler for orphaned overdue invoices and expired PTP records.
 - [x] REST endpoints `GET /promises-to-pay` and `POST /promises-to-pay/:id/mark-honored`.
-- [x] Full 9-scenario acceptance test matrix running against Temporal time-skipping test server.
+- [x] Full 11-scenario acceptance test matrix (9 spec scenarios + 5b bare-link HIGHVALUE gate + mid-PTP dispute) running against Temporal time-skipping test server.
 
 ---
 
@@ -236,9 +236,9 @@ Implements daily background scheduler safety nets:
 
 ---
 
-## 11. Verification Evidence & 9-Scenario Test Matrix
+## 11. Verification Evidence & 11-Scenario Test Matrix
 
-**Test Suite:** `services/worker/src/workflows/invoice-overdue.test.ts` (9/9 Scenarios Passing)
+**Test Suite:** `services/worker/src/workflows/invoice-overdue.test.ts` (11/11 Scenarios Passing: 9 spec scenarios + 5b + 10)
 
 | # | Scenario | Mechanism | Result |
 |---|---|---|---|
@@ -247,10 +247,12 @@ Implements daily background scheduler safety nets:
 | 3 | **Expired Promise** | Promise reached hard expiry | `ESCALATED` (Deduped single task) |
 | 4 | **Dispute Mid-Ladder** | Dispute signal arrives after Step 1 | `STOPPED (DISPUTED)` + `DISPUTE_REVIEW` task; subsequent touches blocked |
 | 5 | **High-Value Governance** | Amount > ₹100,000 + proposed discount | Operator approval required; approved → discount sent, rejected → discount skipped |
+| 5b | **Bare High-Value Link Gate** | High-value invoice with discount-less payment link (bypasses `OFFER_INCENTIVE`) | `CREATE_PAYMENT_LINK` policy gate fires; approved → link created, rejected → `STOPPED (HUMAN_REJECTED)` without link |
 | 6 | **Contact Cap Enforcement** | Policy cap `MAX_EMAIL_PER_14_DAYS = 3` | 4th email attempt rejected by policy engine |
 | 7 | **Missed-Webhook Reconciler** | Orphaned OVERDUE invoice in DB | Daily reconciler detects invoice and emits event exactly once |
 | 8 | **30-Day Time-Skipped Run** | Full multi-week ladder with delays | Completed without timeout errors |
 | 9 | **Paid-Before-Start** | Invoice already marked PAID in DB | Workflow exits immediately with `RECOVERED (PRE_EXISTING)` without reminders |
+| 10 | **Dispute Mid-PTP-Wait** | Dispute signal arrives while child `promiseToPayWorkflow` is waiting | Child `DISPUTED` + parent `STOPPED (DISPUTED)` + single `DISPUTE_REVIEW` task |
 
 ### Monorepo Validation Results:
 - `bun run check-types`: **12/12 successful** (0 errors)

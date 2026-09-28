@@ -19,22 +19,21 @@ export const DEFAULT_INJECTIONS: DemoInjections = {
 };
 
 /**
- * Resolves default fallback injections from configuration or environment.
+ * Resolves default fallback injections from typed configuration.
+ *
+ * CONVENTIONS §1: the only env source is `@repo/config` (`DemoConfig`,
+ * validated fail-fast at boot with SIMULATE_* defaulting to false). When no
+ * config is provided (unit tests, Redis-less paths), defaults are all false —
+ * identical to the schema defaults. No raw `process.env` reads here; callers
+ * pass `(app as any).config?.demo` / `config.demo` (see demo/routes.ts,
+ * simulator.service.ts, ai/decide.service.ts).
  */
 export function getFallbackInjections(config?: Partial<DemoConfig> | null): DemoInjections {
   return {
-    simulate_payment_timeout:
-      config?.simulatePaymentTimeout ??
-      process.env.SIMULATE_PAYMENT_TIMEOUT === "true",
-    simulate_message_failure:
-      config?.simulateMessageFailure ??
-      process.env.SIMULATE_MESSAGE_FAILURE === "true",
-    simulate_llm_failure:
-      config?.simulateLlmFailure ??
-      process.env.SIMULATE_LLM_FAILURE === "true",
-    simulate_duplicate_webhook:
-      config?.simulateDuplicateWebhook ??
-      process.env.SIMULATE_DUPLICATE_WEBHOOK === "true",
+    simulate_payment_timeout: config?.simulatePaymentTimeout ?? false,
+    simulate_message_failure: config?.simulateMessageFailure ?? false,
+    simulate_llm_failure: config?.simulateLlmFailure ?? false,
+    simulate_duplicate_webhook: config?.simulateDuplicateWebhook ?? false,
   };
 }
 

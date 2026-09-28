@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 
 declare global {
@@ -33,18 +33,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 describe("Step 20 — Temporal Recovery Worker & Workflow Harness", () => {
+  // Time-skipped workflows can exceed the default 30s timeout on loaded machines.
+  vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
   let testEnv: TestWorkflowEnvironment;
 
   beforeAll(async () => {
-    try {
-      testEnv = await TestWorkflowEnvironment.createTimeSkipping();
-    } catch {
-      // If time-skipping binary is unavailable in local environment, connect to local compose Temporal server
-      testEnv = await TestWorkflowEnvironment.createLocal({
-        server: { port: 7233 },
-      });
+    // Retry time-skipping: parallel vitest files can collide starting the
+    // Java test server. Fall back to an ISOLATED local test server on an
+    // ephemeral port — never :7233 (real compose Temporal, no `default` ns).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        testEnv = await TestWorkflowEnvironment.createTimeSkipping();
+        return;
+      } catch {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
     }
-  }, 60000);
+    console.warn(
+      "[worker-tests] time-skipping test server unavailable; using real-time local server",
+    );
+    testEnv = await TestWorkflowEnvironment.createLocal();
+  }, 120000);
 
   afterAll(async () => {
     if (testEnv) {
@@ -118,20 +127,24 @@ describe("Step 20 — Temporal Recovery Worker & Workflow Harness", () => {
     };
 
     await worker.runUntil(async () => {
-      const handle = await testEnv.client.workflow.start(recoveryWorkflowTemplate, {
+      // signalWithStart: the pause signal is recorded in history before the
+      // workflow's first checkpoint evaluates `isPaused`, so the paused
+      // branch is taken deterministically (a plain post-start signal races
+      // the LOAD_SNAPSHOT activities and flakes under load).
+      await testEnv.client.workflow.signalWithStart(recoveryWorkflowTemplate, {
         workflowId,
         taskQueue,
         args: [input],
+        signal: pauseSignal,
+        signalArgs: [undefined],
       });
-
-      // Signal pause
-      await handle.signal(pauseSignal);
+      const handle = testEnv.client.workflow.getHandle(workflowId);
 
       // Verify query state shows paused
       const state = await handle.query(workflowStateQuery);
       expect(state.isPaused).toBe(true);
 
-      // Give worker a moment to process the checkpoint
+      // Give worker a moment to reach the pause checkpoint
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Signal resume
@@ -272,8 +285,19 @@ describe("Step 20 — Temporal Recovery Worker & Workflow Harness", () => {
         args: [input],
       });
 
-      // Allow workflow to advance to HUMAN_APPROVAL_WAIT
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // Allow workflow to advance to HUMAN_APPROVAL_WAIT.
+      // Poll for the created task instead of a fixed sleep: under load the
+      // worker may take longer than 200ms to reach createHumanTask, and
+      // signaling with an empty taskId would never match (strict taskId
+      // equality in awaitHumanApproval) — the workflow would then take the
+      // fallback path and the test would flake to RECOVERED.
+      {
+        const deadline = Date.now() + 15000;
+        while (!capturedTaskId && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+      expect(capturedTaskId).not.toBe("");
 
       // Signal human approval
       await handle.signal(humanDecisionSignal, {
@@ -336,7 +360,16 @@ describe("Step 20 — Temporal Recovery Worker & Workflow Harness", () => {
         args: [input],
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // Wait for HUMAN_APPROVAL_WAIT (poll, not fixed sleep — see approval
+      // test above: signaling with an empty taskId never matches and the
+      // workflow falls through to RECOVERED instead of STOPPED).
+      {
+        const deadline = Date.now() + 15000;
+        while (!capturedTaskId && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+      expect(capturedTaskId).not.toBe("");
 
       // Signal rejection
       await handle.signal(humanDecisionSignal, {

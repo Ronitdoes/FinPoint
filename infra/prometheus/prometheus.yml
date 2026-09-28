@@ -12,7 +12,7 @@
 #   case IDs never appear (audited by scripts/monitoring-check.mjs).
 # - Meta-monitoring (s-34 §Observability): Prometheus scrapes itself and
 #   Alertmanager so "monitoring the monitor" is a real alert
-#   (PrometheusDown, AlertmanagerDown in rules.yml).
+#   (MonitoringPipelineDown in rules.yml).
 
 global:
   scrape_interval: 15s

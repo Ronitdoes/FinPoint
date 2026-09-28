@@ -8,6 +8,10 @@ export const ENTITY_TYPES = [
   "SUBSCRIPTION",
   "CHECKOUT",
   "INVOICE",
+  // s-21 audit fix: human-task SLA breach events are about the HUMAN_TASK entity
+  // (entity_id = human_tasks.id); CASE is included for case-scoped task events.
+  "HUMAN_TASK",
+  "CASE",
 ] as const;
 
 export type EntityType = (typeof ENTITY_TYPES)[number];

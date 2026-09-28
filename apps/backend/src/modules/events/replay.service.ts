@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { DomainEvent, EventType } from "@repo/domain";
 import { TOPIC_MAIN } from "@repo/integrations";
-import { NotFoundError, ValidationError } from "../../lib/errors";
+import { recordAuditWriteFailure } from "@repo/observability";
+import { ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors";
 
 export interface ReplayFilter {
   tenant_id?: string;
@@ -50,8 +51,18 @@ export class ReplayService {
       }
       originalEvents = [single];
     } else if (input.filter) {
-      // Find events by filter
-      const targetTenantId = input.filter.tenant_id ?? callerTenantId;
+      // Tenant isolation (s-11 fix): filter must not escape caller tenant.
+      // Previously `filter.tenant_id` was trusted, allowing OPERATIONS in
+      // tenant A to replay/publish events into tenant B.
+      if (
+        input.filter.tenant_id &&
+        input.filter.tenant_id !== callerTenantId
+      ) {
+        throw new ForbiddenError(
+          "Replay filter tenant_id must match caller tenant",
+        );
+      }
+      const targetTenantId = callerTenantId;
 
       originalEvents = await repos.findEventsByFilter(
         { db },
@@ -128,22 +139,28 @@ export class ReplayService {
     }
 
     // 4. Record Audit Log entry (actor=USER, event='events.replayed', metadata={ filter|eventId, queued })
-    await repos.recordAuditLog(
-      { db },
-      {
-        tenantId: callerTenantId,
-        actorType: "USER",
-        actorId: callerUserId ?? "system",
-        event: "events.replayed",
-        metadata: {
-          eventId: input.eventId,
-          filter: input.filter,
-          queued: replayIds.length,
-          replayIds,
+    // s-25 fix: audit write failures increment `audit_write_failures_total`.
+    try {
+      await repos.recordAuditLog(
+        { db },
+        {
+          tenantId: callerTenantId,
+          actorType: "USER",
+          actorId: callerUserId ?? "system",
+          event: "events.replayed",
+          metadata: {
+            eventId: input.eventId,
+            filter: input.filter,
+            queued: replayIds.length,
+            replayIds,
+          },
+          correlationId: randomUUID(),
         },
-        correlationId: randomUUID(),
-      },
-    );
+      );
+    } catch (err) {
+      recordAuditWriteFailure();
+      throw err;
+    }
 
     return {
       queued: replayIds.length,

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import {
   findCaseById,
   findCustomerById,
+  findPaymentById,
+  findPaymentAttemptsByPaymentId,
   listPolicyRules,
   recordPolicyEvaluation,
 } from "@repo/db";
@@ -82,6 +84,59 @@ export async function checkPolicyAgain(
             }))
           : createDefaultActiveRules();
 
+      // s-22/s-24 audit: thread live retry_count + payment_status into the
+      // evaluation context (previously never fed, leaving POL-MAXRETRY dead
+      // and POL-PAYMENT-SUCCESS half-dead per-round). Mirrors the backend
+      // policy.service.ts §3b derivation. Precedence:
+      //   1. explicit input.counters.retry_count wins (the workflow's
+      //      per-round view, e.g. failed-payment passes round-1);
+      //   2. else live DB derivation for PAYMENT-linked cases
+      //      (retry_count = COUNT(payment_attempts),
+      //       payment_status = payments.status for the payment referenced by
+      //       sourceEntityId);
+      //   3. else legacy actionParams.attempt derivation (attempt-1), else 0.
+      // Non-payment cases default to 0/"" — the case status alone still drives
+      // POL-PAYMENT-SUCCESS via RECOVERED/RESOLVED_UPSTREAM.
+      let retryCount: number | undefined;
+      const explicitRetry =
+        input.counters?.retry_count ?? input.counters?.retryCount;
+      if (typeof explicitRetry === "number" && Number.isFinite(explicitRetry)) {
+        retryCount = Math.max(0, Math.floor(explicitRetry));
+      }
+
+      let paymentStatus = "";
+      if (
+        caseRecord.sourceEntityType === "PAYMENT" &&
+        caseRecord.sourceEntityId
+      ) {
+        const linkedPayment = await findPaymentById(
+          { db, tx },
+          { tenantId: input.tenantId, paymentId: caseRecord.sourceEntityId },
+        );
+        if (linkedPayment) {
+          paymentStatus = linkedPayment.status ?? "";
+          if (retryCount === undefined) {
+            const attempts = await findPaymentAttemptsByPaymentId(
+              { db, tx },
+              { tenantId: input.tenantId, paymentId: linkedPayment.id },
+            );
+            retryCount = attempts.length;
+          }
+        }
+      }
+
+      if (retryCount === undefined) {
+        const attemptRaw =
+          input.actionParams?.attempt ??
+          input.actionParams?.attemptNumber ??
+          input.actionParams?.retry_count;
+        const attemptNum = Number(attemptRaw);
+        retryCount =
+          Number.isFinite(attemptNum) && attemptNum > 0
+            ? Math.max(0, Math.floor(attemptNum) - 1)
+            : 0;
+      }
+
       const evalResult = evaluate(
         {
           case: {
@@ -91,6 +146,8 @@ export async function checkPolicyAgain(
             amount_at_risk: caseRecord.amountAtRisk,
             currency: caseRecord.currency,
             status: caseRecord.status,
+            retry_count: retryCount,
+            payment_status: paymentStatus,
           },
           customer: {
             opted_out: customer?.optedOut ?? false,

@@ -1,6 +1,6 @@
 import type { RepoContext } from "@repo/db/repositories";
 import { getExecutor } from "@repo/db/repositories";
-import { messages, aiDecisions, policyEvaluations, humanTasks, caseEvents } from "@repo/db/schema";
+import { messages, aiDecisions, policyEvaluations, humanTasks, caseEvents, paymentAttempts, recoveryCases } from "@repo/db/schema";
 import { and, eq } from "@repo/db";
 import * as repos from "@repo/db/repositories";
 
@@ -217,6 +217,83 @@ export async function backfillCaseTimelineGaps(
         caseId: task.caseId,
         eventType: "HUMAN_TASK_CREATED",
         entityId: task.id,
+      });
+    }
+  }
+
+  // 5. Backfill orphaned Payment Attempts -> PAYMENT_RETRY_* (audit fix).
+  // payment_attempts has no caseId; resolve via payments.id -> recovery_cases.source_entity_id
+  // (UUID match, sourceEntityType-agnostic to tolerate PAYMENT/payment casing drift).
+  const attemptConditions = [];
+  if (options.tenantId) {
+    attemptConditions.push(eq(paymentAttempts.tenantId, options.tenantId));
+  }
+  const allAttempts = await executor
+    .select()
+    .from(paymentAttempts)
+    .where(attemptConditions.length > 0 ? and(...attemptConditions) : undefined);
+
+  const RETRY_EVENT_TYPES = new Set([
+    "PAYMENT_RETRY_STARTED",
+    "PAYMENT_RETRY_ATTEMPTED",
+    "PAYMENT_SUCCEEDED",
+  ]);
+
+  for (const attempt of allAttempts) {
+    const payment = await repos.findPaymentById(ctx, {
+      tenantId: attempt.tenantId,
+      paymentId: attempt.paymentId,
+    });
+    if (!payment) continue;
+
+    const linkedCases = await executor
+      .select({ id: recoveryCases.id, tenantId: recoveryCases.tenantId })
+      .from(recoveryCases)
+      .where(
+        and(
+          eq(recoveryCases.tenantId, attempt.tenantId),
+          eq(recoveryCases.sourceEntityId, payment.id),
+        ),
+      );
+
+    for (const linkedCase of linkedCases) {
+      const existingEvents = await repos.listCaseEvents(ctx, {
+        tenantId: linkedCase.tenantId,
+        caseId: linkedCase.id,
+        limit: 100,
+      });
+
+      const hasEvent = existingEvents.some(
+        (e) =>
+          RETRY_EVENT_TYPES.has(e.eventType) &&
+          (e.payload as any)?.attemptId === attempt.id,
+      );
+      if (hasEvent) continue;
+
+      const isSuccess = attempt.status === "SUCCEEDED";
+      const eventType = isSuccess ? "PAYMENT_SUCCEEDED" : "PAYMENT_RETRY_STARTED";
+      await repos.recordCaseEvent(ctx, {
+        tenantId: linkedCase.tenantId,
+        caseId: linkedCase.id,
+        eventType,
+        actorType: isSuccess ? "PROVIDER" : "SYSTEM",
+        description: `[Reconstructed] Payment retry attempt #${attempt.attemptNumber}: ${attempt.status}`,
+        payload: {
+          attemptId: attempt.id,
+          paymentId: attempt.paymentId,
+          attemptNumber: attempt.attemptNumber,
+          status: attempt.status,
+          providerReference: attempt.providerReference,
+          failureCode: attempt.failureCode,
+          reconstructed: true,
+        },
+        occurredAt: attempt.resolvedAt ?? attempt.requestedAt,
+      });
+
+      details.push({
+        caseId: linkedCase.id,
+        eventType,
+        entityId: attempt.id,
       });
     }
   }

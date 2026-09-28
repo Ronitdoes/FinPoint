@@ -26,23 +26,42 @@ interface PersonaSeed {
   role: UserRole;
 }
 
-const PERSONAS: PersonaSeed[] = [
-  { email: "admin@example.com", name: "System Admin", role: "ADMIN" },
+// Demo-only personas (s-09 audit G-09-2): seeded only when SEED_DEMO_PERSONAS=true.
+// The ADMIN persona always comes from BOOTSTRAP_ADMIN_EMAIL/NAME/PASSWORD below.
+const DEMO_PERSONAS: PersonaSeed[] = [
   { email: "finance@example.com", name: "Finance Director", role: "FINANCE" },
   { email: "ops@example.com", name: "Operations Lead", role: "OPERATIONS" },
   { email: "support@example.com", name: "Support Specialist", role: "SUPPORT" },
   { email: "viewer@example.com", name: "Executive Observer", role: "VIEWER" },
 ];
 
+function isTrueFlag(value: string | undefined): boolean {
+  return (value ?? "").toLowerCase().trim() === "true";
+}
+
 async function seedBootstrapAdmin() {
   console.log("🌱 Starting Bootstrap Admin & Demo Tenant Seeding...");
 
   const tenantName = process.env.BOOTSTRAP_TENANT_NAME || "Demo Organization";
   const tenantSlug = (process.env.BOOTSTRAP_TENANT_SLUG || "demo-tenant").toLowerCase().trim();
-  const defaultPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD || "Admin12345!@#";
+  // s-09 audit G-09-2: honor bootstrap env for the ADMIN user (backward-compat defaults preserved).
+  const adminEmail = (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@example.com").toLowerCase().trim();
+  const adminName = process.env.BOOTSTRAP_ADMIN_NAME || "System Admin";
+  const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD || "Admin12345!@#";
+  const seedDemos = isTrueFlag(process.env.SEED_DEMO_PERSONAS);
+  // Never overwrite existing password hashes on re-runs unless explicitly requested.
+  const resetPasswords = isTrueFlag(process.env.BOOTSTRAP_RESET_PASSWORDS);
+
+  const personas: PersonaSeed[] = [
+    { email: adminEmail, name: adminName, role: "ADMIN" },
+    ...(seedDemos ? DEMO_PERSONAS : []),
+  ];
+  if (!seedDemos) {
+    console.log("ℹ️  SEED_DEMO_PERSONAS!=true — seeding ADMIN only (set SEED_DEMO_PERSONAS=true for the 4 demo personas).");
+  }
 
   try {
-    const passwordHash = await hashPassword(defaultPassword);
+    const passwordHash = await hashPassword(adminPassword);
 
     await withTransaction({ db }, async (tx) => {
       // 1. Check or create demo tenant
@@ -63,15 +82,15 @@ async function seedBootstrapAdmin() {
       }
 
       // 2. Check or create persona users
-      for (const persona of PERSONAS) {
-        let user = await findUserByEmail(
+      for (const persona of personas) {
+        const user = await findUserByEmail(
           { tx },
           { tenantId: tenant.id, email: persona.email },
         );
 
         if (!user) {
           console.log(`👤 Creating ${persona.role} user '${persona.email}'...`);
-          user = await createUser(
+          const created = await createUser(
             { tx },
             {
               tenantId: tenant.id,
@@ -82,7 +101,7 @@ async function seedBootstrapAdmin() {
               passwordHash,
             },
           );
-          console.log(`✅ ${persona.role} user created (ID: ${user.id})`);
+          console.log(`✅ ${persona.role} user created (ID: ${created.id})`);
         } else {
           console.log(`👤 Updating ${persona.role} user '${persona.email}'...`);
           await updateUser(
@@ -93,17 +112,20 @@ async function seedBootstrapAdmin() {
               name: persona.name,
               role: persona.role,
               status: "ACTIVE",
-              passwordHash,
+              // Preserve existing password hashes unless BOOTSTRAP_RESET_PASSWORDS=true.
+              ...(resetPasswords ? { passwordHash } : {}),
             },
           );
-          console.log(`✅ ${persona.role} user updated`);
+          console.log(
+            `✅ ${persona.role} user updated${resetPasswords ? " (password reset)" : " (password preserved)"}`,
+          );
         }
       }
     });
 
-    console.log("✨ Seeding completed successfully! Default password for all personas is: Admin12345!@#");
-  } catch (err: any) {
-    console.error("❌ Seeding failed:", err.message);
+    console.log("✨ Seeding completed successfully!");
+  } catch (err: unknown) {
+    console.error("❌ Seeding failed:", err instanceof Error ? err.message : err);
     process.exit(1);
   } finally {
     await end();

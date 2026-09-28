@@ -38,7 +38,7 @@ export async function resolvePromiseToPayActivity(
         : new Date();
 
       let updated;
-      if (input.status === "HONORED" && input.honoredPaymentId) {
+      if (input.status === "HONORED") {
         updated = await markPromiseHonored(
           { db, tx },
           {

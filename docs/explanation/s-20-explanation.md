@@ -62,16 +62,16 @@ services/worker/
 │   │   ├── emit-metric.ts
 │   │   ├── escalate-workflow-failure.ts
 │   │   └── index.ts
-│   ├── client/                # Temporal Client connection wrapper & stubs
-│   │   └── index.ts
+│   ├── client.ts                  # Temporal Client connection wrapper & stubs (`getTemporalClient`, `startRecoveryWorkflow`, `signalCase`)
 │   ├── framework/             # Retry policies, error factories, shared constants
+│   │   ├── retry-policies.ts
 │   │   ├── errors.ts
-│   │   ├── index.ts
-│   │   └── retry-policies.ts
+│   │   └── index.ts                 # Barrel re-export only (canonical refs: `retry-policies.ts` + `errors.ts`)
 │   ├── testing/               # Vitest activity mocks & time-skipping workflow harness
 │   │   ├── activities.test.ts
+│   │   ├── worker.test.ts
 │   │   ├── mocks.ts
-│   │   └── worker.test.ts
+│   │   └── env.ts                   # Time-skipping `TestWorkflowEnvironment` helper (`createTestWorkflowEnvironment`)
 │   ├── workflows/             # Deterministic Temporal workflows, signals, queries
 │   │   ├── _template.ts
 │   │   ├── index.ts
@@ -119,11 +119,12 @@ Step 20 implements all 15 shared activities required across the recovery lifecyc
 
 ### 4.1 Named Retry Policies
 
-Defined in `services/worker/src/framework/retry-policies.ts`:
+Defined in `services/worker/src/framework/retry-policies.ts` (values match
+`specs/steps/s-20.md` retry-policy table and the implementation):
 
 - **`STANDARD`**: 3 attempts, initial interval 1s, backoff coefficient 2.0, maximum interval 30s. Used for database reads/writes, metrics, and timeline updates.
-- **`PROVIDER_POLL`**: 10 attempts, initial interval 5s, backoff coefficient 1.5, maximum interval 60s. Used for external provider status polling.
-- **`HUMAN_WAIT`**: 120 attempts, initial interval 30s, backoff coefficient 1.0 (constant interval). Used for polling human task resolution over hours/days.
+- **`PROVIDER_POLL`**: 12 attempts, initial interval 10s, backoff coefficient 1.0, heartbeat-enabled (`startToCloseTimeout 5m`, `heartbeatTimeout 30s`). Used for external provider status polling.
+- **`HUMAN_WAIT`**: maximum 1 attempt (no automatic retry; signal-driven), `startToCloseTimeout` 30 days, workflow timeout 30d. Used for polling human task resolution over hours/days via `human-decision` signal + DB fallback.
 - **`NON_RETRYABLE`**: Maximum 1 attempt. Used for operations that must never retry on failure (e.g. fatal policy violations, validation failures).
 
 ### 4.2 Non-Retryable Error Taxonomy
@@ -166,11 +167,11 @@ This ensures direct 1-to-1 mapping between a `recovery_cases` row and its Tempor
 
 ### 6.1 Temporal Client Wrapper
 
-`services/worker/src/client/index.ts` provides `getTemporalClient()`, connecting to Temporal using `@repo/config` (`temporalAddress`, `temporalNamespace`). In testing environments without a live Temporal cluster, it gracefully falls back to a mock handle interface.
+`services/worker/src/client.ts` provides `getTemporalClient()`, connecting to Temporal using `@repo/config` (`temporalAddress`, `temporalNamespace`). In testing environments without a live Temporal cluster, it gracefully falls back to a mock handle interface.
 
 ### 6.2 ESLint Determinism Verification
 
-The ESLint configuration in `packages/eslint-config/worker.js` enforces that all workflow definitions in `**/workflows/**` only import deterministic modules, prohibiting direct database access or network libraries.
+The ESLint configuration in `packages/eslint-config/worker.js` enforces that all workflow definitions in `**/workflows/**` only import deterministic modules, prohibiting direct database access or network libraries. It additionally bans wall-clock / non-deterministic primitives in workflow bodies via `no-restricted-syntax` (`Date.now()`, `new Date()`, `Date.parse()`, `Math.random()` — use Temporal `sleep`/`condition` or activity-provided timestamps/randomness instead). Co-located workflow tests (`**/workflows/**/*.test.ts`, `**/*.spec.ts`) are explicitly excluded from these bans via an override, since the time-skipping harness needs fakes, wall-clock, and randomness.
 
 ---
 
@@ -236,4 +237,5 @@ bun run check-docs
 ## 10. Traceability & Forward Alignment
 
 - **Requirements Covered:** MVP Feature #8 (Temporal Worker Foundation), DoD #10 (Workflow Runtime), DoD #18 (Durable Execution & Restart Recovery).
+- **Registry layering:** `services/worker/src/registry.ts` labels the s-20 foundation (workflow template + 15 shared activities) vs later additions from s-22/23/24 (failed-payment, checkout-abandonment, invoice-overdue, promise-to-pay workflows; `requestReplanDecision`, checkout/invoice/PTP activities). See the header comments in `registry.ts`.
 - **Next Steps:** Step 21 (`s-21 Human Escalation & Approvals`) and Steps 22–24 (Workflows A, B, and C) build directly upon the activity catalog, retry policies, and workflow harness established here.

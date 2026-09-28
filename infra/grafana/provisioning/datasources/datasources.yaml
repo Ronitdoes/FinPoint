@@ -10,6 +10,10 @@ datasources:
       timeInterval: 5s
     editable: false
 
+  # TODO s-34 placeholder (s-08 audit G-08-1): no `tempo` service exists in
+  # infra/docker/docker-compose.yml yet, so this datasource stays RED/unhealthy
+  # in local Grafana until s-34 provisions Tempo (or repoints traces to an
+  # available datasource). Prometheus remains the default/working datasource.
   - name: OpenTelemetry (Tempo)
     type: tempo
     access: proxy

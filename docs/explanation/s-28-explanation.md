@@ -130,6 +130,14 @@ The frontend application is structured inside `apps/frontend`:
 ### `RecoveryFunnelChart.tsx`
 - 5-stage progression funnel representing conversion drops from `At Risk` → `Qualified` → `Contacted` → `Attempted` → `Recovered`.
 - Displays stage counts, rupee volumes, and stage-to-stage conversion percentages.
+- **Chart-library deviation (intentional, audit fix):** spec s-28 §Requirements 5
+  names Recharts for charts ("recovery/day area chart, funnel bar"). The
+  timeseries chart above is Recharts (`AreaChart`); this funnel is custom divs
+  (progressive-width bars + conversion labels), not `recharts` Funnel/Bar — see
+  code comment at the top of `RecoveryFunnelChart.tsx`. Rationale: exact
+  control-plane styling, text-first accessibility, and funnel math covered by
+  `funnel.test.ts`. The requirement is met as a funnel-bar viz; only the
+  library differs for this one chart.
 
 ### `RiskMixChart.tsx`
 - Surface and risk band breakdown with proportional progress bars and band pills.
@@ -185,6 +193,20 @@ The frontend application is structured inside `apps/frontend`:
 | `/audit` | Compliance audit trail | Admin-only audit log search, actor/event filters, JSON metadata inspector (403 guard for non-admins) |
 | `/settings` | Settings & administration | Tenant profile, Team management (ADMIN), API key management (ADMIN), mock provider simulation controls |
 
+**Mock-mode banner deviation (intentional, audit fix):** spec s-28 §Requirements 2
+asks for a "mock-mode banner when enabled" on `/settings`, and §Demo polish
+hooks gates simulator shortcuts on `MOCK_PROVIDERS=true`. The frontend has no
+`MOCK_PROVIDERS` reference by design — `grep MOCK_PROVIDERS apps/frontend`
+returns zero hits; only `NEXT_PUBLIC_API_URL` crosses the boundary per spec 03
+§11 ("No provider secret in frontend"). Mock availability is backend truth via
+`GET /demo/injections` (410 `MOCK_DISABLED` when off). Coverage at s-28 close:
+the `Demo & Mock Controls` simulator tab surfaces `/demo` shortcuts, and the
+degraded/fallback banner role is covered by `DegradedModeBanner` (s-34 doctrine,
+rendered on the Tenant Profile tab) — see code comment in
+`apps/frontend/src/app/(dashboard)/settings/page.tsx`. No separate
+`MOCK_PROVIDERS`-gated banner was added; this documents that choice rather than
+claiming a banner that does not exist.
+
 ---
 
 ## 11. Unit & Component Testing
@@ -210,19 +232,24 @@ Test suites located in `apps/frontend/src/tests/`:
    - Validates VIEWER role cost data redaction handling (`recoveryCost: null` -> `"—"`).
    - Snapshot test of reconciled presentation data.
 
-**Test Run Output:**
+**Test Run Output (at s-28 close: 7 files / 23 tests):**
 ```text
- ✓  unit  apps/frontend/src/tests/timeline.test.ts (2 tests)
- ✓  unit  apps/frontend/src/tests/funnel.test.ts (2 tests)
- ✓  unit  apps/frontend/src/tests/route-guard.test.ts (2 tests)
- ✓  unit  apps/frontend/src/tests/rbac.test.ts (5 tests)
- ✓  unit  apps/frontend/src/tests/money.test.ts (5 tests)
- ✓  unit  apps/frontend/src/tests/decision-card.test.ts (3 tests)
- ✓  unit  apps/frontend/src/tests/overview-cards.test.ts (4 tests)
+  ✓  unit  apps/frontend/src/tests/timeline.test.ts (2 tests)
+  ✓  unit  apps/frontend/src/tests/funnel.test.ts (2 tests)
+  ✓  unit  apps/frontend/src/tests/route-guard.test.ts (2 tests)
+  ✓  unit  apps/frontend/src/tests/rbac.test.ts (5 tests)
+  ✓  unit  apps/frontend/src/tests/money.test.ts (5 tests)
+  ✓  unit  apps/frontend/src/tests/decision-card.test.ts (3 tests)
+  ✓  unit  apps/frontend/src/tests/overview-cards.test.ts (4 tests)
 
- Test Files  7 passed (7)
-      Tests  23 passed (23)
+  Test Files  7 passed (7)
+       Tests  23 passed (23)
 ```
+
+> Audit note: counts above are frozen at s-28 close. The frontend suite has
+> since grown to 11 files with s-34 additions (`degraded-mode.test.ts`,
+> `modal.test.tsx`, `risk-factor-breakdown.test.tsx`, `select.test.tsx`); do not
+> re-verify this section against the current tree and conclude drift.
 
 ---
 
@@ -235,4 +262,4 @@ Test suites located in `apps/frontend/src/tests/`:
 | Overview cards reconcile exactly with `/analytics/summary` (fixture snapshot test) | ✅ COMPLIANT | `overview-cards.test.ts` validates exact card metrics reconciliation against `/analytics/summary` fixture and snapshot. |
 | Role gating matrix mirrored correctly; server remains authority | ✅ COMPLIANT | `rbac.ts` mirrors matrix and tested in `rbac.test.ts`. |
 | No dangerouslySetInnerHTML / no secrets in bundle | ✅ COMPLIANT | Grep audit confirmed 0 instances; only `NEXT_PUBLIC_API_URL` referenced. |
-| Lint/typecheck/build green; smoke test passes locally | ✅ COMPLIANT | `bun run check-types` green, `bun run lint` green (0 errors, 0 warnings), `bun vitest run apps/frontend` green (23/23 tests), `next build` production bundle compiled successfully (13 routes). |
+| Lint/typecheck/build green; smoke test passes locally | ✅ COMPLIANT (with successor note) | `bun run check-types` green, `bun run lint` green (0 errors, 0 warnings), `bun vitest run apps/frontend` green (23/23 tests at s-28 close), `next build` production bundle compiled successfully (13 routes). **Smoke audit fix:** no Playwright spec file was added in s-28 scope (the step's "One Playwright smoke" was not delivered as a file; full E2E journey was explicitly deferred to s-32 per the step's own Tests section). The successor is the s-32 UI smoke `tests/e2e/ui/dashboard.smoke.e2e.ts` (login → dashboard cards → seeded case → timeline → task approve). Do not treat this row as claiming an s-28-owned smoke file. |

@@ -24,6 +24,7 @@ export * from "./human-tasks.repo";
 export * from "./policies.repo";
 export * from "./audit.repo";
 export * from "./case-events.repo";
+export * from "./pii-redact";
 export * from "./outcomes.repo";
 export * from "./idempotency.repo";
 export * from "./analytics.repo";

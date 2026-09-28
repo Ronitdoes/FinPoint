@@ -108,8 +108,23 @@ Registered templates include:
 
 All templates support multi-language localizations (`en`, `es`, `hi`) with channel-specific rendering (plain text for WhatsApp/SMS, plain text + HTML markup for Email).
 
+> **Audit note (channel-agnostic registry):** the 4 foundation ids are explicitly
+> channel-agnostic — every id renders for both `WHATSAPP` (via
+> `WHATSAPP_TEMPLATES` JSON) and `EMAIL` (via `EMAIL_TEMPLATES` subjects/bodies);
+> `SMS` reuses the WhatsApp text path. The `channel: "WHATSAPP"` field in
+> `TEMPLATE_REGISTRY` is the canonical/primary channel retained for backward
+> compatibility only and must not be used for send-eligibility filtering — use
+> `isTemplateSupportedForChannel(id, channel)` / the channel-aware
+> `listTemplates(channel)` instead (previously `listTemplates` ignored its
+> argument).
+
 ### 3.3 Variable Allowlist Validation
 The function `assertValidTemplateVariables(templateId, variables)` enforces that only declared allowlisted variable keys can be passed. Supplying unauthorized variables throws a `NotAcceptableError`.
+
+Runtime primitive guard: values must be primitives (`string | number | boolean`) —
+objects, arrays, and functions are rejected (surfaced as unexpected variables), so
+AI/context objects can never inject nested payloads into template slots. Addresses
+are still resolved strictly from the DB at send time, never from variables.
 
 ### 3.4 WhatsApp Cloud API Adapter (`WhatsAppCloudApiAdapter`)
 - Integrates with Meta's Graph API (`/v19.0/{phone_number_id}/messages`).
@@ -118,7 +133,8 @@ The function `assertValidTemplateVariables(templateId, variables)` enforces that
 
 ### 3.5 Transactional Email Adapter (`TransactionalEmailAdapter`)
 - Supports SMTP and transactional email API gateways.
-- Injects standard headers (`X-Entity-Ref-ID`, `List-Unsubscribe`, `Message-ID`).
+- Injects standard headers (`X-Idempotency-Key`, `X-Case-ID`, `X-Tenant-ID`,
+  `X-Entity-Ref-ID`, `List-Unsubscribe` + `List-Unsubscribe-Post`, `Message-ID`).
 - Renders dual-mode plain-text and HTML emails.
 
 ### 3.6 Mock Messaging Provider & Fault Injection (`MockMessagingProvider`)
@@ -176,9 +192,23 @@ QUEUED ──► SENT ──► DELIVERED ──► READ
 - **WhatsApp Webhooks (`/webhooks/whatsapp`)**:
   - `GET`: Handles Meta's webhook verification challenge (`hub.mode=subscribe`, `hub.verify_token`, `hub.challenge`).
   - `POST`: Validates constant-time HMAC-SHA256 signatures (`x-hub-signature-256`).
+  - Non-prod unsigned bypass: when `x-hub-signature-256` is absent, production
+    always returns `401 SIGNATURE_MISSING` (ADR-012). In non-prod the request is
+    accepted with a `warn` log for local-dev/webhook-fixture ergonomics; setting
+    `ALLOW_UNSIGNED_WEBHOOKS=false` disables the bypass even outside production.
+  - Meta `failed` subcode mapping via `mapWhatsAppFailedStatus(errors)`:
+    undeliverable-recipient subcodes (`131026`, `131031`, `132001`, `133010`,
+    `131042` + "not on whatsapp / invalid / unreachable" text) collapse to
+    `BOUNCED`; policy/template rejections (`131049`, `131051`, `132000`,
+    `133016`, `135000` + "policy / template / blocked" text) collapse to
+    `REJECTED`; all other failures stay `FAILED`.
   - Inbound keyword processing matches `STOP`, `UNSUBSCRIBE`, `CANCEL`, `QUIT`, `OPT OUT`, triggering customer opt-out, recording a `customer_responses` entry, and publishing the `customer.opted_out` domain event.
 - **Email Webhooks (`/webhooks/email`)**:
-  - Validates webhook tokens (`x-webhook-token` header or query token).
+  - Validates webhook tokens (`x-webhook-token` header or query token) with
+    constant-time comparison. **Missing token is rejected with `401`** (G1 fix —
+    previously `if (providedToken && !==)` silently allowed missing tokens). An
+    explicit non-prod bypass exists only when `ALLOW_UNSIGNED_WEBHOOKS=true`
+    (documented test/local-dev escape hatch; never honored in production).
   - Processes delivery, open/click (`READ`), bounce, drop (`REJECTED`), and spam/unsubscribe events.
 
 ### 5.6 Read Endpoints with RBAC & PII Redaction
@@ -187,7 +217,14 @@ QUEUED ──► SENT ──► DELIVERED ──► READ
 - **PII Redaction**:
   - Destination email addresses are masked (e.g. `j***e@example.com`).
   - Phone numbers are masked (e.g. `+1***4321`).
-  - Sensitive variable values (payment URLs, invoice numbers) are redacted or truncated in list views.
+  - Template variables: keys containing `token`/`secret`/`auth`/`password` plus
+    `payment_url`/`payment_link`/`checkout_url`/`invoice_number`/`amount` (and
+    generic `payment`/`checkout`/`invoice`/`url`/`link`) are returned as
+    `[REDACTED]` — covering payment links, checkout URLs, invoice numbers, and
+    amounts (audit fix; previously only token/secret/auth were redacted).
+  - Delivery-event payloads are scrubbed via `scrubDeliveryEventPayload()`:
+    `recipient_id`/`to`/`phone`/`email` identifiers are masked and payment
+    URLs/invoice/amount fields redacted; plain status fields are preserved.
 
 ---
 
@@ -208,7 +245,7 @@ QUEUED ──► SENT ──► DELIVERED ──► READ
 
 ### 7.2 Backend Integration Tests
 - `apps/backend/src/tests/messaging-integration.test.ts`:
-  - 13 comprehensive scenarios covering:
+  - 18 `it` blocks (as of <2026-09-10>; grown from 13 scenarios) covering:
     1. Happy path send and delivery lifecycle (`QUEUED` -> `SENT` -> `DELIVERED` -> `READ`).
     2. Idempotency deduplication & spy validation on adapter dispatches.
     3. Provider failure & failure delivery event recording.
@@ -217,7 +254,7 @@ QUEUED ──► SENT ──► DELIVERED ──► READ
     6. Defense-in-depth policy contact cap rechecks (WhatsApp 7d, Email 14d).
     7. Message read APIs, RBAC enforcement, and tenant isolation.
     8. PII leakage sweep across all response bodies.
-  - **Result**: 13/13 passed.
+  - **Result**: 18/18 passed (as of <2026-09-10>).
 
 ### 7.3 Workspace Suite Verification
 - `bun run check-types`: Clean (11 packages).

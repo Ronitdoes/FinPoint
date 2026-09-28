@@ -115,31 +115,26 @@ The AI output contract is strictly defined using Zod schemas matching Spec 03 §
 
 ```typescript
 export const DiagnosisSchema = z.object({
-  cause: z.string().min(1).max(100),
+  cause: z.enum(DIAGNOSIS_CAUSES), // 8 causes per Spec 03 §5
   confidence: z.number().min(0).max(1),
-  rationale: z.string().min(1).max(500),
+  rationale: z.string().max(240),
 });
 
 export const DecisionActionSchema = z.object({
-  type: z.enum(ACTION_TYPES),
-  delay_hours: z.number().int().min(0).max(168).optional(),
-  template_id: z.string().optional(),
-  channel: z.enum(["WHATSAPP", "EMAIL", "SMS"]).optional(),
-  incentive_type: z.enum(["FIXED_DISCOUNT", "PERCENT_DISCOUNT", "WAIVE_LATE_FEE"]).optional(),
-  incentive_value: z.number().int().min(0).max(MAX_AUTO_DISCOUNT_MINOR).optional(),
-  currency: z.string().length(3).optional(),
-  assignee_role: z.enum(["OPERATIONS", "FINANCE", "SUPPORT"]).optional(),
-  urgency: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
-  rationale: z.string().min(1).max(300),
+  type: z.enum(ACTION_TYPES), // closed catalog, surface subset enforced semantically
+  delay_hours: z.number().int().min(1).max(168).optional(),
+  rationale: z.string().max(240).optional(),
   params: z.record(z.unknown()).optional(),
 });
 
 export const DecisionRecordSchema = z.object({
   diagnosis: DiagnosisSchema,
   actions: z.array(DecisionActionSchema).min(1).max(3),
-  stop_conditions: z.array(z.string()).min(1),
+  stop_conditions: z.array(z.string().min(1)).min(1),
 });
 ```
+
+> **Audit correction**: an earlier revision of this section showed `delay_hours` as `min(0)`, rationale caps of `max(500)`/`max(300)`, and extra action fields (`template_id`, `channel`, `incentive_type`, `incentive_value`, `currency`, `assignee_role`, `urgency`). The authoritative contract is the snippet above, matching `schemas/decision.ts` exactly: `delay_hours` is `min(1).max(168)`, rationale caps are `max(240)`, and action-level fields beyond `type`/`delay_hours`/`rationale` travel inside the free-form `params` object (validated per-action by the catalog in s-03, e.g. `OFFER_INCENTIVE.amount_minor ≤ MAX_AUTO_DISCOUNT_MINOR`).
 
 To support OpenAI Structured Outputs, `getDecisionJsonSchema()` converts this contract to strict JSON Schema with `additionalProperties: false` and explicit `required` lists across all nested object properties.
 
@@ -151,9 +146,11 @@ Every recovery surface has an immutable prompt definition:
 
 | Surface | Prompt Version | Target Risk Type | Allowed Action Types |
 |---|---|---|---|
-| Payment Failure | `payment_failure@1` | `PAYMENT_FAILURE` | `RETRY_PAYMENT`, `SEND_WHATSAPP`, `SEND_EMAIL`, `SEND_SMS`, `ESCALATE_HUMAN`, `STOP_CASE` |
-| Checkout Abandonment | `checkout_abandonment@1` | `CHECKOUT_ABANDONMENT` | `SEND_WHATSAPP`, `SEND_EMAIL`, `SEND_SMS`, `OFFER_INCENTIVE`, `ESCALATE_HUMAN`, `STOP_CASE` |
-| Invoice Overdue | `invoice_overdue@1` | `INVOICE_OVERDUE` | `SEND_EMAIL`, `SEND_WHATSAPP`, `SEND_SMS`, `RECORD_PROMISE_TO_PAY`, `OFFER_INCENTIVE`, `ESCALATE_HUMAN`, `STOP_CASE` |
+| Payment Failure | `payment_failure@1` | `PAYMENT_FAILURE` | `RETRY_PAYMENT`, `CREATE_PAYMENT_LINK`, `SEND_WHATSAPP`, `SEND_EMAIL`, `REQUEST_PAYMENT_METHOD_UPDATE`, `CREATE_HUMAN_TASK`, `STOP_CASE` |
+| Checkout Abandonment | `checkout_abandonment@1` | `CHECKOUT_ABANDONMENT` | `SEND_EMAIL`, `SEND_WHATSAPP`, `OFFER_INCENTIVE`, `CREATE_HUMAN_TASK`, `STOP_CASE` |
+| Invoice Overdue | `invoice_overdue@1` | `INVOICE_OVERDUE` | `SEND_EMAIL`, `SEND_WHATSAPP`, `CREATE_PAYMENT_LINK`, `OFFER_INCENTIVE`, `CREATE_PROMISE_TO_PAY`, `CREATE_HUMAN_TASK`, `STOP_CASE` |
+
+> **Audit correction**: an earlier revision of this table listed `ESCALATE_HUMAN`, `RECORD_PROMISE_TO_PAY`, and `SEND_SMS` (payment surface). Those names do not exist in the closed catalog — the table above now matches `AI_DECIDABLE_ACTIONS` in `packages/domain/src/actions/catalog.ts` exactly, including `CREATE_PAYMENT_LINK` and `REQUEST_PAYMENT_METHOD_UPDATE` on the payment surface. Human escalation is `CREATE_HUMAN_TASK` everywhere.
 
 Each prompt definition includes:
 - **System Prompt**: Enforces operational guardrails, strict bounded autonomy, and output schema constraints.
@@ -192,10 +189,12 @@ The LLM transport layer is built to withstand real-world provider unreliability:
 ## 6. Structured completion engine & paise token pricing (`llm/structured.ts`)
 
 ### Token Pricing Model (Paise Minor Units)
-Per ADR-008 and ADR-009, token consumption is calculated in integer minor units (paise) using standard exchange rates (₹84.00 / USD):
+Per ADR-008 and ADR-009, token consumption is calculated in integer minor units (paise) using standard exchange rates (₹85 / USD):[^fx-84]
 
-$$\text{Input Cost} = \left\lceil \frac{\text{inputTokens} \times 0.000005 \times 8400}{1000} \right\rceil \text{ paise}$$
-$$\text{Output Cost} = \left\lceil \frac{\text{outputTokens} \times 0.000015 \times 8400}{1000} \right\rceil \text{ paise}$$
+$$\text{Input Cost} = \left\lceil \frac{\text{inputTokens} \times 0.000005 \times 8500}{1000} \right\rceil \text{ paise}$$
+$$\text{Output Cost} = \left\lceil \frac{\text{outputTokens} \times 0.000015 \times 8500}{1000} \right\rceil \text{ paise}$$
+
+[^fx-84]: Earlier revision of this §6 said ₹84; authoritative baseline is ₹85 per `apps/backend/src/modules/ai/governance/pricing.ts:10`.
 
 ### Repair Retry Protocol ($N=1$)
 If the initial completion returns malformed JSON or fails semantic validation, the `StructuredCompletionService` sends a single repair request containing:
@@ -227,14 +226,15 @@ Validation occurs in two distinct passes:
 
 When LLM inference is unavailable or rejected, `generateFallbackDecision` provides deterministic, policy-compliant recommendations:
 
-- **Payment Failure**:
-  - Prior retries $\ge 3$ or CRITICAL risk $\to$ `ESCALATE_HUMAN` (role: `OPERATIONS`, urgency: `HIGH`).
-  - Otherwise $\to$ `RETRY_PAYMENT` with 24-hour delay and stop condition `PAYMENT_SUCCEEDED`.
-- **Checkout Abandonment**:
-  - `SEND_WHATSAPP` reminder notice with stop condition `PURCHASE_COMPLETED`.
-- **Invoice Overdue**:
-  - Overdue $>14$ days $\to$ `ESCALATE_HUMAN` (role: `FINANCE`, urgency: `HIGH`).
-  - Otherwise $\to$ `SEND_EMAIL` reminder notice with stop condition `INVOICE_PAID`.
+- **Payment Failure** (`apps/backend/src/modules/ai/validate/fallback.ts:31-96`):
+  - Prior retries $\ge 2$ $\to$ `CREATE_HUMAN_TASK` (`task_type: manual_recovery`, `priority: HIGH`).
+  - Else HIGH/CRITICAL band $\to$ `RETRY_PAYMENT` (24h delay) + `SEND_WHATSAPP` (`payment_retry_notice`).
+  - Else $\to$ `RETRY_PAYMENT` (24h delay); stops `PAYMENT_SUCCEEDED`, `OPTED_OUT`, `MAX_RETRIES`.
+- **Checkout Abandonment** (`fallback.ts:99-115`):
+  - `SEND_EMAIL` (`cart_reminder` template) with stop conditions `PAYMENT_SUCCEEDED`, `OPTED_OUT`, `POLICY_STOP`.
+- **Invoice Overdue** (`fallback.ts:117-160` — audit fix: there is no `>14d → CREATE_HUMAN_TASK` branch):
+  - Overdue $\ge 7$ days OR HIGH/CRITICAL band $\to$ `SEND_EMAIL` (`invoice_reminder`) + `CREATE_PAYMENT_LINK` (`amount_minor`, `currency`, `expires_in_hours: 72`).
+  - Otherwise $\to$ `SEND_EMAIL` (`invoice_reminder`) only; stops `PAYMENT_SUCCEEDED`, `OPTED_OUT`, `PROMISE_CREATED` in both cases.
 
 All fallback decisions are persisted with status `FALLBACK_RULE_BASED` and increment the `fallback_total{reason}` metric family.
 
@@ -257,12 +257,16 @@ All fallback decisions are persisted with status `FALLBACK_RULE_BASED` and incre
 10. Finalize Idempotency Lease (save response snapshot)
 ```
 
+**Idempotency window (audit clarification)**: "24-hour idempotency" means a 60s `PROCESSING` lease plus 24h response-snapshot retention. `tryAcquire({ ttlSeconds: 60 })` holds the lease for 60s (concurrent retries see `IN_FLIGHT` instead of double-spending on inference); the row's `expiresAt` is `max(ttl*10, 86400)s = 24h` (`packages/db/src/repositories/idempotency.repo.ts`), so same-key replays within 24h return the original snapshot with no new LLM call.
+
+**FAILED status contract (audit clarification, doc fix)**: the step text lists `FAILED` among persisted statuses, but the decide path never writes it. Every failure mode degrades to `FALLBACK_RULE_BASED` via the fallback helper; the sole exception is `config.ai.enableRuleFallback === false`, which throws without persisting any row. `FAILED` remains a reserved `DECISION_STATUSES` enum value — no `FAILED`-row implementation was added, and none is needed while the fallback cannot itself fail.
+
 ---
 
 ## 10. REST APIs (`POST /ai/decide` & `GET /ai/decisions/:id`)
 
 ### `POST /ai/decide`
-- **Authentication**: Session cookie with role $\ge$ `OPERATIONS` or Bearer API key with scope `ai:decide` / `*`.
+- **Authentication**: `requireScope("ai:decide")` (`apps/backend/src/plugins/rbac.ts`): session callers must hold role `ADMIN` or `OPERATIONS`; machine callers (including worker principals) must present an API key with the `ai:decide` scope or the `*` wildcard. RBAC is pinned by integration test case 6 in `apps/backend/src/tests/ai-decision.test.ts` (`VIEWER` without scope → 403 `FORBIDDEN`).
 - **Request Body**:
   ```json
   {
@@ -326,11 +330,13 @@ All Definition of Done criteria from `specs/steps/s-14.md` are satisfied:
 - [x] Multi-stage structural and semantic validation pipeline with $N=1$ repair retry.
 - [x] Deterministic rule-based fallback safety net incrementing `fallback_total{reason}`.
 - [x] Indian Rupee paise integer minor units token cost accounting.
-- [x] `POST /ai/decide` and `GET /ai/decisions/:id` endpoints with RBAC, tenant isolation, and 24h idempotency.
+- [x] `POST /ai/decide` and `GET /ai/decisions/:id` endpoints with RBAC, tenant isolation, and 24h idempotency (60s PROCESSING lease + 24h response-snapshot retention — see §9).
 - [x] All 580 monorepo tests passing across 39 test files (`bun run test`).
 - [x] Type check passing across 10 packages (`bun run check-types`).
 - [x] Lint checks passing (`bun run lint`).
 - [x] Documentation link check passing (`bun run check-docs`).
+
+> **Latency honesty note (audit)**: no measured live-model p50/p95 is claimed here. The `<5s typical` budget from spec 03 §10 is held **by construction**, not by a latency table: `max_tokens: 800` (`ai/llm/structured.ts`, `ai/llm/client.ts` default) + trimmed s-13 context (≤8KB) bound prompt/completion size, a 20s per-attempt timeout with N=2 bounded retries, circuit-breaker fast-path to deterministic fallback, and a ~30s total-path ceiling. Live-model p95 is pending staging via the s-15 harness (`bun run --filter @repo/eval eval`, per-case `latency_ms` gate `<2,500ms` mean); local evidence covers only the fallback path (see `docs/PERFORMANCE.md` row 5: fallback p95 ≈0ms, live probe unmeasurable without `LLM_API_KEY`). No mock latency numbers are presented as production evidence.
 
 ---
 

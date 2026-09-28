@@ -2,6 +2,25 @@ import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import fastifyCors, { type FastifyCorsOptions } from "@fastify/cors";
 
+/**
+ * CORS allowlist (s-07 audit G-07-2; G-07-1 enforcement fix).
+ *
+ * Enforcement actually applied by the origin callback below:
+ * - Non-production (`isProduction: false`, dev/test): explicitly allowed
+ *   origins (`DEFAULT_ORIGINS` + `allowedOrigins` opt) pass, plus a
+ *   DEV-ONLY wildcard for any `http://localhost:*` / `http://127.0.0.1:*`
+ *   port (local frontend convenience). Requests with no `Origin` header
+ *   (curl, mobile, server-to-server) are allowed.
+ * - Production (`isProduction: true`): ONLY the injected `allowedOrigins`
+ *   set (typed config `config.http.corsAllowedOrigins` + explicit opts)
+ *   passes, plus no-origin requests. `DEFAULT_ORIGINS` and the localhost
+ *   wildcard are NOT honored in production.
+ * Unknown origins are safely rejected via `cb(null, false)` (no CORS
+ * headers, no 500) rather than by throwing.
+ * This plugin reads no `process.env` directly (CONVENTIONS §1); `app.ts`
+ * injects `allowedOrigins` + `isProduction` from `@repo/config`.
+ */
+
 export interface CorsPluginOptions {
   allowedOrigins?: string[];
   isProduction?: boolean;
@@ -20,18 +39,13 @@ const corsPluginCallback: FastifyPluginAsync<CorsPluginOptions> = async (
   fastify,
   opts,
 ) => {
-  const isProd = opts.isProduction ?? process.env.NODE_ENV === "production";
-  const envOrigins = process.env.CORS_ALLOWED_ORIGINS
-    ? process.env.CORS_ALLOWED_ORIGINS.split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
+  const isProd = opts.isProduction ?? false;
 
-  const allowedOrigins = new Set([
-    ...DEFAULT_ORIGINS,
-    ...envOrigins,
-    ...(opts.allowedOrigins ?? []),
-  ]);
+  // G-07-1: DEFAULT_ORIGINS are dev/test convenience only — never trust them
+  // in production. Prod allows exactly the injected allowlist.
+  const allowedOrigins = new Set(
+    isProd ? [...(opts.allowedOrigins ?? [])] : [...DEFAULT_ORIGINS, ...(opts.allowedOrigins ?? [])],
+  );
 
   const corsOptions: FastifyCorsOptions = {
     origin: (origin, cb) => {
@@ -40,11 +54,18 @@ const corsPluginCallback: FastifyPluginAsync<CorsPluginOptions> = async (
         return cb(null, true);
       }
 
-      // Check if origin is explicitly allowed or matches local origin pattern
+      // Explicit allowlist always applies.
+      if (allowedOrigins.has(origin)) {
+        return cb(null, true);
+      }
+
+      // G-07-1: localhost wildcard is DEV-ONLY — gated on !isProd so a
+      // production deployment with isProduction:true never accepts an
+      // arbitrary localhost port.
       if (
-        allowedOrigins.has(origin) ||
-        origin.startsWith("http://localhost:") ||
-        origin.startsWith("http://127.0.0.1:")
+        !isProd &&
+        (origin.startsWith("http://localhost:") ||
+          origin.startsWith("http://127.0.0.1:"))
       ) {
         return cb(null, true);
       }

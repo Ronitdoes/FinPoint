@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { db } from "../client";
 import {
   aiDecisions,
@@ -38,6 +38,9 @@ describe("Recovery Schema: Database constraints, indexes, and anti-duplication a
   let workflowId: string;
   let messageId: string;
   let policyRuleId: string;
+  // Globally-unique rule code suffix (policy_rules_code_unique): the duplicate
+  // test below must reuse this exact code to trigger the conflict.
+  let policyRuleCode: string;
   const obligationId = "11111111-1111-1111-1111-111111111111";
 
   beforeAll(async () => {
@@ -53,14 +56,18 @@ describe("Recovery Schema: Database constraints, indexes, and anti-duplication a
       .returning();
     tenantId = tenant.id;
 
-    // Step 2: Create customer & policy rule in parallel
+    // Step 2: Create customer & policy rule in parallel.
+    // Code is globally unique (policy_rules_code_unique), so suffix per run
+    // to survive repeated local runs against a shared DB.
+    const runSuffix = Date.now().toString(36);
+    policyRuleCode = `MAX_PAYMENT_RETRIES_${runSuffix}`.slice(0, 64);
     const [[customer], [rule]] = await Promise.all([
       db
         .insert(customers)
         .values({
           tenantId,
           name: "Jane Recovery",
-          email: "jane.recovery@example.com",
+          email: `jane.recovery.${runSuffix}@example.com`,
           phone: "+15550001111",
         })
         .returning(),
@@ -68,7 +75,7 @@ describe("Recovery Schema: Database constraints, indexes, and anti-duplication a
         .insert(policyRules)
         .values({
           tenantId,
-          code: "MAX_PAYMENT_RETRIES",
+          code: policyRuleCode,
           name: "Max Payment Retries",
           description: "Limits automated retry attempts to 3",
           ruleKind: "LIMIT",
@@ -204,10 +211,23 @@ describe("Recovery Schema: Database constraints, indexes, and anti-duplication a
 
   afterAll(async () => {
     if (tenantId) {
+      // Clean up in parallel dependency batches. Policy rows are cleaned by
+      // TENANT (not just the beforeAll rule id): any test that inserts extra
+      // rules/versions for this tenant would otherwise block tenant deletion
+      // via policy_rules_tenant_id_tenants_id_fk.
+      const tenantRules = await db
+        .select({ id: policyRules.id })
+        .from(policyRules)
+        .where(sql`tenant_id = ${tenantId}`);
+      const tenantRuleIds = tenantRules.map((r) => r.id);
+      if (tenantRuleIds.length > 0) {
+        await db
+          .delete(policyVersions)
+          .where(inArray(policyVersions.ruleId, tenantRuleIds));
+      }
       // Clean up in parallel dependency batches
       await Promise.all([
         db.delete(policyEvaluations).where(sql`tenant_id = ${tenantId}`),
-        db.delete(policyVersions).where(sql`rule_id = ${policyRuleId}`),
         db.delete(humanTasks).where(sql`tenant_id = ${tenantId}`),
         db.delete(promisesToPay).where(sql`tenant_id = ${tenantId}`),
         db.delete(messageDeliveryEvents).where(sql`message_id = ${messageId}`),
@@ -224,7 +244,7 @@ describe("Recovery Schema: Database constraints, indexes, and anti-duplication a
         db.delete(customerResponses).where(sql`tenant_id = ${tenantId}`),
         db.delete(workflows).where(sql`tenant_id = ${tenantId}`),
         db.delete(aiDecisions).where(sql`tenant_id = ${tenantId}`),
-        db.delete(policyRules).where(sql`id = ${policyRuleId}`),
+        db.delete(policyRules).where(sql`tenant_id = ${tenantId}`),
       ]);
 
       await Promise.all([
@@ -614,12 +634,12 @@ describe("Recovery Schema: Database constraints, indexes, and anti-duplication a
   });
 
   it("rejects duplicate policy_rule code and policy_version (rule_id, version)", async () => {
-    // Duplicate code
+    // Duplicate code (must match the beforeAll row's code to conflict)
     await expect(
       Promise.resolve(
         db.insert(policyRules).values({
           tenantId,
-          code: "MAX_PAYMENT_RETRIES", // Duplicate
+          code: policyRuleCode, // Duplicate
           name: "Max Payment Retries Duplicate",
           ruleKind: "LIMIT",
           definition: {},

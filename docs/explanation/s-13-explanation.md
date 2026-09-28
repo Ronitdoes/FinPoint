@@ -28,7 +28,7 @@ Per `specs/steps/s-13.md`, Spec 01 §9, Spec 02 §7, Spec 03 §6, ADR-007, ADR-0
 
 1. **Deterministic Customer Context Builder**:
    - Single parallel batch query gathering customer profile, payments (180d window), subscriptions, open/overdue invoices, checkouts (90d window), prior recovery cases with outcomes, communication history (14d/7d windows), and preferences.
-   - Built in $<100\text{ms}$ p95 without N+1 query patterns.
+   - Single `Promise.all` batch by construction (no N+1); local p95 is **not** claimed here — the suite gates on a 5s regression tripwire and staging owns the p95 snapshot (see `docs/PERFORMANCE.md`).
 2. **Strict Field Allowlist (Spec 01 §9)**:
    - Typed projection allowlisting only approved fields; database entities are never passed directly to prompts or read APIs.
    - Runtime validation with strict Zod schemas (`.strict()`) rejecting any unknown injected keys.
@@ -40,7 +40,7 @@ Per `specs/steps/s-13.md`, Spec 01 §9, Spec 02 §7, Spec 03 §6, ADR-007, ADR-0
    - Hard payload limit of 8,192 bytes ($8\text{KB}$) for AI prompt safety.
    - Deterministic 5-step trimming drop order when oversized, while unconditionally preserving critical policy invariants (`opted_out`, `prior_cases`, `last_failure_code`, `whatsapp_last_7d`, `email_last_14d`, `sms_last_7d`).
 5. **Redis Caching & TTL**:
-   - Cached in Redis at key `ctx:{tenantId}:{customerId}:{purpose}` with 30s TTL.
+   - Cached in Redis at key `context:{tenantId}:{customerId}:{purpose}` with 30s TTL.
    - Supports purpose distinction (`api_read` vs `ai_decision` with up to 60s stale tolerance on backend failures).
    - Instant cache invalidation on customer opt-out changes, new messages, or outcome records.
 6. **Internal Consumer API**:
@@ -122,6 +122,9 @@ export interface CustomerContext {
 7. **`communication_history`**: `whatsapp_last_7d`, `email_last_14d`, `sms_last_7d`, `last_contacted_at`, `reply_rate`, `opt_out_at`.
 8. **`preferences`**: `preferred_channel`, `language`.
 
+### Schema versioning
+The contract version is the exported constant `CUSTOMER_CONTEXT_SCHEMA_VERSION = "1"` in `context/types.ts` (s-13 Definition of Done: "schema exported & versioned"). It is intentionally **not** embedded in the payload — the 8KB budget is reserved for decision-relevant aggregates. Consumers asserting prompt input against the s-13 contract (e.g. s-14 validation) pin this constant instead of reading a version field off the wire.
+
 ---
 
 ## 4. Field allowlist & PII masking (`allowlist.ts`)
@@ -173,7 +176,7 @@ Context size is constrained to $8,192\text{ bytes}$ (`MAX_CONTEXT_BYTES = 8192`)
 ```mermaid
 flowchart TD
     A[buildCustomerContext] --> B{forceFresh?}
-    B -- No --> C[Check Redis ctx:tenant:customer:purpose]
+    B -- No --> C[Check Redis context:tenant:customer:purpose]
     C -- Cache Hit --> D[Return Cached CustomerContext]
     C -- Cache Miss --> E[Promise.all Batch Query Repositories]
     B -- Yes --> E
@@ -191,6 +194,7 @@ flowchart TD
 
 - **Query Optimization**: Single `Promise.all` executes customer lookup, payments, subscriptions, invoices, checkouts, recovery cases, outcomes, messages, and responses concurrently.
 - **Failover / Stale Tolerance**: On Redis/DB downstream degradation, for purpose `ai_decision`, cached values up to 60s stale can be utilized to prevent recovery pipeline stalling.
+- **Cache Invalidation Wiring (wired)**: `CustomerContextService.invalidateCache` busts both purpose keys and is now called from all three freshness sites — WhatsApp STOP opt-out (`messaging/webhooks/whatsapp.routes.ts`), email unsubscribe/spam opt-out (`messaging/webhooks/email.routes.ts`), message SENT (`messaging/send.service.ts`, best-effort `try/catch` so sends never fail on cache errors), and outcome recorded (`outcomes/record.service.ts`, alongside the analytics bust after commit, reusing the in-tx `customerId` so no extra read is needed). The 30s TTL (60s max-stale for `ai_decision`) remains as a safety net; invalidation itself is best-effort (WARN log, never throws).
 
 ---
 
@@ -229,8 +233,8 @@ export class CustomerContextService {
 ## 10. Observability, Prometheus metrics & tracing
 
 1. **Prometheus Histograms (`packages/observability/src/metrics.ts`)**:
-   - `customer_context_build_duration_ms`: Tracks builder latency bucketed `[5, 10, 25, 50, 75, 100, 250, 500, 1000]`.
-   - `customer_context_bytes`: Tracks payload size bucketed `[512, 1024, 2048, 4096, 8192, 16384]`.
+   - `context_build_duration_ms{purpose}`: Tracks builder latency bucketed `[5, 10, 25, 50, 100, 250, 500, 1000]` via `recordContextBuild(purpose, durationMs, bytes)` — emitted on both live builds and Redis cache hits (`context/builder.ts`).
+   - `context_bytes{purpose}`: Tracks payload size bucketed `[256, 512, 1024, 2048, 4096, 8192, 16384]` via the same helper.
 2. **OpenTelemetry Distributed Tracing**:
    - Spans recorded with `withSpan("context.build", { tenant_id, customer_id, purpose, cached, bytes, duration_ms })`.
 
@@ -245,7 +249,9 @@ export class CustomerContextService {
 | `apps/backend/src/modules/customers/context/allowlist.test.ts` | Unit tests for field projection, strict schema rejection (`.strict()`), `maskEmail`, and `maskPhone`. | 8 |
 | `apps/backend/src/modules/customers/context/pii-sweep.test.ts` | PII regex sweep over 50 synthetic fixtures scanning for unmasked email, raw credit card PAN, and raw phone numbers. | 1 |
 | `packages/db/src/repositories/repositories.test.ts` | Unit & concurrency tests for customer-scoped database queries (`listInvoicesForCustomer`, `listCheckoutsForCustomer`, `listMessagesForCustomer`, `findOutcomesByCaseIds`). | 19 |
-| `apps/backend/src/tests/customer-context.test.ts` | End-to-end integration tests for `GET /customers/:id/context` snapshot, empty profile, tenant isolation, Redis cache hit/invalidation, `buildForCase`, and latency. | 8 |
+| `apps/backend/src/tests/customer-context.test.ts` | End-to-end integration tests for `GET /customers/:id/context` snapshot, empty profile, tenant isolation, Redis cache hit/invalidation, `buildForCase`, latency (records avg/p95 over 5 forced-fresh builds; gates on a generous 5s budget as a regression tripwire, not on the <100ms local target — see note below), plus cache-bust wiring proofs (helper deletes both purpose keys + never throws on Redis failure; WhatsApp STOP opt-out route busts; message SENT busts and survives Redis outage; outcome recorded busts). | 12 |
+
+> **p95 evidence note (audit)**: no fabricated `<100ms` number is recorded here. The suite measures real build latency (avg + p95 over 5 forced-fresh `build()` calls) and asserts `p95 < 5000ms` — a regression tripwire against N+1/serial-query regressions, not proof of the `<100ms p95` local target, which depends on DB proximity and is not gated in CI to avoid flakes. Production latency signal comes from the `context_build_duration_ms` histogram buckets (`[5, 10, 25, 50, 100, 250, 500, 1000]`), and `docs/PERFORMANCE.md` tracks the six spec 03 §10 targets (context build is not among them; all aggregates run in one `Promise.all` batch by construction). p95 snapshot pending staging.
 
 ---
 
@@ -277,7 +283,7 @@ All doc links OK.
 1. **Pure Functional Projection over In-Place Object Mutation**:
    Summarizers produce plain JavaScript structures containing only summary aggregations, which are then strictly projected through `projectAllowlist` against `CUSTOMER_CONTEXT_ALLOWLIST`. Database model objects are never passed downstream.
 2. **Parallel Promise.all over Serial Queries**:
-   All 8 database reads are performed concurrently within a single round-trip window, keeping local p95 builder latency well under 100ms.
+   All 8 database reads are performed concurrently within a single round-trip window by construction (no N+1). No `<100ms` p95 is claimed without data: the suite enforces a 5s regression gate over 5 forced-fresh builds, the `context_build_duration_ms` histogram is the production signal, and the p95 snapshot is pending staging (see `docs/PERFORMANCE.md`).
 3. **Deterministic Degradation Order for Size Budgeting**:
    Rather than arbitrary truncation or JSON truncation that produces invalid syntax, oversized contexts shed non-critical fields (e.g. cart value, overdue days, last outcome) in a strict priority order while preserving safety-critical recovery counters and opt-out flags.
 4. **Purpose-Specific Caching**:

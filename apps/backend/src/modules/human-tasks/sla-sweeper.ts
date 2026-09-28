@@ -57,18 +57,24 @@ export class SlaSweeper {
 
         // 2. Publish human-task.sla-breached domain event
         if (this.eventBus) {
+          // Resolve owning customer from the case (task.caseId is NOT a customer id).
+          const caseRow = await this.repos.findCaseById(
+            { db: this.db },
+            { tenantId: task.tenantId, caseId: task.caseId },
+          );
           const event: DomainEvent = {
             id: randomUUID(),
             type: "human-task.sla-breached",
             occurred_at: asOf.toISOString(),
             source: "sla_sweeper",
             tenant_id: task.tenantId,
-            customer_id: task.caseId,
+            customer_id: caseRow?.customerId ?? task.caseId,
             entity_id: task.id,
-            entity_type: "INVOICE",
+            entity_type: "HUMAN_TASK",
             payload: {
               taskId: task.id,
               caseId: task.caseId,
+              customerId: caseRow?.customerId ?? null,
               taskType: task.type,
               priority: task.priority,
               slaDueAt: task.slaDueAt ? task.slaDueAt.toISOString() : null,

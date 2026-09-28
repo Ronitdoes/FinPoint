@@ -9,7 +9,12 @@ providers.
 | Mode | How | When |
 |---|---|---|
 | **In-process (default, fast)** | `buildApp` + `InProcessEventBus` + real Postgres/Redis via `infra:up`; Temporal/Redpanda via in-process driver or `DefaultWorkflowClient` DB row | Local dev, CI fast gate (`bun run test:e2e`), wall-clock target ≤10min |
-| **Composed (`e2e` profile)** | `docker compose -f tests/e2e/setup/compose.e2e.yml up` (fresh volumes), migrations, minimal seed, API+worker, `E2E_BASE_URL` pointed at the composed API | Nightly / pre-release, restart-variant with real `kill -9` |
+| **Composed (`e2e` profile)** | `docker compose -f tests/e2e/setup/compose.e2e.yml up` (fresh volumes), migrations, minimal seed, API+worker, `E2E_BASE_URL` pointed at the composed API | Nightly / pre-release, restart-variant with real `kill -9` (`E2E_INFRA=1`) |
+
+Scope rule: the in-process default is the every-push gate. The composed
+profile plus `E2E_INFRA=1` (real `docker kill -s SIGKILL` mid-wait drill,
+per the s-31 drill contract — skipped without the flag) is the
+nightly / pre-release scope only, never the per-push path.
 
 Both modes execute **public surface only** (+`/demo/*` simulation endpoints).
 No test-only backdoors exist: any read capability an assertion needs comes from
@@ -72,3 +77,22 @@ Each numbered §29 item maps to exactly one `expectDodNN*` helper in
 `support/expect-journey.ts`, tagged with an inline `[DOD-NN]` marker.
 `scripts/e2e-coverage-check.mjs` counts markers and fails if <18.
 Spec 03 §8 blocks map to `AC-*` test titles in `acceptance/`.
+
+AC-PAY-3 contract note: `retry_count=3` + `RETRY_PAYMENT{attempt 4}` goes
+through the pure `evaluate` + default rules and must come out `REJECTED`
+with `POL-MAXRETRY` and zero effective actions. The acceptance test pins
+this deterministic policy contract exactly as specified — faithful, no
+deviation.
+
+## UI smoke / Playwright policy (accepted deviation)
+
+The dashboard smoke (`ui/dashboard.smoke.e2e.ts`) closes the loop in three
+legs: (1) API overview delta, (2) timeline feed, (3) built-frontend shell
+markup asserting `FinPoint|Revenue Recovery|Total Recovered`. The
+shell-markup leg IS the gate. Real-browser card/timeline assertions run
+only when the `playwright` package is installed and skip gracefully
+otherwise — pinning Playwright + browser binaries into the CI `e2e` job was
+deliberately deferred as too heavy for the per-push gate, and the skip is
+recorded here as the accepted deviation. Composed-profile runs with a
+built frontend + Playwright exercise the browser leg; CI asserts legs
+(1)–(3-markup) every run.

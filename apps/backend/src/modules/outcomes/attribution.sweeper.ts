@@ -1,5 +1,6 @@
 import type { Database } from "@repo/db";
 import type { Repositories } from "../../plugins/db";
+import type Redis from "ioredis";
 import { OutcomeRecordService } from "./record.service";
 import { recordAttributionSweeperMatch, getLogger } from "@repo/observability";
 
@@ -33,8 +34,11 @@ export class AttributionSweeper {
   constructor(
     private readonly db: Database,
     private readonly repos: Repositories,
+    redisClient?: Redis | null,
   ) {
-    this.recordService = new OutcomeRecordService(db, repos);
+    // Audit fix (s-26): pass Redis through so ATTRIBUTION_WINDOW outcomes bust
+    // the analytics cache via OutcomeRecordService.invalidateAnalyticsCache.
+    this.recordService = new OutcomeRecordService(db, repos, redisClient ?? null);
   }
 
   public async runSweep(options: SweepOptions = {}): Promise<SweepResult> {

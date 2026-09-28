@@ -13,10 +13,49 @@ dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 // DIRECT_URL bypasses transaction poolers (PgBouncer/Supavisor) for DDL migrations
-const directConnectionString =
-  process.env.DIRECT_URL ||
-  process.env.DATABASE_URL ||
-  "postgres://postgres:postgres@localhost:5432/revenue_recovery";
+const FALLBACK_CONNECTION_STRING = "postgres://postgres:postgres@localhost:5432/revenue_recovery";
+
+const connectionSource: "DIRECT_URL" | "DATABASE_URL" | "fallback-localhost" =
+  process.env.DIRECT_URL ? "DIRECT_URL" : process.env.DATABASE_URL ? "DATABASE_URL" : "fallback-localhost";
+
+const directConnectionString = process.env.DIRECT_URL || process.env.DATABASE_URL || FALLBACK_CONNECTION_STRING;
+
+/**
+ * Fails fast when CI would silently fall back to localhost because the
+ * staging/prod secrets are unset. Without this, a missing STAGING_DIRECT_URL
+ * surfaces as a cryptic ECONNREFUSED 127.0.0.1:5432 instead of the real cause.
+ * Local dev (no CI=true) keeps the localhost fallback.
+ */
+function assertConnectionConfigured(caller: string): void {
+  if (connectionSource === "fallback-localhost" && process.env.CI === "true") {
+    throw new Error(
+      `${caller}: neither DIRECT_URL nor DATABASE_URL is set (CI=true). ` +
+        `In deploy-staging this means the 'staging' environment secrets ` +
+        `STAGING_DIRECT_URL / STAGING_DATABASE_URL are missing or the environment ` +
+        `protection rule did not expose them to this job. ` +
+        `Set the secrets per docs/deploy/environments.md; refusing to migrate localhost.`,
+    );
+  }
+}
+
+/**
+ * Rewrites low-level connection failures into actionable errors.
+ * Never includes the connection string (may carry credentials).
+ */
+function toActionableConnectionError(err: unknown, caller: string): Error {
+  const code = (err as { code?: string })?.code;
+  if (code === "ECONNREFUSED") {
+    const hint =
+      process.env.CI === "true"
+        ? "Check that the target database host is reachable from this runner and that " +
+          "STAGING_DIRECT_URL points at it (not localhost). Locally, run 'bun run infra:up' first."
+        : "Is Postgres running? Start it with 'bun run infra:up' " +
+          "(expects postgres://postgres:postgres@localhost:5432/revenue_recovery), " +
+          "or set DIRECT_URL/DATABASE_URL.";
+    return new Error(`${caller}: connect ECONNREFUSED via ${connectionSource}. ${hint}`);
+  }
+  return err instanceof Error ? err : new Error(`${caller}: ${String(err)}`);
+}
 
 const MIGRATION_ADVISORY_LOCK_ID = 724193;
 
@@ -32,6 +71,7 @@ export interface MigrationCheckResult {
  * Useful for CI gates and container startup healthchecks.
  */
 export async function checkPendingMigrations(): Promise<MigrationCheckResult> {
+  assertConnectionConfigured("db:migrate:check");
   const client = postgres(directConnectionString, {
     max: 1,
     idle_timeout: 0,
@@ -77,6 +117,7 @@ export async function checkPendingMigrations(): Promise<MigrationCheckResult> {
  */
 export async function runMigrations() {
   console.log("⏳ Running database migrations with direct connection...");
+  assertConnectionConfigured("db:migrate");
 
   /**
    * Direct, single-connection PostgreSQL client for migrations.
@@ -88,9 +129,15 @@ export async function runMigrations() {
     connect_timeout: 15,
   });
 
+  let lockAcquired = false;
   try {
     console.log(`🔒 Acquiring migration advisory lock (${MIGRATION_ADVISORY_LOCK_ID})...`);
-    await migrationClient`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
+    try {
+      await migrationClient`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
+    } catch (err) {
+      throw toActionableConnectionError(err, "db:migrate");
+    }
+    lockAcquired = true;
 
     const migrationDb = drizzle(migrationClient);
     const migrationsFolder = path.resolve(__dirname, "../drizzle");
@@ -118,16 +165,22 @@ export async function runMigrations() {
           continue;
         }
 
-        console.error("❌ Migration failed:", error);
-        throw error;
+        console.error("❌ Migration failed:", toActionableConnectionError(error, "db:migrate"));
+        throw toActionableConnectionError(error, "db:migrate");
       }
     }
   } finally {
-    try {
-      await migrationClient`SELECT pg_advisory_unlock(${MIGRATION_ADVISORY_LOCK_ID})`;
-      console.log(`🔓 Released migration advisory lock (${MIGRATION_ADVISORY_LOCK_ID})`);
-    } catch (unlockError) {
-      console.error("⚠️ Failed to release advisory lock:", unlockError);
+    // Only unlock when we actually hold the lock: if the initial connect or
+    // lock acquisition failed, an unlock attempt just replays the same
+    // connection error and buries the real cause (seen as "Failed to release
+    // advisory lock" + ECONNREFUSED noise in deploy-staging logs).
+    if (lockAcquired) {
+      try {
+        await migrationClient`SELECT pg_advisory_unlock(${MIGRATION_ADVISORY_LOCK_ID})`;
+        console.log(`🔓 Released migration advisory lock (${MIGRATION_ADVISORY_LOCK_ID})`);
+      } catch (unlockError) {
+        console.error("⚠️ Failed to release advisory lock:", unlockError);
+      }
     }
     await migrationClient.end();
   }
@@ -149,7 +202,7 @@ export async function runMigrationCheck() {
       console.log(`✅ All ${totalCount} migration(s) are applied. Database schema is up to date.`);
     }
   } catch (err) {
-    console.error("❌ Migration check failed with error:", err);
+    console.error("❌ Migration check failed with error:", toActionableConnectionError(err, "db:migrate:check"));
     process.exit(1);
   }
 }
@@ -159,6 +212,11 @@ if ((import.meta as { main?: boolean }).main || process.argv[1]?.endsWith("migra
   if (process.argv.includes("--check")) {
     runMigrationCheck();
   } else {
-    runMigrations().catch(() => process.exit(1));
+    runMigrations().catch((err: unknown) => {
+      // Pre-connection failures (e.g. missing secrets in CI) throw before the
+      // runner's own logging; surface them instead of exiting silently.
+      console.error("❌ Migration failed:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    });
   }
 }

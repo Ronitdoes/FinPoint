@@ -19,6 +19,7 @@ This document explains, in complete depth, everything implemented in `specs/step
 11. [Observability & Metrics Baseline](#11-observability--metrics-baseline)
 12. [Verification Evidence (Definition of Done)](#12-verification-evidence-definition-of-done)
 13. [Design Decisions & Judgment Calls](#13-design-decisions--judgment-calls)
+14. [Audit Fixes (post-implementation review)](#14-audit-fixes-post-implementation-review)
 
 ---
 
@@ -28,7 +29,7 @@ In AI-Revenue-Recovery, **Policy = Permission** (Spec 01 §11, Spec 02 §1). The
 
 Step s-16 establishes this inviolable safety barrier:
 1. **Pure Orchestration Engine (`@repo/policy`)**: A dependency-free (except `@repo/domain` and `zod`), allocation-light evaluator computing per-action verdicts (`ALLOW`, `REJECT`, `REQUIRE_APPROVAL`, `ADJUSTED`) and overall verdicts (`ALLOWED`, `REJECTED`, `REQUIRE_APPROVAL`).
-2. **9 Seeded Default Rules**: Exact matching of MVP limits (opt-out halt, open dispute halt, 3 retry cap, WhatsApp 2/7d cap, Email 3/14d cap, ₹500 discount cap with clamping, ₹100,000 high-value invoice approval gate, AI confidence approval gate, and payment success stop condition).
+2. **9 Seeded Default Rules**: Exact matching of MVP limits (opt-out halt, open dispute halt, 3 retry cap, WhatsApp 2/7d cap, Email 3/14d cap, ₹5,000 discount cap with clamping, ₹100,000 high-value invoice approval gate, AI confidence approval gate, and payment success stop condition).
 3. **Safe Declarative AST JSONB Matcher**: Expression interpreter supporting custom tenant rules with field path traversal and operator evaluation with zero `eval()` or prototype pollution risks.
 4. **Immutable Rule Versioning**: Every rule modification on `PATCH /policies/:id` creates a new row in `policy_versions` with an immutable snapshot, ensuring that historical evaluations are never rewritten.
 5. **Append-Only Evaluation Ledger**: Every policy check persists a record in `policy_evaluations` capturing active version IDs, latency, rejections, and effective actions.
@@ -172,7 +173,7 @@ The platform seeds 9 immutable default rules (`tenant_id = null`) matching the s
 | `POL-MAXRETRY` | `REJECT` | `case.retry_count ≥ 3 ∧ action = RETRY_PAYMENT` | `REJECT` | `MAX_RETRIES_REACHED` | Spec 01 §11 (`MAX_PAYMENT_RETRIES = 3`) |
 | `POL-WA-CAP` | `REJECT` | `counters.whatsapp_sent_7d ≥ 2 ∧ action = SEND_WHATSAPP` | `REJECT` | `WHATSAPP_FREQUENCY_CAP_EXCEEDED` | Spec 03 §6 (`MAX_WHATSAPP_PER_7_DAYS = 2`) |
 | `POL-EM-CAP` | `REJECT` | `counters.email_sent_14d ≥ 3 ∧ action = SEND_EMAIL` | `REJECT` | `EMAIL_FREQUENCY_CAP_EXCEEDED` | Spec 03 §6 (`MAX_EMAIL_PER_14_DAYS = 3`) |
-| `POL-DISCOUNT` | `LIMIT` | `action = OFFER_INCENTIVE ∧ amount > ₹500` (500,000 paise)<br>• Clamping active $\to$ clamped to cap<br>• Confidence gate true $\to$ `REQUIRE_APPROVAL` | `REJECT` / `ADJUSTED` / `REQUIRE_APPROVAL` | `MAX_DISCOUNT_EXCEEDED` / `INCENTIVE_REQUIRES_APPROVAL` | Spec 01 §11; Spec 03 §6 (`MAX_AUTO_DISCOUNT_MINOR = 500_000`) |
+| `POL-DISCOUNT` | `LIMIT` | `action = OFFER_INCENTIVE ∧ amount > ₹5,000` (500,000 paise)<br>• Clamping active $\to$ clamped to cap<br>• Confidence gate true $\to$ `REQUIRE_APPROVAL` | `REJECT` / `ADJUSTED` / `REQUIRE_APPROVAL` | `MAX_DISCOUNT_EXCEEDED` / `INCENTIVE_REQUIRES_APPROVAL` | Spec 01 §11; Spec 03 §6 (`MAX_AUTO_DISCOUNT_MINOR = 500_000`) |
 | `POL-HIGHVALUE` | `REQUIRE_APPROVAL` | `case.amount_at_risk > ₹100,000` (10,000,000 paise) $\wedge action \in \{\text{OFFER\_INCENTIVE}, \text{CREATE\_PAYMENT\_LINK}\}$ | `REQUIRE_APPROVAL` | `HIGH_VALUE_THRESHOLD_EXCEEDED` | Spec 02 §7 (`HIGH_VALUE_APPROVAL_MINOR = 10_000_000`) |
 | `POL-CONFIDENCE` | `REQUIRE_APPROVAL` | `requiresApproval(decision) = true` (diagnosis confidence $< 0.6$ on high-stakes actions or explicit flag) | `REQUIRE_APPROVAL` | `LOW_CONFIDENCE_REQUIRES_APPROVAL` / `CONFIDENCE_GATE_TRIGGERED` | Spec 01 §10; Step 15 hook |
 | `POL-PAYMENT-SUCCESS` | `REJECT` | `payment_status = SUCCEEDED ∨ case.status ∈ {SUCCEEDED, RECOVERED, RESOLVED_UPSTREAM}` | `REJECT` (all actions) | `PAYMENT_ALREADY_SUCCEEDED` | Spec 03 §6 stop condition |
@@ -276,7 +277,7 @@ The Policy Engine integrates directly with `@repo/observability` and exposes sta
 ## 12. Verification Evidence (Definition of Done)
 
 ### Test Results
-- **Unit Tests**: 43 unit tests in `@repo/policy` verifying rule boundaries, precedence, and matcher security.
+- **Unit Tests**: 62 unit-test executions in `@repo/policy` (as of <2026-09-10>; `it.each` rows counted per execution) verifying rule boundaries, precedence, and matcher security.
 - **Integration Tests**: 16 end-to-end integration tests in `apps/backend/src/tests/policy-integration.test.ts`.
 - **Full Monorepo Test Suite**: **683 tests passed across 46 test files** with 0 failures.
 - **Type Compliance**: `bun run check-types` passed cleanly across all 12 workspace packages.
@@ -292,3 +293,14 @@ The Policy Engine integrates directly with `@repo/observability` and exposes sta
 1. **Dual Evaluation Paths**: The engine supports compiled evaluators for the 9 built-in platform rules (for extreme throughput) and declarative AST matching for custom tenant rules. The 9 defaults are seeded in database JSONB definitions that match the compiled rules exactly.
 2. **Clamping vs Hard Rejection**: Clamping (`ADJUSTED` status) is restricted to configured discount caps. The AI recommendation is clamped to the legal limit rather than outright rejected, keeping the recovery funnel active while enforcing safety.
 3. **Fail-Closed Architecture**: Any internal query or parsing error aborts the evaluation with `POLICY_EVALUATION_FAILED`, preventing runaway executions during database brownouts.
+
+---
+
+## 14. Audit Fixes (post-implementation review)
+
+1. **CRITICAL G1 — `retry_count` / `payment_status` now fed into `PolicyInput`** (`apps/backend/src/modules/policy/policy.service.ts`).
+   `evaluate()` always supported `POL-MAXRETRY` (`case.retry_count ≥ 3`) and `POL-PAYMENT-SUCCESS` (`payment_status = SUCCEEDED`), but the service never populated those fields — `POL-MAXRETRY` was dead and `POL-PAYMENT-SUCCESS` only fired via the case status. Source of truth: for `source_entity_type = PAYMENT` cases, `retry_count = COUNT(payment_attempts)` and `payment_status = payments.status` for the linked payment (`source_entity_id`); non-payment cases default to `0`/`""` (the case status still gates `RECOVERED`/`RESOLVED_UPSTREAM`). Derivation errors propagate to the existing fail-closed handler (never fail open). Covered by two service tests: `retry_count = 3` rejects `RETRY_PAYMENT` (`POL-MAXRETRY`/`MAX_RETRIES_REACHED`) while `SEND_EMAIL` stays `ALLOWED`, and a `SUCCEEDED` linked payment rejects all actions on an `IN_PROGRESS` case.
+2. **Batched version loading.** The per-rule `getLatestPolicyVersion` loop (N+1 on the hot evaluation path and on `GET /policies`) is replaced by the single-query `getLatestPolicyVersionsForRules` (`packages/db/src/repositories/policies.repo.ts`); the seeder's version-existence check is batched the same way.
+3. **Transactional rule update.** `updatePolicyRule` (rule row + version insert + audit log) now runs inside one `withTransaction` boundary (CONVENTIONS §9) — a crash can no longer leave a rule ahead of its snapshot history.
+4. **Matcher `LIMIT` effect mapped explicitly** (`packages/policy/src/matcher.ts`): `LIMIT` + clamp → `ADJUST` with clamped params (no-op when already within cap); `LIMIT` without a clamp target fails closed as `REJECT` with reason `LIMIT_WITHOUT_CLAMP_TARGET` instead of silently falling through to `REJECT`; unknown effects remain fail-closed `REJECT`. Unit-tested in `packages/policy/src/matcher.test.ts`.
+5. **`409 CONCURRENT_VERSION` implemented.** `PATCH /policies/:id` accepts `expected_version`/`expectedVersion`; a stale expectation — or a lost version-number race surfacing as a `23505` unique violation — throws `ConcurrentVersionError` (409) instead of forking version history. Tested (stale → 409, fresh → 200 + version bump).

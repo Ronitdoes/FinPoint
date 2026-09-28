@@ -12,7 +12,11 @@ import { recordAuthFailure } from "@repo/observability";
 import type Redis from "ioredis";
 
 export interface RequestAuth {
-  kind: "session" | "api_key" | "webhook";
+  // G-09-1: "webhook" removed from the union (was dead — never assigned).
+  // Webhook callers are verified by provider HMAC guards in s-10
+  // (modules/webhooks/*) and never receive a request.auth principal, so no
+  // route may expect kind === "webhook".
+  kind: "session" | "api_key";
   userId?: string;
   tenantId: string;
   role: UserRole;
@@ -83,6 +87,7 @@ const authPluginCallback: FastifyPluginAsync<AuthPluginOptions> = async (
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.slice(7).trim();
       if (token.startsWith("rrk_")) {
+        // Note: constantTimeEquals not needed here — the secret is SHA-256 hashed and resolved via indexed lookup (no direct secret comparison), so there is no timing oracle.
         const keyHash = sha256(token);
         let apiKeyData: { id: string; tenantId: string; scopes: string[]; revokedAt: string | null } | null = null;
 

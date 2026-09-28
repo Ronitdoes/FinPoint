@@ -89,7 +89,7 @@ export const DEFAULT_POLICY_RULES: readonly DefaultPolicyRuleDefinition[] = Obje
   {
     code: "POL-DISCOUNT",
     name: "Incentive Discount Cap & Approval Gate",
-    description: `Cap automated discount to ₹500 (${MAX_AUTO_DISCOUNT_MINOR} minor units) and require human approval for incentives`,
+    description: `Cap automated discount to ₹5,000 (${MAX_AUTO_DISCOUNT_MINOR} minor units) and require human approval for incentives`,
     ruleKind: "LIMIT",
     definition: {
       applies_to: ["OFFER_INCENTIVE"],

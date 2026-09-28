@@ -98,7 +98,7 @@ describe("Validation Pipeline: Structural, Semantic & Fallback Recommender (Step
       expect(result.errors[0]).toContain("delay_hours must be an integer between 1 and 168");
     });
 
-    it("enforces OFFER_INCENTIVE amount_minor <= MAX_AUTO_DISCOUNT_MINOR (50000 paise)", () => {
+    it("enforces OFFER_INCENTIVE amount_minor <= MAX_AUTO_DISCOUNT_MINOR (500,000 paise / ₹5,000)", () => {
       const excessiveDiscount: DecisionRecord = {
         diagnosis: {
           cause: "price_objection",

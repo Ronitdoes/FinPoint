@@ -140,9 +140,11 @@ AI-Revenue-Recovery/
 │   ├── config/             # typed env loading + validation
 │   └── testing/            # fixtures, factories, test containers helpers
 ├── infra/
-│   ├── docker/             # compose files, Dockerfiles
+│   ├── docker/             # compose (9-service default profile) + Dockerfiles + otel-collector config
 │   ├── temporal/           # dynamicconfig for local Temporal
-│   └── grafana/            # dashboards + provisioning
+│   ├── grafana/            # 4 dashboards as code (executive/operations/ai/infra) + provisioning (s-34)
+│   ├── prometheus/         # Prometheus + Alertmanager rules (14 alerts, s-34)
+│   └── loki/               # Loki log aggregation config (s-34; KPI snapshot via pushgateway per ADR-016)
 ├── docs/                   # adr/, ARCHITECTURE.md, CONVENTIONS.md, TRACEABILITY.md
 └── specs/                  # untouched source-of-truth documents
 ```
@@ -164,7 +166,7 @@ Reviewed at s-01. Every gap has an owning step; nothing is left unassigned.
 | `packages/db/src/repositories/` | missing (schema empty) | s-04…s-06 |
 | `packages/testing/` | skeleton created (this step) | filled s-06 onward |
 | `infra/docker/`, `infra/temporal/` | missing | s-02 |
-| `infra/grafana/` | missing | s-08 (provisioning), s-34 (dashboards/runbooks) |
+| `infra/grafana/` | missing | s-08 (provisioning), s-34 (4 dashboards as code + loki/pushgateway observability) |
 | `docs/` ADRs, conventions, traceability | created (this step) | updated by each later step |
 
 ## 6. Appendix: Entity-Relationship Diagram (ERD)
@@ -238,7 +240,7 @@ erDiagram
 
 ## 7. Related documents
 
-- Decision records: [`adr/ADR-001-runtime.md`](./adr/ADR-001-runtime.md) … [`adr/ADR-014-observability-stack.md`](./adr/ADR-014-observability-stack.md)
+- Decision records: [`adr/ADR-001-runtime.md`](./adr/ADR-001-runtime.md) … [`adr/ADR-016-dashboard-data-pushgateway.md`](./adr/ADR-016-dashboard-data-pushgateway.md) (16 ADRs: ADR-001…016)
 - Conventions: [`CONVENTIONS.md`](./CONVENTIONS.md)
 - Traceability: [`TRACEABILITY.md`](./TRACEABILITY.md)
 - Roadmap: [`../specs/steps/README.md`](../specs/steps/README.md) and progress tracker [`../specs/steps/progress.md`](../specs/steps/progress.md)

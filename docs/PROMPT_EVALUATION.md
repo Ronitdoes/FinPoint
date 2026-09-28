@@ -22,4 +22,28 @@ All modifications to LLM system prompts, user prompt templates, or inference hyp
    - **Confidence & Latency**: Mean confidence $\ge$ 0.70, mean latency < 2,500 ms.
    - **Cost Delta**: Token consumption increase must be justified by decision quality improvement.
 4. **Attach Report to PR**:
-   - Paste the generated markdown report into the pull request description.
+    - Paste the generated markdown report into the pull request description.
+
+## 3. Baseline-Report Diff Support (Limitation Note)
+
+The s-15 requirement asks for "action-distribution drift vs baseline version"
+and "est. cost delta" comparisons across prompt versions. The current harness
+(`services/eval/src/runner.ts`) reports per-run `action_distribution` and
+`total_cost_minor_units` but does **not** yet diff the current run against a
+checked-in baseline JSON (no `--baseline` flag, no drift thresholds, no
+`baseline-report.json` artifact committed).
+
+Until that diff support lands, prompt-change reviewers must compare the two
+numbers manually between the attached current-run report and the previous
+report on the base branch:
+
+- **Action-distribution drift**: eyeball the "Action Distribution Drift" table
+  for new/missing actions vs the base-branch run.
+- **Cost delta**: compare `Total Est. Cost` (`total_cost_minor_units`) and
+  justify any token-consumption increase with a quality improvement.
+
+Regression safety net: `services/eval/src/eval.test.ts` test 3 renders a real
+checked-in prompt template (`getPrompt(surface).buildUserPrompt(snapshot)`
+for a golden-v1 case) through the production `validateStructural` +
+`validateSemantic` validators — so template/version regressions fail CI even
+though the gate itself still replays via the deterministic offline simulator.

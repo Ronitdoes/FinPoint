@@ -17,13 +17,94 @@ function redactMessageVariables(
 ): Record<string, unknown> {
   const safe: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(variables)) {
-    if (typeof value === "string" && (key.includes("token") || key.includes("secret") || key.includes("auth"))) {
+    const lower = key.toLowerCase();
+    if (
+      lower.includes("token") ||
+      lower.includes("secret") ||
+      lower.includes("auth") ||
+      lower.includes("password") ||
+      lower.includes("payment_url") ||
+      lower.includes("payment_link") ||
+      lower.includes("checkout_url") ||
+      lower.includes("invoice_number") ||
+      lower.includes("amount") ||
+      lower.includes("payment") ||
+      lower.includes("checkout") ||
+      lower.includes("invoice") ||
+      lower.includes("url") ||
+      lower.includes("link")
+    ) {
       safe[key] = "[REDACTED]";
     } else {
       safe[key] = value;
     }
   }
   return safe;
+}
+
+const DELIVERY_PAYLOAD_SENSITIVE_PATTERNS = [
+  "token",
+  "secret",
+  "auth",
+  "password",
+  "payment_url",
+  "payment_link",
+  "checkout_url",
+  "invoice_number",
+  "amount",
+  "payment",
+  "checkout",
+  "invoice",
+  "url",
+  "link",
+];
+
+const DELIVERY_PAYLOAD_ADDRESS_KEYS = [
+  "recipient_id",
+  "recipient",
+  "to",
+  "to_address",
+  "phone",
+  "email",
+  "address",
+];
+
+/**
+ * Recursively scrubs delivery-event payloads before returning them on
+ * GET /messages/:id (s-19 audit fix): masks recipient/phone/email identifiers
+ * and redacts payment URLs, invoice numbers, and amounts. Plain status fields
+ * (provider, raw_status, raw_event, status) are preserved.
+ */
+export function scrubDeliveryEventPayload(payload: unknown): unknown {
+  if (payload === null || payload === undefined) return payload;
+  if (typeof payload === "string") {
+    // Avoid leaking raw emails/phones embedded as bare strings at top level.
+    const trimmed = payload.trim();
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) return maskEmail(trimmed) || "[REDACTED]";
+    if (/^\+?\d[\d\s\-()]{6,}$/.test(trimmed)) return maskPhone(trimmed) || "[REDACTED]";
+    return payload;
+  }
+  if (Array.isArray(payload)) return payload.map(scrubDeliveryEventPayload);
+  if (typeof payload === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
+      const lower = key.toLowerCase();
+      if (DELIVERY_PAYLOAD_ADDRESS_KEYS.some((k) => lower === k || lower.includes(k))) {
+        out[key] =
+          typeof value === "string"
+            ? (lower.includes("email") ? maskEmail(value) || "[REDACTED]" : maskPhone(value) || "[REDACTED]")
+            : "[REDACTED]";
+        continue;
+      }
+      if (DELIVERY_PAYLOAD_SENSITIVE_PATTERNS.some((p) => lower.includes(p))) {
+        out[key] = "[REDACTED]";
+        continue;
+      }
+      out[key] = scrubDeliveryEventPayload(value);
+    }
+    return out;
+  }
+  return payload;
 }
 
 /**
@@ -140,7 +221,7 @@ export const messagingRoutes: FastifyPluginAsync = async (fastify) => {
           id: evt.id,
           status: evt.status,
           occurred_at: evt.occurredAt,
-          payload: evt.payload,
+          payload: scrubDeliveryEventPayload(evt.payload),
         })),
       };
 

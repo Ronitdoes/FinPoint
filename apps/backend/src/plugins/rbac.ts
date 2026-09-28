@@ -44,6 +44,17 @@ export function requireRole(...allowedRoles: UserRole[]): RoleGuard {
 /**
  * Factory for creating API Key scope-checking pre-handlers (s-11 §POST /events contract).
  * Supports '*' wildcard scope and session fallback for privileged roles.
+ *
+ * WARNING (G-09-2): the session branch below admits ADMIN or OPERATIONS for
+ * ANY scope — it is NOT a least-privilege scope check. It exists so
+ * operational sessions can call non-admin scopes without per-key scopes
+ * (e.g. POST /events `events:write`, POST /ai/decide `ai:decide`, where
+ * OPERATIONS reliance is by design per ai/routes.ts). Therefore
+ * `requireScope("admin:manage")` MUST always be paired with
+ * `requireRole("ADMIN")` (role guard first) on admin surfaces — the role
+ * guard is what blocks OPERATIONS/VIEWER/etc. from admin routes; the scope
+ * guard alone would let OPERATIONS sessions through. Machine keys must carry
+ * the exact scope or `*` (s-09 least-privilege fix).
  */
 export function requireScope(...requiredScopes: string[]): ScopeGuard {
   return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
@@ -63,6 +74,13 @@ export function requireScope(...requiredScopes: string[]): ScopeGuard {
         );
       }
     } else {
+      // G-09-2: intentionally broad session fallback (ADMIN or OPERATIONS for
+      // any scope). Safe ONLY because admin surfaces pair this guard with
+      // requireRole("ADMIN") first (see modules/admin/*.routes.ts), which
+      // rejects OPERATIONS before this branch runs. Do NOT use requireScope
+      // alone to protect an admin-only route; do NOT narrow this to ADMIN
+      // without first migrating OPERATIONS sessions off scope-alone reliance
+      // (POST /events events:write, POST /ai/decide ai:decide).
       if (!["ADMIN", "OPERATIONS"].includes(request.auth.role)) {
         recordAuthFailure("forbidden_role");
         throw new ForbiddenError(

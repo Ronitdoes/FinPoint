@@ -581,5 +581,55 @@ describe("Step 15 — AI Governance & Adversarial Test Suite (All 11 Scenarios)"
       const json = JSON.parse(response.body);
       expect(json.items[0].inputSnapshot).toBeDefined();
     }, 30000);
+
+    it("GET /ai/decisions/:id masks inputSnapshot/outputRaw unless ADMIN with ?include=input_snapshot", async () => {
+      const listRes = await app.inject({
+        method: "GET",
+        url: `/ai/decisions?case_id=${caseId}`,
+        headers: {
+          authorization: `Bearer ${operationsApiKey}`,
+        },
+      });
+      expect(listRes.statusCode).toBe(200);
+      const decisionId = JSON.parse(listRes.body).items[0].id as string;
+
+      // OPERATIONS role: snapshot fields absent
+      const opsRes = await app.inject({
+        method: "GET",
+        url: `/ai/decisions/${decisionId}`,
+        headers: {
+          authorization: `Bearer ${operationsApiKey}`,
+        },
+      });
+      expect(opsRes.statusCode).toBe(200);
+      const opsJson = JSON.parse(opsRes.body);
+      expect(opsJson.id).toBe(decisionId);
+      expect(opsJson.inputSnapshot).toBeUndefined();
+      expect(opsJson.outputRaw).toBeUndefined();
+
+      // ADMIN without include: still masked (same contract as the list route)
+      const adminPlainRes = await app.inject({
+        method: "GET",
+        url: `/ai/decisions/${decisionId}`,
+        headers: {
+          authorization: `Bearer ${adminApiKey}`,
+        },
+      });
+      expect(adminPlainRes.statusCode).toBe(200);
+      expect(JSON.parse(adminPlainRes.body).inputSnapshot).toBeUndefined();
+
+      // ADMIN with ?include=input_snapshot: full record
+      const adminFullRes = await app.inject({
+        method: "GET",
+        url: `/ai/decisions/${decisionId}?include=input_snapshot`,
+        headers: {
+          authorization: `Bearer ${adminApiKey}`,
+        },
+      });
+      expect(adminFullRes.statusCode).toBe(200);
+      const adminFullJson = JSON.parse(adminFullRes.body);
+      expect(adminFullJson.inputSnapshot).toBeDefined();
+      expect(adminFullJson.outputRaw).toBeDefined();
+    }, 30000);
   });
 });

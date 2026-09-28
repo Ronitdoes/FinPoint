@@ -1,10 +1,9 @@
+import { HIGH_STAKES_CONFIDENCE_ACTIONS } from "@repo/domain";
 import type { CompiledRuleEvaluator } from "../types";
 
-const HIGH_STAKES_ACTIONS = new Set([
-  "RETRY_PAYMENT",
-  "CREATE_PAYMENT_LINK",
-  "OFFER_INCENTIVE",
-]);
+// Single source of truth shared with the governance requiresApproval hook
+// (apps/backend ai/governance/confidence.ts) via @repo/domain.
+const HIGH_STAKES_ACTIONS = HIGH_STAKES_CONFIDENCE_ACTIONS;
 
 export const evaluateConfidenceRule: CompiledRuleEvaluator = (context) => {
   const decision = context.decision;

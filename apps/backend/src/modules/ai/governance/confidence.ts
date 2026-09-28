@@ -1,4 +1,6 @@
 import type { RiskType } from "@repo/domain";
+import { HIGH_STAKES_CONFIDENCE_ACTIONS } from "@repo/domain";
+import { recordRequiresApproval } from "@repo/observability";
 
 export interface DecisionLike {
   diagnosis?: {
@@ -11,14 +13,16 @@ export interface DecisionLike {
   recommendedActions?: unknown[];
 }
 
-const HIGH_STAKES_ACTIONS = new Set([
-  "RETRY_PAYMENT",
-  "CREATE_PAYMENT_LINK",
-  "OFFER_INCENTIVE",
-]);
+const HIGH_STAKES_ACTIONS = HIGH_STAKES_CONFIDENCE_ACTIONS;
 
 /**
  * Confidence hook contract (Spec 01 §10, Step 15 §4, consumed by policy engine s-16).
+ *
+ * Single-source note: the high-stakes set lives in @repo/domain
+ * (HIGH_STAKES_CONFIDENCE_ACTIONS) and is shared with the @repo/policy
+ * POL-CONFIDENCE evaluator, so the hook and the policy rule can never drift.
+ * (A package importing this hook from apps/backend would violate the layer rule
+ * in CONVENTIONS §1 — hence @repo/domain, not governance, is the source.)
  *
  * Implements the MVP confidence-threshold policy rule:
  * - true  if any action ∈ {RETRY_PAYMENT, CREATE_PAYMENT_LINK, OFFER_INCENTIVE} AND diagnosis.confidence < 0.6
@@ -28,6 +32,18 @@ const HIGH_STAKES_ACTIONS = new Set([
 export function requiresApproval(
   decision: DecisionLike | null | undefined,
   _surface?: RiskType | string,
+): boolean {
+  const result = evaluateRequiresApproval(decision);
+  try {
+    recordRequiresApproval(result ? "required" : "not_required");
+  } catch {
+    // Metric emission must never break the synchronous policy gate.
+  }
+  return result;
+}
+
+function evaluateRequiresApproval(
+  decision: DecisionLike | null | undefined,
 ): boolean {
   if (!decision) {
     return false;

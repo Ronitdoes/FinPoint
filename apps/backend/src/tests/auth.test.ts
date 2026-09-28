@@ -352,13 +352,25 @@ describe("Step 09 Integration: Authentication, Sessions, RBAC & Tenant Context",
       expect(body.auth.scopes).toEqual(["events:write", "cases:read"]);
     });
 
-    it("GET /admin/api-keys -> 200 lists API keys without leaking plaintext secret", async () => {
+    it("GET /admin/api-keys via events-only key -> 403 (least privilege, s-09 fix)", async () => {
       const res = await app.inject({
         method: "GET",
         url: "/admin/api-keys",
         headers: {
           authorization: `Bearer ${rawApiKey}`,
         },
+      });
+
+      expect(res.statusCode).toBe(403);
+      const body = JSON.parse(res.body);
+      expect(body.error.code).toBe("FORBIDDEN");
+    });
+
+    it("GET /admin/api-keys via session ADMIN -> 200 lists without leaking secret", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/admin/api-keys",
+        headers: { cookie: adminCookie },
       });
 
       expect(res.statusCode).toBe(200);
@@ -368,6 +380,21 @@ describe("Step 09 Integration: Authentication, Sessions, RBAC & Tenant Context",
       expect(key).toBeDefined();
       expect(key.key).toBeUndefined(); // Plaintext MUST NOT be returned in list
       expect(key.prefix).toBeDefined();
+    });
+
+    it("POST /admin/users via events-only key -> 403 (no privilege escalation)", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/admin/users",
+        headers: { authorization: `Bearer ${rawApiKey}` },
+        payload: {
+          email: "escalation-attempt@example.com",
+          name: "Escalation",
+          password: "SecurePassword123!",
+          role: "ADMIN",
+        },
+      });
+      expect(res.statusCode).toBe(403);
     });
 
     it("DELETE /admin/api-keys/:id -> 204 revokes API key", async () => {

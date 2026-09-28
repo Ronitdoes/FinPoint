@@ -24,6 +24,7 @@ import {
   createCustomer,
   createCase,
   createPayment,
+  createPaymentAttempt,
   createCheckout,
   findCaseById,
   findHumanTaskById,
@@ -352,5 +353,211 @@ describe("Step 20 — 15 Shared Activities Suite", () => {
     expect(NON_RETRYABLE_ERROR_TYPES).toContain("VALIDATION_FAILED");
     expect(NON_RETRYABLE_ERROR_TYPES).toContain("POLICY_REJECTED");
     expect(NON_RETRYABLE_ERROR_TYPES).toContain("CUSTOMER_OPTED_OUT");
+  });
+});
+
+describe("s-22/s-24 — Policy-threading gaps (retry_count / payment_status / bare link)", () => {
+  let tenant: Tenant;
+  let customer: Customer;
+
+  beforeEach(async () => {
+    tenant = await createTenant(
+      { db },
+      { name: "Policy Threading Tenant", slug: `pol-${randomUUID()}` },
+    );
+
+    customer = await createCustomer(
+      { db },
+      {
+        tenantId: tenant.id,
+        email: `pol_${randomUUID()}@example.com`,
+        phone: "+919876543210",
+        name: "Policy Customer",
+      },
+    );
+  });
+
+  async function createPaymentLinkedCase(
+    amountMinor: bigint,
+    paymentStatus: "FAILED" | "SUCCEEDED" = "FAILED",
+  ) {
+    const payment = await createPayment(
+      { db },
+      {
+        tenantId: tenant.id,
+        customerId: customer.id,
+        amount: amountMinor,
+        currency: "INR",
+        provider: "MOCK",
+        providerPaymentId: `mock_${randomUUID()}`,
+        status: paymentStatus,
+        occurredAt: new Date(),
+      },
+    );
+    const recoveryCase = await createCase(
+      { db },
+      {
+        tenantId: tenant.id,
+        customerId: customer.id,
+        status: "IN_PROGRESS",
+        riskType: "PAYMENT_FAILURE",
+        sourceEntityType: "PAYMENT",
+        sourceEntityId: payment.id,
+        amountAtRisk: amountMinor,
+        currency: "INR",
+        riskScore: 60,
+      },
+    );
+    return { payment, recoveryCase };
+  }
+
+  async function recordFailedAttempts(paymentId: string, attemptNumbers: number[]) {
+    for (const attemptNumber of attemptNumbers) {
+      await createPaymentAttempt(
+        { db },
+        {
+          tenantId: tenant.id,
+          paymentId,
+          attemptNumber,
+          initiatedBy: "RECOVERY_WORKFLOW",
+          idempotencyKey: `${tenant.id}:${paymentId}:attempt:${attemptNumber}:${randomUUID()}`,
+          status: "FAILED",
+          requestedAt: new Date(),
+        },
+      );
+    }
+  }
+
+  it("POL-MAXRETRY fires from live DB attempt count (no explicit counters)", async () => {
+    const { payment, recoveryCase } = await createPaymentLinkedCase(BigInt(150000));
+
+    // Below threshold: 2 recorded attempts -> retry allowed
+    await recordFailedAttempts(payment.id, [1, 2]);
+    const allowed = await checkPolicyAgain({
+      tenantId: tenant.id,
+      caseId: recoveryCase.id,
+      actionType: "RETRY_PAYMENT",
+    });
+    expect(allowed.allowed).toBe(true);
+    expect(allowed.requiresApproval).toBe(false);
+
+    // At threshold: 3 recorded attempts -> POL-MAXRETRY rejects
+    await recordFailedAttempts(payment.id, [3]);
+    const rejected = await checkPolicyAgain({
+      tenantId: tenant.id,
+      caseId: recoveryCase.id,
+      actionType: "RETRY_PAYMENT",
+    });
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.ruleCode).toBe("POL-MAXRETRY");
+    expect(rejected.rejectionReason).toBe("MAX_RETRIES_REACHED");
+  });
+
+  it("explicit counters.retry_count takes precedence over the DB count", async () => {
+    const { payment, recoveryCase } = await createPaymentLinkedCase(BigInt(150000));
+    await recordFailedAttempts(payment.id, [1, 2, 3]);
+
+    // Explicit 0 overrides the 3 live DB attempts -> allowed
+    const overridden = await checkPolicyAgain({
+      tenantId: tenant.id,
+      caseId: recoveryCase.id,
+      actionType: "RETRY_PAYMENT",
+      counters: { retry_count: 0 },
+    });
+    expect(overridden.allowed).toBe(true);
+
+    // Explicit 3 on a case with no payment linkage -> rejected
+    const unlinked = await createCase(
+      { db },
+      {
+        tenantId: tenant.id,
+        customerId: customer.id,
+        status: "IN_PROGRESS",
+        riskType: "PAYMENT_FAILURE",
+        sourceEntityType: "INVOICE",
+        sourceEntityId: randomUUID(),
+        amountAtRisk: BigInt(150000),
+        currency: "INR",
+        riskScore: 60,
+      },
+    );
+    const explicit = await checkPolicyAgain({
+      tenantId: tenant.id,
+      caseId: unlinked.id,
+      actionType: "RETRY_PAYMENT",
+      counters: { retry_count: 3 },
+    });
+    expect(explicit.allowed).toBe(false);
+    expect(explicit.ruleCode).toBe("POL-MAXRETRY");
+  });
+
+  it("POL-PAYMENT-SUCCESS fires when the linked payment already SUCCEEDED", async () => {
+    const { recoveryCase } = await createPaymentLinkedCase(
+      BigInt(150000),
+      "SUCCEEDED",
+    );
+
+    const result = await checkPolicyAgain({
+      tenantId: tenant.id,
+      caseId: recoveryCase.id,
+      actionType: "RETRY_PAYMENT",
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.ruleCode).toBe("POL-PAYMENT-SUCCESS");
+    expect(result.rejectionReason).toBe("PAYMENT_ALREADY_SUCCEEDED");
+  });
+
+  it("POL-HIGHVALUE requires approval on a bare high-value CREATE_PAYMENT_LINK", async () => {
+    const highValueCase = await createCase(
+      { db },
+      {
+        tenantId: tenant.id,
+        customerId: customer.id,
+        status: "IN_PROGRESS",
+        riskType: "INVOICE_OVERDUE",
+        sourceEntityType: "INVOICE",
+        sourceEntityId: randomUUID(),
+        amountAtRisk: BigInt(15_000_000), // ₹150,000 > ₹100,000 threshold
+        currency: "INR",
+        riskScore: 60,
+      },
+    );
+
+    const gated = await checkPolicyAgain({
+      tenantId: tenant.id,
+      caseId: highValueCase.id,
+      actionType: "CREATE_PAYMENT_LINK",
+      amountMinor: "15000000",
+      currency: "INR",
+      customerId: customer.id,
+    });
+    expect(gated.allowed).toBe(true);
+    expect(gated.requiresApproval).toBe(true);
+
+    // Low-value control: no approval required
+    const lowValueCase = await createCase(
+      { db },
+      {
+        tenantId: tenant.id,
+        customerId: customer.id,
+        status: "IN_PROGRESS",
+        riskType: "INVOICE_OVERDUE",
+        sourceEntityType: "INVOICE",
+        sourceEntityId: randomUUID(),
+        amountAtRisk: BigInt(150000),
+        currency: "INR",
+        riskScore: 60,
+      },
+    );
+    const control = await checkPolicyAgain({
+      tenantId: tenant.id,
+      caseId: lowValueCase.id,
+      actionType: "CREATE_PAYMENT_LINK",
+      amountMinor: "150000",
+      currency: "INR",
+      customerId: customer.id,
+    });
+    expect(control.allowed).toBe(true);
+    expect(control.requiresApproval).toBe(false);
   });
 });

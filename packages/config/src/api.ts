@@ -60,6 +60,11 @@ export interface MessagingConfig {
   readonly emailApiKey: string | null;
   readonly emailFrom: string | null;
   readonly emailWebhookSecret: string | null;
+  /**
+   * Null when ALLOW_UNSIGNED_WEBHOOKS is unset (each webhook route applies
+   * its own documented default). True/false only when explicitly set.
+   */
+  readonly allowUnsignedWebhooks: boolean | null;
 }
 
 export interface DemoConfig {
@@ -104,6 +109,38 @@ export interface CronConfig {
   readonly retentionSweepIntervalMs: number;
 }
 
+export interface HttpConfig {
+  /**
+   * Extra allowed origins from CORS_ALLOWED_ORIGINS (comma-separated raw).
+   * Empty array when unset; callers merge with dev defaults.
+   */
+  readonly corsAllowedOrigins: readonly string[];
+  /**
+   * Explicit COOKIE_SECURE override. Null when unset ⇒ derive from
+   * `app.env === "production"` at the call site (see auth routes).
+   */
+  readonly cookieSecure: boolean | null;
+  /**
+   * Default per-request budget in ms (REQUEST_TIMEOUT_MS, default 10000).
+   * Wired to Fastify `requestTimeout` (socket-level receive guard) and
+   * `handlerTimeout` (app-level lifecycle guard) in `buildApp` (s-07).
+   */
+  readonly requestTimeoutMs: number;
+  /**
+   * Longer budget for provider webhook ingestion (WEBHOOK_TIMEOUT_MS,
+   * default 25000). Applied per-route via `handlerTimeout` on every route
+   * under `/webhooks/*` (s-07); see `modules/webhooks/routes.ts`.
+   */
+  readonly webhookTimeoutMs: number;
+}
+
+export interface ReleaseConfig {
+  /** Non-secret build version stamp (APP_VERSION, default "dev"). */
+  readonly version: string;
+  /** Non-secret git SHA stamp (GIT_SHA, default "dev"). */
+  readonly gitSha: string;
+}
+
 /**
  * Full server-side configuration surface (API + worker). Provider credentials
  * are reachable only from `packages/integrations` per CONVENTIONS §12 — this
@@ -123,6 +160,18 @@ export interface ServerConfig {
   readonly monitoring: MonitoringConfig;
   readonly auth: AuthConfig;
   readonly cron: CronConfig;
+  readonly http: HttpConfig;
+  readonly release: ReleaseConfig;
+}
+
+function parseCorsAllowedOrigins(raw: string | undefined): readonly string[] {
+  if (!raw) return [];
+  return Object.freeze(
+    raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
 }
 
 function fromRaw(raw: RawServerEnv): ServerConfig {
@@ -168,6 +217,7 @@ function fromRaw(raw: RawServerEnv): ServerConfig {
       emailApiKey: raw.EMAIL_API_KEY ?? null,
       emailFrom: raw.EMAIL_FROM ?? null,
       emailWebhookSecret: raw.EMAIL_WEBHOOK_SECRET ?? null,
+      allowUnsignedWebhooks: raw.ALLOW_UNSIGNED_WEBHOOKS ?? null,
     }),
     demo: Object.freeze({
       mockProviders,
@@ -198,6 +248,16 @@ function fromRaw(raw: RawServerEnv): ServerConfig {
       costAuditIntervalMs: raw.COST_AUDIT_INTERVAL_MS,
       reconcileIntervalMs: raw.RECONCILE_INTERVAL_MS,
       retentionSweepIntervalMs: raw.RETENTION_SWEEP_INTERVAL_MS,
+    }),
+    http: Object.freeze({
+      corsAllowedOrigins: parseCorsAllowedOrigins(raw.CORS_ALLOWED_ORIGINS),
+      cookieSecure: raw.COOKIE_SECURE ?? null,
+      requestTimeoutMs: raw.REQUEST_TIMEOUT_MS,
+      webhookTimeoutMs: raw.WEBHOOK_TIMEOUT_MS,
+    }),
+    release: Object.freeze({
+      version: raw.APP_VERSION,
+      gitSha: raw.GIT_SHA,
     }),
   });
 }

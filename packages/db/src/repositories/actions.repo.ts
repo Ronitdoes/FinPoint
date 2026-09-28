@@ -241,6 +241,9 @@ export interface FindStuckExecutingActionsInput {
  * Finds EXECUTING actions whose claim predates `stuckBefore`.
  * Step 31: feeds the EXECUTING-stuck sweeper (crash window between claim and
  * completion). Read-only; resolution never blindly re-executes.
+ *
+ * @allowCrossTenant - sweeper/admin read (optional tenantId lets the stuck-claim
+ *   sweeper scan across tenants; follow-up writes stay tenant-scoped)
  */
 export async function findStuckExecutingActions(
   ctx: RepoContext,

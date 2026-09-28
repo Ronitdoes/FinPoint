@@ -4,9 +4,9 @@ import {
   isTerminal,
 } from "@repo/domain";
 import {
-  DefaultWorkflowClient,
   type RecoveryWorkflowClient,
 } from "@repo/orchestration";
+import { LiveWorkflowClient } from "../../lib/live-workflow-client";
 import {
   getLogger,
   incHumanTasksOpen,
@@ -46,7 +46,8 @@ export class HumanTasksService {
     private readonly repos: Repositories,
     workflowClient?: RecoveryWorkflowClient,
   ) {
-    this.workflowClient = workflowClient ?? new DefaultWorkflowClient(db);
+    // L1: live Temporal dispatch via worker client with DB-row fallback.
+    this.workflowClient = workflowClient ?? new LiveWorkflowClient(db);
   }
 
   /**

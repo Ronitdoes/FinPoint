@@ -7,6 +7,7 @@
 
 **Stack:** Bun ≥ 1.4 · Fastify 5 · Next.js 16 / React 19 · PostgreSQL 16 + Drizzle ORM · Temporal · Redpanda/Kafka · Redis 7 · OpenTelemetry + Prometheus + Pino · Vitest · Turbo
 **Demo:** fresh clone → `infra:up` → `db:migrate` → `db:seed --reset` → dashboard populated → `/demo/*` drives real recovery end-to-end.
+**Release:** v0.1.0 signed off in [`docs/RELEASE-v0.1.0.md`](./docs/RELEASE-v0.1.0.md) (DoD 18/18, known limitations L1–L6, deferral register). Changelog: [`CHANGELOG.md`](./CHANGELOG.md).
 
 ---
 
@@ -232,7 +233,7 @@ AI-Revenue-Recovery/
 │   ├── domain/                   # @repo/domain — pure truth: enums, entities, state machines,
 │   │                             # event envelope, action catalog (zod only, no I/O)
 │   ├── db/                       # @repo/db — Drizzle schema (33 tables + 6 views),
-│   │                             # 10 migrations, 28 repos, seeds (factories/scenarios/reset)
+│   │                             # 11 migrations, 28 repos, seeds (factories/scenarios/reset)
 │   ├── policy/                   # @repo/policy — pure evaluator + 9 compiled rules
 │   ├── integrations/             # @repo/integrations — payments/, messaging/, events/
 │   │                             # (Stripe/Razorpay/Mock, WhatsApp/Email/Mock, InProcess/Redpanda)
@@ -298,46 +299,29 @@ AI-Revenue-Recovery/
 ## 7. Quickstart (5 Minutes to Demoable)
 
 Fresh clone → compose → seed → dashboard populated → simulator drives real recovery.
+Ten commands, in order (run from repo root):
 
 ```bash
-# 0. Clone + install (Bun only)
-git clone <repo-url> AI-Revenue-Recovery
-cd AI-Revenue-Recovery
-bun install
-
-# 1. Configure environment
-cp .env.example .env
-# Edit .env — for local demo MOCK_PROVIDERS=true is enough (see §8).
-# Frontend-only vars (NEXT_PUBLIC_API_URL) go in apps/frontend/.env.local (gitignored).
-
-# 2. Start infrastructure (postgres, redis, temporal, temporal-ui, redpanda,
-#    redpanda-console, otel-collector, backend, frontend) with healthchecks
-bun run infra:up
-# Rebuild images: bun run infra:up:build   ·   Tear down: bun run infra:down
-
-# 3. Apply migrations (empty DB → all 10 migrations)
-bun run db:migrate
-# CI check (fail if pending): bun run db:migrate:check
-
-# 4. Seed spec volumes (1,000 customers · 2,500 payments · 400 checkouts ·
-#    180 invoices · 100 cases · 45 outcomes · 90 cost entries + Scenarios A/B/C)
-bun run db:seed
-# Deterministic reset: bun run db:seed --reset  (package script: bun run src/seeds/demo.ts)
-
-# 5. Run apps (if not using composed backend/frontend)
-bun run dev            # turbo run dev — all apps/services in watch mode
-# Or per-package:
-#   bun --filter backend dev        # Fastify :4000 (watch src/server.ts)
-#   bun --filter frontend dev       # Next.js :3000
-#   bun --filter @repo/worker dev   # Temporal worker (queue recovery-main)
-
-# 6. Open + log in
-#    Frontend:  http://localhost:3000  → redirects to /dashboard
-#    Backend:   http://localhost:4000/health, /ready, /version, /metrics
-#    Temporal UI:   http://localhost:8080   (demo-script also cites :8088 for local binary)
-#    Redpanda console: http://localhost:8081
-#    Login: ops@example.com / Admin12345!@#  (also admin@example.com; 5 seeded personas)
+git clone <repo-url> AI-Revenue-Recovery            # 1. clone
+cd AI-Revenue-Recovery && bun install              # 2. install (Bun only)
+cp .env.example .env                               # 3. configure (MOCK_PROVIDERS=true is enough for demo)
+bun run infra:up                                   # 4. start infra (postgres, redis, temporal, redpanda, collector, backend, frontend)
+bun run db:migrate                                 # 5. apply all 11 migrations
+bun run db:seed --reset                            # 6. seed volumes + Scenarios A/B/C (prints determinism hash)
+bun --filter @repo/worker start                    # 7. start Temporal worker (required for workflow execution scenes)
+bun --filter backend dev                           # 8. (if backend not via compose) Fastify :4000 — skip if composed
+# 9. open http://localhost:3000 → /dashboard (ops@example.com / Admin12345!@#)
+curl -X POST http://localhost:4000/demo/payment-fail \  # 10. drive the loop (Scenario A, CUS-001, ₹12,999)
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer <rrk_...>' \
+  -d '{"scenario":"A"}'
 ```
+
+Notes: `bun run infra:up:build` rebuilds images · `bun run infra:down` tears down ·
+`db:migrate:check` is the CI pending-migration gate · `db:seed --reset` is
+slug-guarded (demo tenants only) and atomic since v0.1.0 (see
+`docs/RELEASE-v0.1.0.md` F1). The default compose profile does **not** start a
+worker — command 7 (or `docker compose --profile worker up -d worker`) is
+required before workflow-execution scenes. Tear down the host worker with Ctrl-C.
 
 **Drive the loop (no real money — `MOCK_PROVIDERS=true`):**
 
@@ -347,7 +331,7 @@ curl -X POST http://localhost:4000/demo/payment-fail \
   -H 'Content-Type: application/json' -H 'Authorization: Bearer <rrk_...>' \
   -d '{"scenario":"A"}'
 
-# Watch: Risk 86/100 HIGH → AI insufficient_funds → Policy ALLOWED →
+# Watch: Risk 60/100 HIGH → AI insufficient_funds (Track A) / stale_card fallback (Track B) → Policy ALLOWED →
 #        Temporal recover:<caseId> WAIT→MESSAGE→RETRY → dashboard updates
 
 # Close the loop
@@ -393,7 +377,7 @@ Root scripts (`package.json` — all from repo root):
 | `bun run check-docs` | `bun scripts/check-docs-links.mjs` — after editing any `docs/*.md` |
 | `bun run format` | Prettier `**/*.{ts,tsx,md}` |
 | `bun run db:migrate` / `db:migrate:check` / `db:seed` | Via `@repo/db`: migrate, CI pending-check, seed demo data |
-| `bun run infra:up` / `infra:up:build` / `infra:build` / `infra:down` | Compose `infra/docker/docker-compose.yml` lifecycle |
+| `bun run infra:up` / `infra:up:build` / `infra:down` | Compose `infra/docker/docker-compose.yml` lifecycle (all three include the `worker` profile) |
 
 Per-entrypoint:
 
@@ -528,7 +512,7 @@ Every business-state DB write runs in an explicit service-owned transaction and 
 { "error": { "code": "TENANT_CONTEXT_MISSING", "message": "human readable", "details": {} } }
 ```
 
-Unknown → `500 INTERNAL_ERROR` (logged, never leaked). Validation → `VALIDATION_FAILED` + field details.
+Unknown → `500 INTERNAL` (alias `INTERNAL_ERROR`; logged, never leaked). Validation → `VALIDATION` (alias `VALIDATION_FAILED`) + field details (canonical codes per `docs/CONVENTIONS.md` §6).
 
 - **Logging:** structured JSON via Pino (`@repo/observability`); mandatory `correlation_id`, `tenant_id`, `case_id` when present. **Deny-by-default PII/secrets redaction** (`sk_*`, `whsec_*`, keys, tokens, full card/customer PII). Levels: `error` (needs action) / `warn` / `info` (state transitions) / `debug` (off in prod).
 - **Timeouts & retries:** every external call (LLM 20s, providers, Redis, DB, Temporal) declares explicit timeout + bounded jittered-exponential retries. Financial actions derive idempotency keys as `tenant_id + recovery_case_id + action_type + attempt_number`.
@@ -549,7 +533,7 @@ Unknown → `500 INTERNAL_ERROR` (logged, never leaked). Validation → `VALIDAT
 | Workflow | File | Lifecycle | Key guards |
 |---|---|---|---|
 | **A: Failed Payment** (`s-22`) | `failed-payment.ts` | 3-round bounded retry loop → UNKNOWN-status polling → single bounded AI replan → human approval hook → `MAX_RETRIES` terminal stop; `PaymentSuccessSignalBridge` wakes on `external-payment-succeeded` | Anti-double-charge idempotency `{tenant}:{case}:RETRY_PAYMENT:{attempt}`; stop-condition checks; skippable wait with early wakeup. 12-scenario matrix. |
-| **B: Checkout Abandonment** (`s-23`) | `checkout-abandonment.ts` | 30m inactivity watch → confirm abandonment → deferred case creation → Touch 1 reminder (**strict zero-discount invariant**) → 4h wait → purchase check → Touch 2 incentive (**≤ ₹500 cap**, policy-gated) → 24h wait → final check → Stop/Recovered | Atomic `completeRaceGuard` pre-touch; `CheckoutCompletedSignalBridge`. 8-scenario matrix. |
+| **B: Checkout Abandonment** (`s-23`) | `checkout-abandonment.ts` | 30m inactivity watch → confirm abandonment → deferred case creation → Touch 1 reminder (**strict zero-discount invariant**) → 4h wait → purchase check → Touch 2 incentive (**≤ ₹5,000 cap**, policy-gated) → 24h wait → final check → Stop/Recovered | Atomic `completeRaceGuard` pre-touch; `CheckoutCompletedSignalBridge`. 8-scenario matrix. |
 | **C: Overdue Invoice + PTP** (`s-24`) | `invoice-overdue.ts` + child `promise-to-pay.ts` | 3-touch ladder (Day-0 polite → +3d follow-up → +7d final + payment link); Scenario C `POL-HIGHVALUE` approval for >₹100k discounts; dispute hard stop; contact caps; child PTP `MADE→HONORED\|BROKEN\|EXPIRED` | `CustomerResponseSignalBridge`; `DailyReconciler` cron for orphaned invoices/expired PTPs; `GET /promises-to-pay`, `POST …/mark-honored`. 9-scenario matrix. |
 
 **Human escalation (`s-21`):** `human_tasks` lifecycle (`PENDING → ASSIGNED → APPROVED/CANCELLED`), session-only decisions (API key → 403), guarded transitions, approve side-effects (case `ESCALATED→IN_PROGRESS`, actions `APPROVAL_REQUIRED→APPROVED` + Temporal `human-decision` signal) / reject (mandatory notes, `CANCELLED/HUMAN_REJECTED`), `SlaSweeper` emitting `human-task.sla-breached`, `awaitHumanApproval` with 60s crash-repair DB fallback, 1h burst dedup on `escalateWorkflowFailure`.
@@ -595,7 +579,7 @@ Auth: `middleware.ts` guards all dashboard routes via `rr_session` cookie (HttpO
 - **Simulation endpoints:** `POST /demo/payment-fail`, `/payment-succeed`, `/checkout-abandon`, `/invoice-overdue` — drive full production pipelines via signed HMAC loopbacks + Temporal signals.
 - **Failure injection:** `PATCH/GET /demo/injections` — Redis-backed switches (`SIMULATE_PAYMENT_TIMEOUT/MESSAGE_FAILURE/LLM_FAILURE/DUPLICATE_WEBHOOK`) with 15m sliding TTL + dynamic LLM override (no restart).
 - **Seeds (`packages/db/src/seeds/`):** deterministic Mulberry32 factories (SHA-256 content-hash verified) generating spec §24 volumes — 1,000 customers, 2,500 payments, 400 checkouts, 180 invoices, 100 cases, 45 outcomes, 90 cost entries — plus pristine pre-trigger **Scenarios A (CUS-001 payment fail) / B (CUS-002 checkout abandon) / C (CUS-003 invoice overdue)** and tenant-scoped safe `reset`.
-- **9-scene live script** (`docs/demo-script.md`, 3–5 min): Baseline (₹12.8L risk) → `payment-fail` (CUS-001 ₹12,999) → Case HIGH 86/100 → AI `insufficient_funds` (WhatsApp + 24h + retry) → Policy ALLOWED → Temporal `recover:<caseId>` WAIT→MESSAGE→RETRY → `payment-succeed` → ROI (risk −₹12,999, RECOVERED) → immutable audit trail.
+- **9-scene live script** (`docs/demo-script.md`, 3–5 min, measured; seed hash `22785c94`): Baseline (₹14.6L at risk / 35 active cases) → `payment-fail` (CUS-001 ₹12,999) → Case HIGH 60/100 → AI `insufficient_funds` (Track A) / `stale_card` fallback (Track B) → Policy ALLOWED → Temporal `recover:<caseId>` WAIT→MESSAGE→RETRY → `payment-succeed` → ROI (risk −₹12,999, RECOVERED) → immutable audit trail.
 
 ---
 
@@ -637,7 +621,7 @@ bun --filter frontend test   # frontend suite (happy-dom + testing-library)
 (`s-04`–`s-06`, `@repo/db`, ADR-003/004.) Drizzle ORM on pooled `postgres.js`; **PostgreSQL is the source of truth** for outcomes + audit.
 
 - **33 tables + 6 analytics views.** Financial core (`s-04`, migration `0000`): `tenants, users, api_keys (+user_sessions s-09), customers, payments, payment_attempts, subscriptions, checkouts, checkout_events, invoices, invoice_events` (citext, pgEnums mirroring `@repo/domain`, check/unique constraints, spec indexes). Recovery domain (`s-05`, migration `0001`): `events, revenue_risks, recovery_cases, ai_decisions, recovery_actions, workflows, workflow_events, messages, message_delivery_events, customer_responses, promises_to_pay, human_tasks (+0006 overdue_at/escalation_count), policy_rules, policy_versions, policy_evaluations, audit_logs, case_events (+audit_archive/retention 0007/0008), recovery_outcomes (generated `net_recovered` column), recovery_cost_entries, idempotency_keys`. Analytics (`s-27`, migration `0009`): `v_recovery_summary, v_recovery_timeseries, v_intervention_performance, v_funnel, v_risk_mix, v_ai_performance`.
-- **5 anti-duplication anchors** proven (events `(source, external_event_id)`; payment-attempt + action/message idempotency keys; outcome uniqueness; case-event dedupe). **Migrations:** 10 forward-only SQL files in `packages/db/drizzle/` (`0000`–`0009` + journal), advisory-locked runner (`724193`) with transient retries, `db:migrate:check` CI gate.
+- **5 anti-duplication anchors** proven (events `(source, external_event_id)`; payment-attempt + action/message idempotency keys; outcome uniqueness; case-event dedupe). **Migrations:** 11 forward-only SQL files in `packages/db/drizzle/` (`0000`–`0010` + journal), advisory-locked runner (`724193`) with transient retries, `db:migrate:check` CI gate (`0010`, s-35: transaction-local audit-reset hatch for the slug-guarded demo reset; triggers default-deny elsewhere).
 - **Repositories:** 28 aggregate repos with tenant-first signatures, `withTransaction` wrapper, guarded state transitions, advisory-locked per-tenant case numbering, compile+runtime append-only enforcement; boundary table in `packages/db/README.md`.
 - **Outcomes (`s-26`):** `OutcomeRecordService` single choke point (idempotent no-op, competing-payment warnings, guarded `→RECOVERED`, `SUM(recovery_cost_entries)` rollup); `AttributionSweeper` (hourly, 4 strict conditions); `CostCompletenessJob` (daily gap audit, messaging pricing 50p/5p/25p); `docs/attribution.md` defines attribution.
 
@@ -675,15 +659,23 @@ Milestone gates (G1 data layer → G2 events flow → G3 headless loop → G4 du
 
 | Doc | Purpose |
 |---|---|
+| `docs/RELEASE-v0.1.0.md` | **v0.1.0 sign-off**: §29 gate 18/18, §12 ticks, known limitations L1–L6, deferral register D1–D7 |
+| `CHANGELOG.md` | v0.1.0 generated from the completion log (per-step) |
 | `docs/ARCHITECTURE.md` | System map: naming, diagram, responsibility table, target layout, gap review, ERD |
 | `docs/CONVENTIONS.md` | **Binding** engineering rules (§1–§15: layout, money/time/ids, errors, logging, retries, AI limits, testing, git) |
-| `docs/TRACEABILITY.md` | Requirement → step matrix (MVP, DoD-18, acceptance blocks, failure switches, metrics) |
-| `docs/adr/ADR-001…014` | Settled decisions: runtime, Fastify, Postgres+Drizzle, migrations, Temporal, Redpanda+inproc, Redis, LLM structured outputs, money, ids, time, auth, Vitest, observability (+ `design-lang.md` FinPoint language) |
-| `docs/explanation/s-XX-explanation.md` | Per-step explainers for completed steps |
-| `docs/demo-script.md` | 9-scene live demo walkthrough (spec 01 §27) |
+| `docs/TRACEABILITY.md` | Requirement → step matrix (MVP, DoD-18, acceptance blocks, failure switches, metrics, §8 release re-audit) |
+| `docs/adr/README.md` + `docs/adr/ADR-001…016` | Settled decisions: runtime, Fastify, Postgres+Drizzle, migrations, Temporal, Redpanda+inproc, Redis, LLM structured outputs, money, ids, time, auth, Vitest, observability, RLS-deferral, pushgateway (+ `design-frontend.md` advisory note) |
+| `docs/explanation/s-XX-explanation.md` | Per-step explainers for completed steps (s-35 closes the series) |
+| `docs/demo-script.md` | 9-scene live demo walkthrough, measured numbers, two tracks, friction log (spec 01 §27) |
 | `docs/attribution.md` | Outcome attribution definition (`s-26`) |
 | `docs/audit-field-contract.md` | Canonical audit/timeline field contract (`s-25`) |
 | `docs/PROMPT_EVALUATION.md` | Prompt-change checklist + eval gate (`s-15`) |
+| `docs/SECURITY-CHECKLIST.md` | 10/10 security acceptance rows, evidence-linked (`s-30`) |
+| `docs/RESILIENCE.md` | 14-scenario failure-handling evidence table (`s-31`) |
+| `docs/PERFORMANCE.md` | Measured values vs spec 03 §10 targets (`s-34`) |
+| `docs/SLO.md` + `docs/LOGGING.md` | SLOs/error-budget policy + case-tracing log queries (`s-34`) |
+| `docs/runbooks/` (14 + firing-drill) | Per-alert runbooks, each linked from its alert (`s-34`) |
+| `docs/deploy/` (5 runbooks) | Environments, migrations, webhooks, crons, rollback (`s-33`) |
 | `docs/runbooks/webhook-secrets-rotation.md` | Zero-downtime Stripe/Razorpay secret rotation |
 | `specs/00…03` | Source of truth: vision, 0-to-100 plan, architecture/domain, MVP spec (**do not edit**) |
 | `specs/steps/s-01…s-35 + progress.md` | Ordered roadmap; `progress.md` is the resume point |

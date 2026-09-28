@@ -1,24 +1,11 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
-import { MockPaymentProvider, resolvePaymentProvider } from "@repo/integrations";
+import { resolvePaymentProvider } from "@repo/integrations";
 import { NotFoundError, ValidationError } from "../../lib/errors";
 import { rateLimitFor } from "../../plugins/rate-limit-policy";
 
 const paymentParamsSchema = z.object({
   id: z.string().uuid("Payment ID must be a valid UUID"),
-});
-
-const mockOverrideParamsSchema = z.object({
-  key: z.string().min(1),
-});
-
-const mockOverrideBodySchema = z.object({
-  status: z.enum(["SUCCEEDED", "FAILED", "UNKNOWN", "ACCEPTED_ASYNC"]),
-  failureCode: z.string().optional(),
-  failureMessage: z.string().optional(),
-  feeAmount: z.coerce.number().optional(),
-  feeCurrency: z.string().optional(),
-  delayMs: z.coerce.number().optional(),
 });
 
 /**
@@ -179,6 +166,42 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
           },
         );
         refreshed = true;
+
+        // Fee capture (s-18 fix): previously returned in `details` only and
+        // lost when resolution happened via this path. Best-effort link to
+        // live PAYMENT case; never fails the status query.
+        if (liveStatus.status === "SUCCEEDED" && liveStatus.fee) {
+          try {
+            const liveCase = await app.repos.findLiveCaseByObligation(
+              { db: app.db },
+              {
+                tenantId: tenantScope.tenantId,
+                sourceEntityType: "PAYMENT",
+                sourceEntityId: paymentId,
+              },
+            );
+            if (liveCase) {
+              await app.repos.recordCostEntry(
+                { db: app.db },
+                {
+                  tenantId: tenantScope.tenantId,
+                  caseId: liveCase.id,
+                  category: "PAYMENT_PROCESSING",
+                  amount: liveStatus.fee.amount,
+                  currency: liveStatus.fee.currency,
+                  metadata: {
+                    provider: payment.provider,
+                    providerPaymentId: payment.providerPaymentId,
+                    via: "status-sync",
+                  },
+                  incurredAt: new Date(),
+                },
+              );
+            }
+          } catch {
+            // Best-effort only.
+          }
+        }
       }
 
       return reply.status(200).send({
@@ -203,43 +226,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
 };
 
 /**
- * Demo Mock Override Routes Plugin (Spec 18 §Mock provider scripting, s-29).
+ * NOTE (s-18 audit): the unauthenticated `demoMockPaymentRoutes` export was
+ * removed. Live mock scripting lives at `POST /demo/mock/payments/:key/next-outcome`
+ * behind `demoGuard` + rate-limit (s-30 fix). Do not re-add an unguarded route.
  */
-export const demoMockPaymentRoutes: FastifyPluginAsync = async (app) => {
-  app.post(
-    "/mock/payments/:key/next-outcome",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const paramsResult = mockOverrideParamsSchema.safeParse(request.params);
-      if (!paramsResult.success) {
-        throw new ValidationError("Invalid key parameter", {
-          issues: paramsResult.error.issues,
-        });
-      }
-
-      const bodyResult = mockOverrideBodySchema.safeParse(request.body);
-      if (!bodyResult.success) {
-        throw new ValidationError("Invalid body payload", {
-          issues: bodyResult.error.issues,
-        });
-      }
-
-      const key = paramsResult.data.key;
-      const data = bodyResult.data;
-
-      MockPaymentProvider.setOutcomeOverride(key, {
-        status: data.status,
-        failureCode: data.failureCode,
-        failureMessage: data.failureMessage,
-        feeAmount: data.feeAmount !== undefined ? BigInt(data.feeAmount) : undefined,
-        feeCurrency: data.feeCurrency,
-        delayMs: data.delayMs,
-      });
-
-      return reply.status(200).send({
-        success: true,
-        key,
-        configured: data,
-      });
-    },
-  );
-};

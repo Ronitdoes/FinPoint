@@ -20,9 +20,13 @@ export interface CheckoutRaceGuardResult {
 
 /**
  * Activity: checkoutRaceGuard
- * Transactionally re-verifies checkout status immediately before any outbound
- * recovery message (reminder or incentive). If the customer purchased in the interim,
- * returns safeToSend: false so the workflow aborts the message.
+ * Best-effort re-verification of checkout status immediately before any outbound
+ * recovery message (Touch 1 REMINDER = step "1", Touch 2 INCENTIVE = step "2").
+ * If the customer purchased in the interim, returns safeToSend: false so the
+ * workflow aborts the message. Per s-23.md:41 this is a best-effort window (no
+ * SELECT FOR UPDATE / conditional send gate): the check + ledger flag run in one
+ * DB transaction, but the provider send happens in a later activity. Purchases
+ * landing in that window are caught by post-wait re-reads + signal wakeup.
  */
 export async function checkoutRaceGuard(
   input: CheckoutRaceGuardInput,

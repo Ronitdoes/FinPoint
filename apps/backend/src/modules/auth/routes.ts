@@ -5,6 +5,19 @@ import { ValidationError } from "../../lib/errors";
 
 export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   /**
+   * Cookie Secure flag from typed config (CONVENTIONS §1): explicit
+   * `config.http.cookieSecure` override, else Secure in production.
+   * Localhost requests never set Secure (dev convenience, unchanged).
+   */
+  const resolveCookieSecure = (): boolean => {
+    const appEnv = (fastify as any).config?.app?.env as string | undefined;
+    const cookieSecureOverride = (fastify as any).config?.http?.cookieSecure as
+      | boolean
+      | null
+      | undefined;
+    return cookieSecureOverride === true || appEnv === "production";
+  };
+  /**
    * POST /auth/login — Interactive operator login.
    * Rate limited per IP+email with lockout backoff (s-30 policy class
    * `authLogin`: 5 attempts/min; enforced by the bespoke bucket in
@@ -35,7 +48,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       request.headers.host?.includes("127.0.0.1") ||
       request.headers.origin?.includes("127.0.0.1")
     );
-    const isSecure = !isLocalhost && (process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production");
+    const isSecure = !isLocalhost && resolveCookieSecure();
 
     // Set httpOnly session cookie
     reply.setCookie("rr_session", rawToken, {
@@ -71,7 +84,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
         request.headers.host?.includes("127.0.0.1") ||
         request.headers.origin?.includes("127.0.0.1")
       );
-      const isSecure = !isLocalhost && (process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production");
+      const isSecure = !isLocalhost && resolveCookieSecure();
 
       reply.clearCookie("rr_session", {
         path: "/",

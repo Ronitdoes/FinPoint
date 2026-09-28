@@ -195,7 +195,15 @@ The timeline API combines `case_events` (primary spine) with enriched relations:
 ## 5. Retention & Archiving Policy
 
 1. **Active Window**: All events in `audit_logs` are preserved for 12 months in the hot operational database.
-2. **Archival to Cold Storage**:
-   - `AuditRetentionJob` scans for records older than the configured threshold (e.g. >12 months).
-   - Rows are transactionally copied into `audit_archive` with `archived_at` timestamps.
-   - `audit_archive` shares identical immutability protections and DB triggers.
+2. **Archival to Cold Storage (copy-only, decided semantic)**:
+    - `AuditRetentionJob` scans for records older than the configured threshold (e.g. >12 months).
+    - Rows are transactionally copied into `audit_archive` with `archived_at` timestamps.
+    - `audit_archive` shares identical immutability protections and DB triggers.
+    - **No delete step**: `archiveAuditLogsBatch` copies but never deletes. The
+      `prevent_audit_modification()` trigger (`BEFORE UPDATE OR DELETE → RAISE
+      EXCEPTION` on `audit_logs`/`case_events`/`audit_archive`) would reject any
+      `DELETE`, so retention intentionally keeps both hot and archive copies to
+      preserve append-only immutability. The sole privileged bypass is the s-35
+      demo-reset hatch (`SET LOCAL app.allow_audit_delete='on'` in
+      `packages/db/src/seeds/reset.ts`, transaction-local, never used by
+      retention or production code).

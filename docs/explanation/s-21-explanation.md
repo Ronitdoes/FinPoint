@@ -114,6 +114,7 @@ ALTER TABLE "human_tasks" ADD COLUMN IF NOT EXISTS "escalation_count" integer DE
 All repository mutations in `packages/db/src/repositories/human-tasks.repo.ts` and `packages/db/src/repositories/actions.repo.ts` follow the guarded conditional update pattern (`WHERE status IN ('PENDING', 'ASSIGNED')` / `WHERE status = <expected>`):
 
 - **`decideHumanTask`**: Conditionally updates `status` to `APPROVED`, `REJECTED`, or `RESOLVED` only if the task is currently in `PENDING` or `ASSIGNED`. Returning `null` on race condition enables the service layer to return `409 Conflict`.
+- **Assignment is optional — `PENDING → APPROVED` direct is the normal path:** `approveTask`/`rejectTask` accept tasks in either `PENDING` or `ASSIGNED`; operators are NOT required to assign before deciding. `assignHumanTask` moves `PENDING → ASSIGNED` for triage/routing, but approval/rejection from `PENDING` is fully supported (all integration approve/reject tests decide `PENDING` tasks directly).
 - **`assignHumanTask`**: Updates `assignedTo` and moves `PENDING` tasks to `ASSIGNED`.
 - **`cancelHumanTask`**: Moves active tasks to `CANCELLED` with an audit cancellation reason.
 - **`updateActionsStatusForCase`**: Atomically transitions recovery action rows for a case (e.g. `APPROVAL_REQUIRED` -> `APPROVED` upon approval, or `APPROVAL_REQUIRED` -> `CANCELLED` upon rejection).
@@ -156,7 +157,7 @@ The `SlaSweeper` (`apps/backend/src/modules/human-tasks/sla-sweeper.ts`) perform
 
 1. Queries overdue tasks where `slaDueAt <= asOf` and `overdueAt IS NULL` and `status IN ('PENDING', 'ASSIGNED')`.
 2. Idempotently marks `overdueAt = asOf` in the database.
-3. Emits a typed domain event `human-task.sla-breached` to the event bus (`revenue-events.v1`).
+3. Emits a typed domain event `human-task.sla-breached` to the event bus (`revenue-events.v1`) with `entity_type: "HUMAN_TASK"`, `entity_id: <task.id>`, and `customer_id` resolved from the owning case via `findCaseById` (never `task.caseId` masquerading as a customer id; `HUMAN_TASK`/`CASE` were added to `ENTITY_TYPES` for this). The payload carries `taskId`, `caseId`, `customerId`, `taskType`, `priority`, `slaDueAt`, and `overdueAt`.
 4. Increments the `slaBreachTotal` counter metric partitioned by task type.
 5. Records structured audit logs for operational telemetry.
 

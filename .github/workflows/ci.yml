@@ -2,7 +2,7 @@
 # AI Revenue Recovery — CI pipeline (s-33).
 #
 # Stage order (spec 01 §26 + s-33 §Requirements 3):
-#   setup (bun cache) → lint → check-types → unit → integration (compose
+#   lint + check-types (parallel) → unit → integration (compose
 #   services) → security (sweep + probes) → build (images) → migrate:check
 #   (ephemeral pg, incl. bad-state rejection proof) → e2e (full profile) →
 #   publish (sha + semver tags) → deploy-staging (manual approval via the
@@ -27,7 +27,7 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   REGISTRY: ghcr.io
@@ -35,29 +35,11 @@ env:
   FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend
 
 jobs:
-  # ---- setup: single place that warms the bun store for every job ------------
-  setup:
-    name: setup (bun cache)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.4"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
-
   lint:
     name: lint
     runs-on: ubuntu-latest
-    needs: [setup]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"
@@ -67,9 +49,8 @@ jobs:
   check-types:
     name: check-types
     runs-on: ubuntu-latest
-    needs: [setup]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"
@@ -81,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, check-types]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"
@@ -89,8 +70,11 @@ jobs:
       # Pure suites only: domain, policy, config, observability, eval
       # harness, frontend. Anything touching postgres/redis/temporal lives
       # in the integration job below.
+      # NOTE: no `--` separator before the path filters — bunx swallows
+      # everything after `--`, which silently disables filtering and runs
+      # the whole (infra-dependent) unit project. Filters must be direct args.
       - run: >-
-          bunx vitest run --project unit --
+          bunx vitest run --project unit
           packages/domain packages/policy packages/config
           packages/observability services/eval apps/frontend
 
@@ -98,8 +82,16 @@ jobs:
     name: integration (compose services)
     runs-on: ubuntu-latest
     needs: [unit]
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/revenue_recovery
+      DIRECT_URL: postgres://postgres:postgres@localhost:5432/revenue_recovery
+      REDIS_URL: redis://localhost:6379
+      TEMPORAL_ADDRESS: localhost:7233
+      TEMPORAL_NAMESPACE: revenue-recovery
+      EVENT_BUS_DRIVER: inprocess
+      MOCK_PROVIDERS: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"
@@ -107,6 +99,8 @@ jobs:
       - name: Bring up dependency services
         run: docker compose -f infra/docker/docker-compose.yml up -d postgres redis temporal redpanda --wait
       - run: bun run db:migrate
+      - name: Audit coverage check (s-25 verifyAuditCoverage on fresh DB)
+        run: bun run audit:coverage
       - run: bunx vitest run --project unit
       - name: Dump service logs on failure
         if: failure()
@@ -145,7 +139,7 @@ jobs:
       EVENT_BUS_DRIVER: inprocess
       MOCK_PROVIDERS: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"
@@ -160,10 +154,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: [security]
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - run: bun install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v4
       - name: Build backend image (unified API + worker)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/backend.Dockerfile
@@ -176,7 +174,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Build frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/frontend.Dockerfile
@@ -233,7 +231,7 @@ jobs:
       EVENT_BUS_DRIVER: inprocess
       MOCK_PROVIDERS: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"
@@ -283,7 +281,7 @@ jobs:
       EVENT_BUS_DRIVER: inprocess
       MOCK_PROVIDERS: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"
@@ -301,14 +299,14 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: backend-meta
         with:
           images: ${{ env.BACKEND_IMAGE }}
@@ -316,7 +314,7 @@ jobs:
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: frontend-meta
         with:
           images: ${{ env.FRONTEND_IMAGE }}
@@ -324,7 +322,7 @@ jobs:
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/backend.Dockerfile
@@ -335,7 +333,7 @@ jobs:
             GIT_SHA=${{ github.sha }}
             APP_VERSION=${{ github.ref_name }}
           cache-from: type=gha
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/frontend.Dockerfile

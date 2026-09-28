@@ -1,5 +1,6 @@
 import {
   findPaymentById,
+  findPaymentAttemptByIdempotencyKey,
   createPaymentAttempt,
   updatePaymentStatus,
   completeAction,
@@ -70,6 +71,33 @@ export async function executeRetryPayment(
       const amount = input.amountMinor ? BigInt(input.amountMinor) : payment.amount;
       const currency = input.currency ?? payment.currency;
 
+      // Idempotency claim pre-check (s-22 audit): if a previous attempt with the same
+      // deterministic key already exists (SUCCEEDED/PENDING/FAILED), return it without
+      // re-invoking the provider. Concurrent racers that both pass this check are still
+      // protected by the DB unique constraint on idempotency_key (see catch below);
+      // crash-window duplicates are resolved by the s-31 EXECUTING sweeper via provider
+      // status query, never blind re-execution.
+      const existingAttempt = await findPaymentAttemptByIdempotencyKey(
+        { db, tx },
+        { tenantId: input.tenantId, idempotencyKey },
+      );
+      if (existingAttempt) {
+        const mapped: "SUCCEEDED" | "FAILED" | "UNKNOWN" =
+          existingAttempt.status === "SUCCEEDED"
+            ? "SUCCEEDED"
+            : existingAttempt.status === "FAILED"
+              ? "FAILED"
+              : "UNKNOWN";
+        return {
+          status: mapped,
+          attemptId: existingAttempt.id,
+          paymentId: payment.id,
+          declineCode: existingAttempt.failureCode ?? undefined,
+          declineMessage:
+            (existingAttempt.error as Record<string, unknown> | null)?.message as string | undefined,
+        };
+      }
+
       // Step 31: crash window before the money-moving side effect.
       await checkFaultPoint("executeRetryPayment", "before_provider_call", {
         tenantId: input.tenantId,
@@ -98,21 +126,56 @@ export async function executeRetryPayment(
         idempotencyKey,
         providerStatus: retryResult.status,
       });
-      const attempt = await createPaymentAttempt(
-        { db, tx },
-        {
-          tenantId: input.tenantId,
+      let attempt;
+      try {
+        attempt = await createPaymentAttempt(
+          { db, tx },
+          {
+            tenantId: input.tenantId,
+            paymentId: payment.id,
+            attemptNumber: input.attemptNumber,
+            status: retryResult.status === "SUCCEEDED" ? "SUCCEEDED" : "FAILED",
+            idempotencyKey,
+            initiatedBy: "RECOVERY_WORKFLOW",
+            failureCode: retryResult.failureCode,
+            error: retryResult.failureMessage ? { message: retryResult.failureMessage } : undefined,
+            requestedAt: new Date(),
+            resolvedAt: retryResult.status === "SUCCEEDED" ? new Date() : undefined,
+          },
+        );
+      } catch (err: unknown) {
+        // Concurrent racer already inserted the same idempotency key: return the
+        // existing row instead of double-charging. Unique violations surface as
+        // Postgres 23505 (or Drizzle wrapped equivalents containing "unique").
+        const msg = err instanceof Error ? err.message : String(err);
+        const code = (err as { code?: unknown })?.code;
+        const isUniqueViolation =
+          code === "23505" ||
+          msg.toLowerCase().includes("unique") ||
+          msg.toLowerCase().includes("duplicate") ||
+          msg.includes("payment_attempts_idempotency_key_unique") ||
+          msg.includes("payment_attempts_payment_attempt_number_unique");
+        if (!isUniqueViolation) throw err;
+        const winner = await findPaymentAttemptByIdempotencyKey(
+          { db, tx },
+          { tenantId: input.tenantId, idempotencyKey },
+        );
+        if (!winner) throw err;
+        const mapped: "SUCCEEDED" | "FAILED" | "UNKNOWN" =
+          winner.status === "SUCCEEDED"
+            ? "SUCCEEDED"
+            : winner.status === "FAILED"
+              ? "FAILED"
+              : "UNKNOWN";
+        return {
+          status: mapped,
+          attemptId: winner.id,
           paymentId: payment.id,
-          attemptNumber: input.attemptNumber,
-          status: retryResult.status === "SUCCEEDED" ? "SUCCEEDED" : "FAILED",
-          idempotencyKey,
-          initiatedBy: "RECOVERY_WORKFLOW",
-          failureCode: retryResult.failureCode,
-          error: retryResult.failureMessage ? { message: retryResult.failureMessage } : undefined,
-          requestedAt: new Date(),
-          resolvedAt: retryResult.status === "SUCCEEDED" ? new Date() : undefined,
-        },
-      );
+          declineCode: winner.failureCode ?? undefined,
+          declineMessage:
+            (winner.error as Record<string, unknown> | null)?.message as string | undefined,
+        };
+      }
 
       // Update payment status if succeeded
       if (retryResult.status === "SUCCEEDED") {

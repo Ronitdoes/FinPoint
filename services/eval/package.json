@@ -9,6 +9,7 @@
   },
   "scripts": {
     "run:eval": "bun src/run.ts",
+    "lint": "eslint .",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,8 +18,10 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
-    "@types/node": "^20",
+    "@types/node": "^22.20.2",
+    "eslint": "^9",
     "typescript": "^5"
   }
 }

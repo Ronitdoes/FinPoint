@@ -73,27 +73,33 @@ export class TimelineService {
     const needsHumanTasks = eventTypes.has("HUMAN_TASK_CREATED") || eventTypes.has("HUMAN_DECISION_RECORDED");
     const needsPaymentAttempts = eventTypes.has("PAYMENT_RETRY_STARTED") || eventTypes.has("PAYMENT_SUCCEEDED");
 
-    // 3. Batch load relevant linked entities in parallel
-    const [decisions, policyEvaluations, messages, humanTasks] = await Promise.all([
-      needsDecisions
-        ? this.repositories.listDecisionsForCase({ db: this.db }, { tenantId, caseId })
-        : Promise.resolve([]),
-      needsPolicies
-        ? this.repositories.listPolicyEvaluationsForCase({ db: this.db }, { tenantId, caseId })
-        : Promise.resolve([]),
-      needsMessages
-        ? this.repositories.listMessagesForCase({ db: this.db }, { tenantId, caseId })
-        : Promise.resolve([]),
-      needsHumanTasks
-        ? this.repositories.listHumanTasksForCase({ db: this.db }, { tenantId, caseId })
-        : Promise.resolve([]),
-    ]);
+    // 3. Batch load relevant linked entities in parallel (s-25 fix: payment
+    // attempts are a real DB join, not payload echo)
+    const [decisions, policyEvaluations, messages, humanTasks, paymentAttempts] =
+      await Promise.all([
+        needsDecisions
+          ? this.repositories.listDecisionsForCase({ db: this.db }, { tenantId, caseId })
+          : Promise.resolve([]),
+        needsPolicies
+          ? this.repositories.listPolicyEvaluationsForCase({ db: this.db }, { tenantId, caseId })
+          : Promise.resolve([]),
+        needsMessages
+          ? this.repositories.listMessagesForCase({ db: this.db }, { tenantId, caseId })
+          : Promise.resolve([]),
+        needsHumanTasks
+          ? this.repositories.listHumanTasksForCase({ db: this.db }, { tenantId, caseId })
+          : Promise.resolve([]),
+        needsPaymentAttempts
+          ? this.loadPaymentAttemptsForCase(tenantId, caseId)
+          : Promise.resolve([]),
+      ]);
 
     // Build lookup maps by entity ID or type
     const decisionMap = new Map(decisions.map((d) => [d.id, d]));
     const policyMap = new Map(policyEvaluations.map((p) => [p.id, p]));
     const messageMap = new Map(messages.map((m) => [m.id, m]));
     const humanTaskMap = new Map(humanTasks.map((t) => [t.id, t]));
+    const attemptMap = new Map(paymentAttempts.map((a: any) => [a.id, a]));
 
     // 4. Enrich and shape each timeline entry
     const enrichedItems: TimelineEntry[] = events.map((event) => {
@@ -175,7 +181,23 @@ export class TimelineService {
 
         case "PAYMENT_RETRY_STARTED":
         case "PAYMENT_SUCCEEDED": {
-          if (rawPayload.attemptId || rawPayload.status) {
+          const attemptId = rawPayload.attemptId as string | undefined;
+          const attempt = attemptId
+            ? attemptMap.get(attemptId)
+            : (paymentAttempts as any[])[0];
+          if (attempt) {
+            enrichedData.attemptId = (attempt as any).id;
+            enrichedData.attemptNumber = (attempt as any).attemptNumber;
+            enrichedData.attemptStatus = (attempt as any).status;
+            enrichedData.providerReference =
+              (attempt as any).providerReference ?? rawPayload.gateway;
+            enrichedData.failureCode =
+              (attempt as any).failureCode ??
+              rawPayload.declineCode ??
+              rawPayload.failureCode;
+            enrichedData.error =
+              (attempt as any).error ?? rawPayload.error;
+          } else {
             enrichedData.attemptNumber = rawPayload.attemptNumber;
             enrichedData.gateway = rawPayload.gateway;
             enrichedData.status = rawPayload.status;
@@ -190,6 +212,11 @@ export class TimelineService {
       // Redact any unmasked PII from data
       const sanitizedData = redactPii(enrichedData);
 
+      // TODO(s-25): audit-alias-sunset `type`/`data` are canonical; `eventType`/`payload`
+      // are backwards-compat aliases kept for old
+      // case-orchestration-integration.test.ts consumers. Sunset plan (pending spec
+      // sign-off): announce deprecation, migrate clients/tests to canonical keys,
+      // then remove aliases in a minor bump. Do NOT remove yet — breaking change.
       return {
         id: event.id,
         at: event.occurredAt.toISOString(),
@@ -209,5 +236,26 @@ export class TimelineService {
       items: enrichedItems,
       nextCursor,
     };
+  }
+
+  private async loadPaymentAttemptsForCase(
+    tenantId: string,
+    caseId: string,
+  ): Promise<any[]> {
+    try {
+      const c = await this.repositories.findCaseById(
+        { db: this.db },
+        { tenantId, caseId },
+      );
+      if (c?.sourceEntityType === "PAYMENT" && c.sourceEntityId) {
+        return await this.repositories.findPaymentAttemptsByPaymentId(
+          { db: this.db },
+          { tenantId, paymentId: c.sourceEntityId },
+        );
+      }
+    } catch {
+      // Best-effort enrichment; timeline must never fail on DB miss.
+    }
+    return [];
   }
 }

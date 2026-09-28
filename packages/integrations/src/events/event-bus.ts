@@ -17,10 +17,23 @@ export const GROUP_RISK_ENGINE = "risk-engine" as const;
 export const GROUP_ORCHESTRATOR = "orchestrator" as const;
 export const GROUP_ANALYTICS = "analytics" as const;
 
+/**
+ * Retry-topic consumer groups (s-11 fix v3). MAIN and RETRY are disjoint
+ * topics (a message lives on exactly one), so a separate group per topic
+ * causes zero duplication — but sharing one groupId across two consumers
+ * with heterogeneous topic subscriptions stalls the RETRY member (two
+ * KafkaJS consumers, one group, disjoint topics: the retry consumer never
+ * gets fetching). Proven live against compose Redpanda.
+ */
+export const GROUP_RISK_ENGINE_RETRY = "risk-engine-retry" as const;
+export const GROUP_ORCHESTRATOR_RETRY = "orchestrator-retry" as const;
+
 export type ConsumerGroupName =
   | typeof GROUP_RISK_ENGINE
   | typeof GROUP_ORCHESTRATOR
   | typeof GROUP_ANALYTICS
+  | typeof GROUP_RISK_ENGINE_RETRY
+  | typeof GROUP_ORCHESTRATOR_RETRY
   | (string & {});
 
 /**
@@ -64,6 +77,12 @@ export type EventHandler = (
 export interface SubscribeOptions {
   autoCommit?: boolean;
   fromBeginning?: boolean;
+  /**
+   * Ceiling for a single handler invocation in ms (default
+   * HANDLER_TIMEOUT_MS from `./consumer`). Hung handlers yield a RETRYABLE
+   * timeout so the message retries/DLQs instead of blocking the consumer.
+   */
+  handlerTimeoutMs?: number;
 }
 
 /**

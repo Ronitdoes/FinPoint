@@ -9,9 +9,9 @@ export const evaluateHighValueRule: CompiledRuleEvaluator = (context) => {
     return null;
   }
 
-  const amountAtRisk = Number(context.case.amount_at_risk ?? 0);
+  const amountAtRisk = BigInt(context.case.amount_at_risk ?? 0);
 
-  if (amountAtRisk > HIGH_VALUE_APPROVAL_MINOR) {
+  if (amountAtRisk > BigInt(HIGH_VALUE_APPROVAL_MINOR)) {
     return {
       matched: true,
       verdict: "REQUIRE_APPROVAL",

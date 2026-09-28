@@ -245,6 +245,8 @@ sequenceDiagram
     end
 ```
 
+> Note (audit): `apps/backend/src/modules/webhooks/ingest.service.ts:141-162` contains no `SETNX`/Redis fast path — the durable deduplication path is the DB unique constraint on `events (source, external_event_id)` via `insertEventIfNew`; a Redis fast path (ADR-007) remains future work.
+
 ---
 
 ## 7. Fastify route module & raw body preservation (`routes.ts`, `app.ts`)
@@ -287,6 +289,7 @@ export interface EventBus {
 
 ### Prometheus Metrics:
 - `webhook_deliveries_total{provider, status}` (`accepted`, `duplicate`, `invalid_signature`, `unmappable`)
+- `webhook_tenant_fallback_total{provider}` (deliveries ingested without tenant context via the default-tenant fallback)
 - `webhook_duration_ms{provider, status}` (Histogram tracking ingestion latencies)
 - `events_ingested_total{source, event_type}`
 - `events_duplicate_total{source}`
@@ -329,7 +332,7 @@ Documented full zero-downtime operational runbooks for Stripe and Razorpay:
 - **Test 4**: Expired signature (>5m) -> 401 `INVALID_SIGNATURE`.
 - **Test 5**: Duplicate delivery x5 concurrently -> exactly 1 `ACCEPTED`, 4 `DUPLICATE`, single payment record in DB.
 - **Test 6**: Out-of-order delivery (`SUCCEEDED` before `FAILED`) -> final status remains `SUCCEEDED`, status regression ignored.
-- **Test 7**: Malformed JSON -> 400 `UNMAPPABLE_PAYLOAD`, no crash.
+- **Test 7**: Malformed JSON -> 400 `UNMAPPABLE_PAYLOAD`, no crash. (Audit note: transport-level malformed JSON is rejected WITHOUT a `FAILED` row — intentional fail-closed. No reliable tenant/`external_event_id` can be derived from unparseable bytes, so persisting would create phantom rows outside the `(source, external_event_id)` idempotency anchor. Observability is preserved via `webhook_deliveries_total{status="unmappable"}` + WARN log. Over HTTP, `app.ts`'s buffer parser already rejects unparseable bodies with 400 before the route; the service-level branch covers direct invocations.)
 - **Test 8**: Wrong Content-Type (`text/plain`) -> 406 `NOT_ACCEPTABLE`.
 - **Test 9**: Unsupported event type -> 200 `ACCEPTED`, stored as `UNMAPPED`, no core projections.
 - **Test 10**: LLM & workflow absence assertion -> strictly 0 rows in `ai_decisions`, `messages`, `workflows`.
@@ -367,3 +370,7 @@ Documented full zero-downtime operational runbooks for Stripe and Razorpay:
    Real-world network delays can cause out-of-order webhook delivery. Explicit allowed transition tables protect canonical payment and invoice records from reverting to earlier or failed states once succeeded.
 4. **Fire-and-Forget Event Bus Publish**:
    Responding `200 ACCEPTED` within < 300ms meets payment provider delivery timeouts and isolates webhook ingestion availability from downstream message broker or worker latency.
+5. **Post-implementation audit hardening (fail-closed & observable fallbacks)**:
+   - **Malformed JSON**: rejected with `UNMAPPABLE_PAYLOAD` and no `FAILED` row (intentional — see Test 7 note above; safer to reject without store than to persist un-anchorable rows).
+   - **Default-tenant fallback**: provider webhooks carry no signed tenant claim, so falling back to the bootstrap tenant is intentional — but now observable via WARN log + `webhook_tenant_fallback_total{provider}` (previously silent).
+   - **Raw-body extraction**: `getRawBody` in `routes.ts` is fail-closed — a missing `rawBody` throws `UNMAPPABLE_PAYLOAD` instead of re-serializing `request.body` via `JSON.stringify`, which would produce bytes differing from what the provider signed and silently break signature trust.

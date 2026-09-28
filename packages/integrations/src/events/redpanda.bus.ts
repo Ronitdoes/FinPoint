@@ -30,6 +30,14 @@ export interface RedpandaBusOptions {
 }
 
 /**
+ * Inline hold cap for early RETRY redeliveries (s-11 fix v2). Remainders at
+ * or below this are slept inside `eachMessage` (well under Kafka session
+ * timeouts); larger ones take the pause + requeue + resume path so the
+ * partition is never starved and the member never misses heartbeats.
+ */
+const SMALL_RETRY_HOLD_MS = 2000;
+
+/**
  * Converts Record<string, string | undefined> to KafkaJS IHeaders (Record<string, Buffer | string>).
  */
 function toKafkaHeaders(headers?: BusMessageHeaders): IHeaders {
@@ -206,12 +214,66 @@ export class RedpandaEventBus implements EventBus {
     this.consumers.push(consumer);
 
     await consumer.run({
-      autoCommit: opts?.autoCommit ?? true,
+      // Manual offset commit AFTER handler success (s-11 spec).
+      // Previously defaulted to true, breaking crash-safety parity with InProcess.
+      autoCommit: opts?.autoCommit ?? false,
       eachMessage: async ({ message, partition, topic: msgTopic }) => {
         const key = message.key ? message.key.toString("utf8") : null;
         const headers = fromKafkaHeaders(
           message.headers as Record<string, Buffer | string | undefined>,
         );
+
+        const commit = async () => {
+          try {
+            await consumer.commitOffsets([
+              {
+                topic: msgTopic,
+                partition,
+                offset: (Number(message.offset) + 1).toString(),
+              },
+            ]);
+          } catch {
+            // Commit failures are safe: broker will redeliver (at-least-once).
+          }
+        };
+
+        // Honor exponential-backoff delay (parity with InProcess x-delay-until)
+        // WITHOUT blocking the partition (s-11 fix v2): sleeping the full
+        // backoff inside eachMessage starves the partition and risks a
+        // session-timeout rebalance livelock (redeliver → re-sleep forever).
+        // Small remainders are held inline; larger ones pause the topic,
+        // requeue the raw message, commit, and resume when due. Heartbeats
+        // keep flowing while paused, so the member stays in the group.
+        const delayUntil = headers["x-delay-until"];
+        if (delayUntil) {
+          const remainingMs = new Date(delayUntil).getTime() - Date.now();
+          if (remainingMs > SMALL_RETRY_HOLD_MS) {
+            try {
+              consumer.pause([{ topic: msgTopic }]);
+            } catch {
+              // Pause before assignment or on a closing consumer: fall
+              // through to normal processing (at-least-once still holds).
+            }
+            setTimeout(() => {
+              if (this.isClosed) return;
+              try {
+                consumer.resume([{ topic: msgTopic }]);
+              } catch {
+                // Consumer closing/closed: nothing to resume.
+              }
+            }, remainingMs);
+            await this.publishRaw(
+              msgTopic,
+              key,
+              message.value?.toString("utf8") ?? "",
+              headers,
+            );
+            await commit();
+            return;
+          } else if (remainingMs > 0) {
+            await new Promise((r) => setTimeout(r, remainingMs));
+          }
+        }
 
         await processConsumerMessage({
           topic: msgTopic,
@@ -220,6 +282,7 @@ export class RedpandaEventBus implements EventBus {
           value: message.value,
           headers,
           handler,
+          handlerTimeoutMs: opts?.handlerTimeoutMs,
           publishToRetry: async (event, retryHeaders) => {
             await this.publish(event, {
               topic: TOPIC_RETRY,
@@ -235,9 +298,7 @@ export class RedpandaEventBus implements EventBus {
               dlqHeaders,
             );
           },
-          commit: async () => {
-            // Manual offset commit acknowledged by Kafka consumer
-          },
+          commit,
         });
       },
     });

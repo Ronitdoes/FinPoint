@@ -31,7 +31,7 @@ Per `specs/steps/s-29.md` and Spec 01 §24, §27:
    - `PATCH /demo/injections` and `GET /demo/injections`: Exposes dynamic switches for `simulate_payment_timeout`, `simulate_message_failure`, `simulate_llm_failure`, and `simulate_duplicate_webhook` stored in Redis with a 15-minute sliding TTL.
 2. **Deterministic Seed Generator (`bun run db:seed`)**:
    - Seeded PRNG (`DeterministicPrng` using Mulberry32 algorithm) guaranteeing reproducible data generation.
-   - Exact pristine pre-trigger fixtures for Scenarios A (`CUS-001`, Aditi Sharma), B (`CUS-002`, Vikram Malhotra), C (`CUS-003`, Priya Patel), plus a completed A-variant (`CUS-001-REC`) for rich initial dashboard presentation.
+   - Exact pristine pre-trigger fixtures for Scenarios A (`CUS-001`, Aditi Sharma), B (`CUS-002`, Rahul Verma), C (`CUS-003`, Priya Patel), plus a completed A-variant (`CUS-001-REC`) for rich initial dashboard presentation.
    - Volume generation matching Spec 01 §24: 1,000 customers, 2,500 payments (2,200 succeeded, 300 failed), 400 checkouts (250 active, 150 abandoned), 180 overdue invoices, 100 cases (45 recovered, 20 stopped, 15 escalated, 20 in-progress), 45 authoritative outcomes, and 90 cost entries.
    - Reseed content hash calculation proving determinism across repeated executions.
    - Safe tenant-scoped reset (`--reset`) strictly bounded to demo tenants (`demo-*`), guarding real customer or user tables from deletion.
@@ -114,16 +114,25 @@ For Scenario A demonstrations, an operator needs to show that when a customer pa
 
 ### 4.1 Deterministic Mulberry32 PRNG
 To ensure that seed generation produces identical dataset hashes across CI runs and development environments, `factories.ts` implements a deterministic pseudorandom number generator:
-- Mulberry32 32-bit PRNG initialized with seed integer `0x29a738`.
+- Mulberry32 32-bit PRNG initialized with seed integer `0x4d2fb5a1`.
 - Deterministic customer profiles, Indian names, email handles, phone numbers, log-normal amount distributions (mean ₹4,500, range ₹499 to ₹85,000), and card decline reason codes (`insufficient_funds`, `card_declined`, `expired_card`, `processing_error`).
 - Spans 90 days backwards with log-uniform time clustering.
 
 ### 4.2 Pristine Scenario Fixtures
-`scenarios.ts` creates the exact pre-trigger entities required by Spec 01 §27:
+`scenarios.ts` creates the exact pre-trigger entities required by Spec 01 §27
+(arbiter: Spec 03 §3 — code is truth where prose drifts; see note below):
 - **Scenario A (Payment Failure):** Customer `CUS-001` (Aditi Sharma), ₹12,999 annual subscription, high LTV, ready for `payment-fail` simulation.
-- **Scenario B (Abandoned Checkout):** Customer `CUS-002` (Vikram Malhotra), cart value ₹3,499, ready for `checkout-abandon` simulation.
-- **Scenario C (Overdue Invoice):** Customer `CUS-003` (Priya Patel), invoice value ₹48,000, 7 days overdue, ready for `invoice-overdue` simulation.
+- **Scenario B (Abandoned Checkout):** Customer `CUS-002` (Rahul Verma), cart value ₹7,999 (`799900` minor units), pristine `STARTED` checkout aged 252s (4m 12s), ready for `checkout-abandon` simulation.
+- **Scenario C (Overdue Invoice):** Customer `CUS-003` (Acme Global Technologies), invoice value ₹4,80,000 (`48000000` minor units), 7 days overdue, ready for `invoice-overdue` simulation.
 - **Scenario A-Variant (`CUS-001-REC`):** Completed recovery case with authoritative outcome and cost entries, giving fresh deployments immediate rich charts on `/dashboard` and `/recovery`.
+
+> Value-drift note (audit fix): an earlier revision of this explanation named
+> Scenario B as "Vikram Malhotra ₹3,499" and Scenario C as "Priya Patel
+> ₹48,000". Those names/values match neither the code nor Spec 03 §3
+> (B: cart ₹7,999 / 4m 12s; C: invoice ₹4,80,000 / 7 days). Code is truth:
+> `packages/db/src/seeds/scenarios.ts` seeds Rahul Verma ₹7,999/252s and Acme
+> Global Technologies ₹4,80,000/7d, which is exactly the spec. This section now
+> matches the code.
 
 ### 4.3 Safe Tenant-Scoped Reset
 `reset.ts` implements defensive reset semantics:
@@ -140,7 +149,7 @@ To ensure that seed generation produces identical dataset hashes across CI runs 
 - 100 Recovery Cases (45 recovered, 20 stopped, 15 escalated, 20 in-progress)
 - 45 Outbound Outcomes & 90 Cost Entries
 
-At the conclusion of generation, it queries the tenant's record counts and IDs to calculate a SHA-256 content hash (`c116feb8aa078e6d3f58e13525be29443fd0bbffed39bb8e697fbb8597dbbe46`), which is asserted for equality across independent re-seeds in CI.
+At the conclusion of generation, it queries the tenant's record counts and IDs to calculate a SHA-256 content hash (`22785c9449e186952d14cfe16789c7a84f764a57cb8b0ffb2bae75608158048b`, anchored to `REFERENCE_DATE=2026-09-01` in `packages/db/src/seeds/factories.ts`), which is asserted for equality across independent re-seeds in CI.
 
 ---
 
@@ -285,3 +294,7 @@ $ bun --filter @repo/db db:seed --reset
 3. **Safe Reset Isolation:**
    - *Decision:* The `--reset` flag checks `tenant.slug.startsWith("demo-")` before executing `DELETE` statements.
    - *Rationale:* Prevents disastrous data loss if an operator accidentally triggers `db:seed --reset` against a staging or production database containing live tenants.
+4. **GET/PATCH `/demo/injections` response shape vs spec `{refs}` (intentional):**
+   - *Spec text (s-29 §API Contracts):* "responses always `{ok:true, refs:{eventId|caseId|checkoutId...}}`".
+   - *Shipped shape:* `PATCH /demo/injections → {ok:true, injections, ttlSeconds}` and `GET /demo/injections → {ok:true, injections, ttlSeconds, source}` (`apps/backend/src/modules/demo/routes.ts:246-292`, store in `injections.ts`).
+   - *Rationale:* the four simulation endpoints do return `{ok:true, refs:{...}}` exactly as specified (see `simulator.service.ts` returns). Injection toggles have no event/case/checkout ref to return — forcing them into `refs` would be misleading. `{injections, ttlSeconds, source}` (redis vs fallback) is the honest contract for a runtime-toggle read, and the demo-script + tests assert this shape. Recorded here as an intentional deviation, not drift.

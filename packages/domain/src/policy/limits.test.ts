@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  HIGH_STAKES_CONFIDENCE_ACTIONS,
   HIGH_VALUE_APPROVAL_MINOR,
   MAX_AUTO_DISCOUNT_MINOR,
   MAX_EMAIL_PER_14_DAYS,
@@ -20,5 +21,11 @@ describe("policy limits (spec 03 §6)", () => {
   it("keeps money limits as integer minor units", () => {
     expect(Number.isInteger(MAX_AUTO_DISCOUNT_MINOR)).toBe(true);
     expect(Number.isInteger(HIGH_VALUE_APPROVAL_MINOR)).toBe(true);
+  });
+
+  it("pins the confidence-gate high-stakes set (s-15 single source)", () => {
+    expect([...HIGH_STAKES_CONFIDENCE_ACTIONS].sort()).toEqual(
+      ["CREATE_PAYMENT_LINK", "OFFER_INCENTIVE", "RETRY_PAYMENT"].sort(),
+    );
   });
 });

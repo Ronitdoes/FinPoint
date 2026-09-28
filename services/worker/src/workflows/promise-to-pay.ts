@@ -27,7 +27,10 @@ export interface PromiseToPayWorkflowInput {
   invoiceId?: string;
   promisedAmountMinor: string;
   currency: string;
-  promisedByDate: string; // YYYY-MM-DD
+  // Optional: when omitted, createPromiseToPay activity defaults to +7d (activity
+  // time) and returns the resolved date + computed wait. Workflows must NOT call
+  // Date.now() to synthesize a default (Temporal determinism, audit s-24).
+  promisedByDate?: string; // YYYY-MM-DD
   gracePeriodHours?: number; // default 24h
   traceparent?: string;
   metadata?: Record<string, unknown>;
@@ -88,12 +91,13 @@ export async function promiseToPayWorkflow(
     stopReason = payload?.reason;
   });
 
-  // 1. Create PTP record in DB
+  // 1. Create PTP record in DB (activity supplies default date + wait when omitted)
   const createdPtp = await activities.createPromiseToPay({
     ...actCtx,
     promisedAmountMinor: input.promisedAmountMinor,
     currency: input.currency,
     promisedByDate: input.promisedByDate,
+    gracePeriodHours: input.gracePeriodHours,
   });
 
   const promiseId = createdPtp.promiseId;
@@ -104,8 +108,14 @@ export async function promiseToPayWorkflow(
     labels: { result: "MADE" },
   });
 
-  // 2. Wait until promised date + grace period (default 24h)
-  const waitDelay = (input.metadata?.ptpWaitDelay as string) ?? "24h";
+  // 2. Wait until promised_by_date + grace (audit s-24 fix): delay is computed
+  // inside createPromiseToPay from promised_by_date + 24h grace (activity time),
+  // NOT from fixed metadata.ptpWaitDelay. Fall back to legacy metadata override
+  // only when the activity mock predates the fix (tests), else "24h".
+  const waitDelay =
+    (createdPtp as { waitDelay?: string }).waitDelay ??
+    (input.metadata?.ptpWaitDelay as string | undefined) ??
+    "24h";
 
   await condition(() => isPaid || isDisputed || isStopped, waitDelay);
 
@@ -139,6 +149,14 @@ export async function promiseToPayWorkflow(
   }
 
   if (isDisputed) {
+    // Close the DB row (s-24 fix): domain allows MADE->BROKEN only, so a
+    // disputed promise resolves to BROKEN to avoid orphan MADE rows that
+    // pollute findOverduePromises/metrics. Workflow output stays DISPUTED.
+    await activities.resolvePromiseToPay({
+      ...actCtx,
+      promiseId,
+      status: "BROKEN",
+    });
     return {
       status: "DISPUTED",
       promiseId,
@@ -147,6 +165,11 @@ export async function promiseToPayWorkflow(
   }
 
   if (isStopped) {
+    await activities.resolvePromiseToPay({
+      ...actCtx,
+      promiseId,
+      status: "BROKEN",
+    });
     return {
       status: "STOPPED",
       promiseId,
@@ -188,6 +211,11 @@ export async function promiseToPayWorkflow(
   }
 
   if (invoiceStatus.isDisputed) {
+    await activities.resolvePromiseToPay({
+      ...actCtx,
+      promiseId,
+      status: "BROKEN",
+    });
     return {
       status: "DISPUTED",
       promiseId,

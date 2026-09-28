@@ -132,5 +132,55 @@ describe("Matcher Security & Condition Evaluation", () => {
       const outcome = matchRuleDefinition(ruleDef, ctx, "CUST-RETRY-01");
       expect(outcome.matched).toBe(false);
     });
+
+    it("maps LIMIT with clamp to ADJUST when the value exceeds the cap", () => {
+      const ctx = createMockContext({
+        action: { type: "OFFER_INCENTIVE", params: { amount_minor: 200_000 } },
+      });
+
+      const ruleDef: RuleDefinition = {
+        applies_to: ["OFFER_INCENTIVE"],
+        effect: "LIMIT",
+        reason_code: "DISCOUNT_CAPPED",
+        clamp: { field: "action.params.amount_minor", max_value: 50_000 },
+      };
+
+      const outcome = matchRuleDefinition(ruleDef, ctx, "CUST-LIMIT-01");
+      expect(outcome.matched).toBe(true);
+      expect(outcome.verdict).toBe("ADJUST");
+      expect(outcome.adjusted_params).toMatchObject({ amount_minor: 50_000 });
+    });
+
+    it("treats LIMIT within cap as a no-op (no mutation)", () => {
+      const ctx = createMockContext({
+        action: { type: "OFFER_INCENTIVE", params: { amount_minor: 10_000 } },
+      });
+
+      const ruleDef: RuleDefinition = {
+        applies_to: ["OFFER_INCENTIVE"],
+        effect: "LIMIT",
+        reason_code: "DISCOUNT_CAPPED",
+        clamp: { field: "action.params.amount_minor", max_value: 50_000 },
+      };
+
+      const outcome = matchRuleDefinition(ruleDef, ctx, "CUST-LIMIT-02");
+      expect(outcome.matched).toBe(false);
+    });
+
+    it("fails closed with an explicit reason for LIMIT without a clamp target", () => {
+      const ctx = createMockContext({
+        action: { type: "OFFER_INCENTIVE", params: { amount_minor: 200_000 } },
+      });
+
+      const ruleDef: RuleDefinition = {
+        applies_to: ["OFFER_INCENTIVE"],
+        effect: "LIMIT",
+      };
+
+      const outcome = matchRuleDefinition(ruleDef, ctx, "CUST-LIMIT-03");
+      expect(outcome.matched).toBe(true);
+      expect(outcome.verdict).toBe("REJECT");
+      expect(outcome.reason).toBe("LIMIT_WITHOUT_CLAMP_TARGET");
+    });
   });
 });

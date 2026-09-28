@@ -62,6 +62,8 @@ Step 27 introduces the core analytics querying engine and REST APIs to provide r
 
 To keep heavy analytical scans off hot transaction execution paths, the `analytics` PostgreSQL schema was defined using Drizzle ORM query builders and explicit column aliasing.
 
+> **MED review decision (option b — views as contracts):** 2/6 hot paths read views (`v_intervention_performance`, `v_risk_mix`); the remainder query base tables with identical predicates at MVP volume. Rewriting summary/timeseries/funnel/AI onto the views was judged too risky for identical-predicate parity, so the 6 views are retained as query contracts for the future view-cutover (kpi-snapshot job and Grafana read the same shapes), while production reads stay on base tables until volume justifies the switch.
+
 ### Views Defined:
 1. `analytics.v_recovery_summary`:
    Combines `recovery_cases` with left-joined `recovery_outcomes` to expose canonical case state alongside financial outcome attribution.
@@ -200,7 +202,7 @@ This guarantees analytics dashboards immediately reflect newly recorded revenue 
 ## 8. Integration Testing & Golden Snapshot Verification
 
 **Test File:** `apps/backend/src/tests/analytics-integration.test.ts`  
-**Results:** 15 passing tests (100% pass rate).
+**Results:** 18 integration tests (verified via grep) + 4 single-flight unit tests in `apps/backend/src/modules/analytics/cache.test.ts` + 4 range unit tests in `apps/backend/src/modules/analytics/range.test.ts` = 26 total. Drift note: progress.md s-27 row cites historical 15 golden snapshots at close — current 18 integration reflects post-fix growth incl. single-sided 370d caps and s-30 golden-month date-bomb fix (createdAt passthrough on createDecision/insertAction + August seed dates, see progress.md s-30 log).
 
 ### Scenarios Covered:
 1. **GET /analytics/summary (FINANCE)**: Exact matching of revenue at risk, recovered revenue, net recovered, recovery rate bps, ROI bps, active cases, and escalations on a deterministic 30-day dataset.
@@ -229,8 +231,8 @@ This guarantees analytics dashboards immediately reflect newly recorded revenue 
 | 6 REST endpoints under `/analytics` | All endpoints mounted at `/analytics` in `apps/backend/src/lib/routes.ts` | ✅ PASS |
 | Range validation `<= 370d`, `from <= to` -> 400 | Verified in `analytics-integration.test.ts` (returns 400 `BAD_REQUEST`) | ✅ PASS |
 | RBAC cost-gating & `x-cost-data-redacted` header | Verified in `analytics-integration.test.ts` for VIEWER vs FINANCE roles | ✅ PASS |
-| Redis 30s single-flight caching & cache-bust on outcome | Verified single-flight stampede guard and cache bust in `analytics-integration.test.ts` | ✅ PASS |
-| Golden dataset snapshot integration tests | 15/15 tests passing in `analytics-integration.test.ts` | ✅ PASS |
+| Redis 30s single-flight caching & cache-bust on outcome | Cache-hit/bust proven in `analytics-integration.test.ts` (§9); concurrent stampede covered by `cache.test.ts` (2-way + N=10 concurrent cold calls ⇒ 1 underlying fetch, key isolation, deterministic keys) | ✅ PASS |
+| Golden dataset snapshot integration tests | 18/18 tests passing in `analytics-integration.test.ts` (verified via grep) + 4/4 `cache.test.ts` + 4/4 `range.test.ts` | ✅ PASS |
 | Full suite test verification | 62 test files, 872 unit/integration tests passing across monorepo | ✅ PASS |
 | Type check verification | `bun run check-types` passed with 0 errors across 12 packages | ✅ PASS |
 | Lint verification | `bun run lint` passed with 0 errors | ✅ PASS |

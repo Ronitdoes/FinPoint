@@ -10,6 +10,14 @@ Companions: [`migrations.md`](./migrations.md) (pre-deploy job),
 [`webhooks.md`](./webhooks.md) (per-env endpoint registration),
 [`crons.md`](./crons.md) (job inventory), [`rollback.md`](./rollback.md).
 
+> Execution status: everything repo-side (pipeline, images, gates, docs,
+> schedules) is complete and locally verified. The three live items — CI
+> green on a pushed branch, staging cutover with TEST-mode provider
+> registration, and the full rollback drill — are operator steps executed at
+> first staging deploy once the remote account + secrets exist (checklist in
+> the workflow headers). The procedures below are execution-ready; no
+> improvisation is left to deploy time.
+
 ---
 
 ## 1. Topology matrix

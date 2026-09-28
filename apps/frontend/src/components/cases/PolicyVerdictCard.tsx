@@ -1,6 +1,5 @@
 import React from "react";
 import { ShieldCheck, ShieldAlert, ShieldX, Clock } from "lucide-react";
-import { Badge } from "../ui/Badge";
 import { formatLatency } from "../../lib/format";
 
 export interface PolicyVerdictCardProps {
@@ -19,8 +18,8 @@ export interface PolicyVerdictCardProps {
 export function PolicyVerdictCard({ policyEvaluation }: PolicyVerdictCardProps) {
   if (!policyEvaluation) {
     return (
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d111a]/85 p-6 text-center text-slate-500 text-xs backdrop-blur-xl">
-        <ShieldCheck className="mx-auto h-7 w-7 mb-2 opacity-30" />
+      <div className="rounded-3xl border border-white/[0.07] bg-[#131316] p-6 text-center text-xs text-white/40">
+        <ShieldCheck className="mx-auto mb-2 h-7 w-7 opacity-30 text-white/40" />
         <p>No policy evaluation record attached</p>
       </div>
     );
@@ -28,22 +27,22 @@ export function PolicyVerdictCard({ policyEvaluation }: PolicyVerdictCardProps) 
 
   const resultVariants = {
     ALLOWED: {
-      badge: "success" as const,
-      icon: <ShieldCheck className="h-4 w-4 text-emerald-400" />,
-      border: "border-emerald-500/25 bg-gradient-to-b from-emerald-950/20 to-[#0d111a]/90",
+      badgeClass: "border-[#3ef0a8]/30 bg-[#3ef0a8]/10 text-[#3ef0a8]",
+      icon: <ShieldCheck className="h-4 w-4 text-[#3ef0a8]" />,
       titleText: "Policy Clearance: ALLOWED",
+      subtitleText: "Autonomous recovery actions cleared against defined safety guardrails",
     },
     REJECTED: {
-      badge: "danger" as const,
+      badgeClass: "border-rose-500/30 bg-rose-500/10 text-rose-400",
       icon: <ShieldX className="h-4 w-4 text-rose-400" />,
-      border: "border-rose-500/25 bg-gradient-to-b from-rose-950/20 to-[#0d111a]/90",
       titleText: "Policy Blocked: REJECTED",
+      subtitleText: "Recovery actions intercepted and halted by safety policies",
     },
     REQUIRE_APPROVAL: {
-      badge: "warning" as const,
+      badgeClass: "border-amber-500/30 bg-amber-500/10 text-amber-300",
       icon: <ShieldAlert className="h-4 w-4 text-amber-400" />,
-      border: "border-amber-500/25 bg-gradient-to-b from-amber-950/20 to-[#0d111a]/90",
-      titleText: "Escalated: REQUIRES HUMAN APPROVAL",
+      titleText: "Escalated: REQUIRES APPROVAL",
+      subtitleText: "Action requires manual operator sign-off before dispatch",
     },
   };
 
@@ -51,41 +50,51 @@ export function PolicyVerdictCard({ policyEvaluation }: PolicyVerdictCardProps) 
     resultVariants[policyEvaluation.result] || resultVariants.ALLOWED;
 
   return (
-    <div
-      className={`rounded-2xl border p-5 shadow-lg shadow-black/40 backdrop-blur-xl ${meta.border}`}
-    >
-      <div className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/[0.06]">
-        <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+    <div className="rounded-3xl border border-white/[0.07] bg-[#131316] p-5">
+      <div className="mb-4 border-b border-white/[0.06] pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
             {meta.icon}
+            <h3 className="text-[13px] font-semibold tracking-tight text-white">
+              {meta.titleText}
+            </h3>
           </div>
-          <h3 className="text-xs font-semibold text-slate-100">{meta.titleText}</h3>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="flex items-center gap-1 font-mono text-[11px] tabular-nums text-white/45">
+              <Clock className="h-3 w-3 text-white/40" />
+              {formatLatency(policyEvaluation.latency_ms)}
+            </span>
+            <span
+              className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${meta.badgeClass}`}
+            >
+              {policyEvaluation.result}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1 text-[10px] text-slate-400 font-mono">
-            <Clock className="h-3 w-3" />
-            {formatLatency(policyEvaluation.latency_ms)}
-          </span>
-          <Badge variant={meta.badge} size="md">
-            {policyEvaluation.result}
-          </Badge>
-        </div>
+        <p className="mt-1 text-[11px] font-normal text-white/45">
+          {meta.subtitleText}
+        </p>
       </div>
 
-      <div className="space-y-3 text-xs">
+      <div className="space-y-3.5 text-xs">
         {policyEvaluation.rejections && policyEvaluation.rejections.length > 0 && (
-          <div className="rounded-xl border border-rose-500/25 bg-rose-950/20 p-3">
-            <h4 className="font-semibold text-rose-300 uppercase tracking-wider text-[10px] mb-1.5 flex items-center gap-1.5">
+          <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3.5">
+            <h4 className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-rose-300">
               <ShieldX className="h-3.5 w-3.5" />
               Policy Violations / Rejection Reasons
             </h4>
-            <ul className="space-y-1 text-rose-200 font-mono text-[11px]">
+            <ul className="space-y-1.5 font-mono text-[11px] text-rose-200/90">
               {policyEvaluation.rejections.map((rej: unknown, idx) => {
-                const text = typeof rej === "string"
-                  ? rej
-                  : typeof rej === "object" && rej !== null && "reason" in rej && typeof (rej as { reason: unknown }).reason === "string"
-                    ? (rej as { reason: string }).reason
-                    : JSON.stringify(rej);
+                const text =
+                  typeof rej === "string"
+                    ? rej
+                    : typeof rej === "object" &&
+                        rej !== null &&
+                        "reason" in rej &&
+                        typeof (rej as { reason: unknown }).reason === "string"
+                      ? (rej as { reason: string }).reason
+                      : JSON.stringify(rej);
                 return (
                   <li key={idx} className="flex items-start gap-2">
                     <span className="text-rose-400">•</span>
@@ -99,18 +108,22 @@ export function PolicyVerdictCard({ policyEvaluation }: PolicyVerdictCardProps) 
 
         {policyEvaluation.effective_actions && policyEvaluation.effective_actions.length > 0 && (
           <div>
-            <h4 className="font-semibold text-slate-400 uppercase tracking-wider text-[10px] mb-1.5">
+            <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/45">
               Effective Actions Permitted to Execute
             </h4>
-            <div className="space-y-1.5 font-mono text-xs">
+            <div className="space-y-2 font-mono text-xs">
               {policyEvaluation.effective_actions.map((act: unknown, idx) => {
-                const label = typeof act === "object" && act !== null && "type" in act && typeof (act as { type: unknown }).type === "string"
-                  ? (act as { type: string }).type
-                  : JSON.stringify(act);
+                const label =
+                  typeof act === "object" &&
+                  act !== null &&
+                  "type" in act &&
+                  typeof (act as { type: unknown }).type === "string"
+                    ? (act as { type: string }).type
+                    : JSON.stringify(act);
                 return (
                   <div
                     key={idx}
-                    className="rounded-xl border border-white/[0.06] bg-[#090c13]/70 px-3 py-2 text-slate-200"
+                    className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3 font-semibold text-white"
                   >
                     {label}
                   </div>

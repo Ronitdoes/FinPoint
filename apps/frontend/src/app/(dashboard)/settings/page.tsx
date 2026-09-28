@@ -38,6 +38,10 @@ export default function SettingsPage() {
   const [createUserModal, setCreateUserModal] = useState(false);
   const [createKeyModal, setCreateKeyModal] = useState(false);
 
+  // API key revoke error feedback (revoke failures were previously silent:
+  // the row stayed put with no message, looking like "delete doesn't work").
+  const [keyError, setKeyError] = useState<string | null>(null);
+
   // Mock Simulator form
   const [demoKey, setDemoKey] = useState("pay_demo_test_001");
   const [demoOutcome, setDemoOutcome] = useState<"SUCCEEDED" | "FAILED">("SUCCEEDED");
@@ -112,9 +116,17 @@ export default function SettingsPage() {
   };
 
   const handleRevokeKey = async (id: string) => {
-    if (confirm("Are you sure you want to revoke this API key immediately?")) {
+    if (!confirm("Are you sure you want to revoke this API key immediately?")) {
+      return;
+    }
+    setKeyError(null);
+    try {
       await api.admin.revokeApiKey(id);
       await fetchSettingsData();
+    } catch (err: unknown) {
+      setKeyError(
+        err instanceof Error ? err.message : "Failed to revoke API key",
+      );
     }
   };
 
@@ -181,7 +193,7 @@ export default function SettingsPage() {
         tabs={[
           { id: "profile", label: "Tenant Profile" },
           { id: "users", label: "Team Members", count: users.length },
-          { id: "api-keys", label: "API Credentials", count: apiKeys.length },
+          { id: "api-keys", label: "API Credentials", count: apiKeys.filter((k) => !k.revokedAt).length },
           { id: "simulator", label: "Demo & Mock Controls" },
         ]}
       />
@@ -199,7 +211,15 @@ export default function SettingsPage() {
               </p>
             </div>
 
-            {/* Degraded autonomy mode ops toggle (s-34 doctrine) */}
+            {/* Degraded autonomy mode ops toggle (s-34 doctrine).
+                s-28 audit note: spec s-28 asked for a "mock-mode banner when
+                enabled". Frontend intentionally has no MOCK_PROVIDERS env
+                (only NEXT_PUBLIC_API_URL crosses the boundary per spec 03 §11).
+                Mock availability is backend truth via GET /demo/injections
+                (410 MOCK_DISABLED when off); the Demo & Mock Controls tab below
+                surfaces simulator shortcuts, and DegradedModeBanner (s-34)
+                covers the degraded/fallback banner role. See s-28 explanation
+                §10 for the deviation record. */}
             <DegradedModeBanner />
 
             {loading && !currentUser ? (
@@ -336,6 +356,12 @@ export default function SettingsPage() {
                     No active machine API keys issued for this tenant
                   </div>
                 ) : (
+                  <>
+                    {keyError && (
+                      <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-300">
+                        {keyError}
+                      </div>
+                    )}
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="border-b border-white/[0.06] font-semibold uppercase text-[10px] text-white/45">
@@ -372,20 +398,27 @@ export default function SettingsPage() {
                               {formatDate(k.createdAt)}
                             </td>
                             <td className="py-3 pl-4 text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                icon={<Trash2 className="h-3.5 w-3.5 text-rose-400" />}
-                                onClick={() => handleRevokeKey(k.id)}
-                              >
-                                <span className="text-rose-400 font-sans text-xs">Revoke</span>
-                              </Button>
+                              {k.revokedAt ? (
+                                <span className="rounded-full bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 text-[10px] font-semibold text-white/40">
+                                  REVOKED
+                                </span>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  icon={<Trash2 className="h-3.5 w-3.5 text-rose-400" />}
+                                  onClick={() => handleRevokeKey(k.id)}
+                                >
+                                  <span className="text-rose-400 font-sans text-xs">Revoke</span>
+                                </Button>
+                              )}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+                  </>
                 )}
               </div>
             )}

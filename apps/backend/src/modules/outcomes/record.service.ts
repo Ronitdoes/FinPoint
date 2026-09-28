@@ -5,6 +5,7 @@ import type { Repositories } from "../../plugins/db";
 import { CaseNotFoundError, NotFoundError } from "../../lib/errors";
 import { recordOutcomeRecorded, getLogger } from "@repo/observability";
 import { invalidateAnalyticsCache } from "../analytics/cache";
+import { CustomerContextService } from "../customers/customer-context.service";
 
 const logger = getLogger({ component: "outcomes-record-service" });
 
@@ -64,6 +65,9 @@ export class OutcomeRecordService {
     }
 
     // 2. Execute authoritative outcome persistence inside database transaction
+    // s-13 freshness: capture the customer id inside the tx so the after-commit
+    // context bust needs no extra DB read (tenant isolation: tenantId from input).
+    let recordedCustomerId: string | null = null;
     const result = await this.repos.withTransaction({ db: this.db }, async (tx: Tx) => {
       // Re-check existing in tx (concurrency race protection)
       const existingInTx = await this.repos.findOutcomeByCaseId(
@@ -135,9 +139,19 @@ export class OutcomeRecordService {
         recordedAt,
       });
 
-      // State Transition:
-      // Non-terminal cases transition -> RECOVERED
-      // Terminal cases (such as STOPPED or FAILED) remain STOPPED/FAILED (Step 26 §State Transitions)
+      // State Transition (audit fix: atomic RECOVERED-vs-STOPPED precedence):
+      // - Non-terminal cases transition -> RECOVERED (guarded conditional UPDATE).
+      // - Live WORKFLOW_LINKED recovery racing a concurrent STOPPED wins: the
+      //   guarded UPDATE includes STOPPED in its WHERE clause, so whichever tx
+      //   commits last deterministically decides, with RECOVERED overwriting a
+      //   simultaneous STOPPED. If STOPPED already won earlier, a live retry that
+      //   actually recovered money still promotes STOPPED -> RECOVERED (money fact
+      //   wins over the stop signal). This intentionally bypasses the domain
+      //   `canTransition` terminal guard at the DB layer (CONVENTIONS §9 guarded
+      //   write) for this single edge; all other terminal guards hold.
+      // - Late ATTRIBUTION_WINDOW sweeps never reopen: STOPPED/FAILED stay as-is,
+      //   outcome row is still recorded so analytics (which sums outcomes, not
+      //   case status) counts the money (s-26 §State Transitions nuance).
       const nonTerminalStatuses: CaseStatus[] = [
         "DETECTED",
         "QUALIFIED",
@@ -148,13 +162,18 @@ export class OutcomeRecordService {
         "ESCALATED",
       ];
 
-      if (nonTerminalStatuses.includes(caseRecord.status as CaseStatus)) {
+      const isLiveRecovery = attributionMethod === "WORKFLOW_LINKED";
+      const recoverFrom: CaseStatus[] = isLiveRecovery
+        ? [...nonTerminalStatuses, "STOPPED"]
+        : [...nonTerminalStatuses];
+
+      if (recoverFrom.includes(caseRecord.status as CaseStatus)) {
         await this.repos.transitionCaseStatus(
           { tx },
           {
             tenantId,
             caseId,
-            from: [...nonTerminalStatuses],
+            from: [...recoverFrom],
             to: "RECOVERED",
             reason: "RECOVERED_AUTHORITATIVE",
             closedAt: recordedAt,
@@ -212,11 +231,22 @@ export class OutcomeRecordService {
       // Increment metric
       recordOutcomeRecorded(attributionMethod);
 
+      recordedCustomerId = (caseRecord as { customerId?: string | null }).customerId ?? null;
+
       return { outcome, alreadyRecorded: false };
     });
 
     if (!result.alreadyRecorded) {
       await invalidateAnalyticsCache(this.redisClient, tenantId).catch(() => {});
+      // s-13 freshness: recovery counts changed — bust cached customer context
+      // alongside the analytics bust, after commit. Best-effort, never throws.
+      if (recordedCustomerId) {
+        await CustomerContextService.invalidateCache(
+          this.redisClient,
+          tenantId,
+          recordedCustomerId,
+        ).catch(() => {});
+      }
     }
 
     return result;

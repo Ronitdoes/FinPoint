@@ -171,12 +171,17 @@ export function scanForPii(data: unknown, currentPath = ""): PiiScanResult {
 
 /**
  * Deeply sanitizes / redacts an object's payload against unmasked PII.
+ *
+ * Mirrors `sanitizePii` in `packages/db/src/repositories/pii-redact.ts` (the
+ * write-path guard used by `recordAuditLog`/`recordCaseEvent`); keep the two in
+ * sync per CONVENTIONS §7/§12. This read-path copy remains as
+ * defense-in-depth for rows written before the write-path guard existed.
  */
 export function redactPii<T>(data: T): T {
   if (data === null || data === undefined) return data;
 
   if (typeof data === "string") {
-    let str = data;
+    const str = data;
     if (SECRET_REGEX.test(str)) {
       return "[REDACTED_SECRET]" as unknown as T;
     }
@@ -186,6 +191,11 @@ export function redactPii<T>(data: T): T {
       }
       if (RAW_CARD_REGEX.test(str)) {
         return maskCard(str) as unknown as T;
+      }
+      // s-25 MED fix: phone-shaped strings under generic keys (or bare array
+      // items) were previously returned unmasked here.
+      if (RAW_PHONE_REGEX.test(str)) {
+        return maskPhone(str) as unknown as T;
       }
     }
     return str as unknown as T;
@@ -199,14 +209,25 @@ export function redactPii<T>(data: T): T {
     const result: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(data as Record<string, unknown>)) {
       const lowerKey = key.toLowerCase();
-      if (lowerKey.includes("password") || lowerKey.includes("secret") || lowerKey.includes("token") && !lowerKey.includes("count")) {
+      if (lowerKey.includes("password") || lowerKey.includes("secret") || (lowerKey.includes("token") && !lowerKey.includes("count"))) {
         result[key] = "[REDACTED]";
       } else if (lowerKey.includes("email") && typeof val === "string") {
-        result[key] = maskEmail(val);
+        // Guard: only mask email-shaped values so non-PII text under an
+        // email-named key is preserved (recursed, not corrupted).
+        result[key] =
+          !val.includes("*") && RAW_EMAIL_REGEX.test(val.trim())
+            ? maskEmail(val)
+            : redactPii(val);
       } else if (lowerKey.includes("phone") && typeof val === "string") {
-        result[key] = maskPhone(val);
+        result[key] =
+          !val.includes("*") && RAW_PHONE_REGEX.test(val.trim())
+            ? maskPhone(val)
+            : redactPii(val);
       } else if ((lowerKey.includes("card") || lowerKey.includes("pan")) && typeof val === "string" && !lowerKey.includes("id")) {
-        result[key] = maskCard(val);
+        result[key] =
+          !val.includes("*") && RAW_CARD_REGEX.test(val.trim())
+            ? maskCard(val)
+            : redactPii(val);
       } else {
         result[key] = redactPii(val);
       }

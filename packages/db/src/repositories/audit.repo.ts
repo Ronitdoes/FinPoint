@@ -7,6 +7,7 @@ import {
   type AuditArchive,
 } from "../schema/audit";
 import { type RepoContext, getExecutor } from "./types";
+import { sanitizePii } from "./pii-redact";
 
 export interface RecordAuditLogInput {
   tenantId: string;
@@ -37,6 +38,10 @@ export interface ListAuditLogsResult {
 
 /**
  * Appends an audit log entry (strictly append-only — no update or delete operations).
+ *
+ * Write-path PII redaction (s-25 MED fix, CONVENTIONS §7/§12): `metadata` is
+ * passed through `sanitizePii` before insert so the stored row never holds raw
+ * emails, phone numbers, card PANs, or secret tokens.
  */
 export async function recordAuditLog(
   ctx: RepoContext,
@@ -51,7 +56,7 @@ export async function recordAuditLog(
       actorType: input.actorType,
       actorId: input.actorId,
       event: input.event,
-      metadata: input.metadata ?? {},
+      metadata: sanitizePii(input.metadata ?? {}),
       correlationId: input.correlationId,
       createdAt: input.createdAt ?? new Date(),
     })
@@ -172,6 +177,14 @@ export async function listAuditLogsWithCursor(
 
 /**
  * Copies expired audit logs to cold storage audit_archive.
+ *
+ * Decided semantic (s-25 audit fix): copy-only retention. Rows are COPIED into
+ * `audit_archive` and NEVER deleted from `audit_logs` by this function. The
+ * `prevent_audit_modification()` trigger blocks UPDATE/DELETE on all three
+ * audit tables, so a delete-based prune would always fail. Hot + archive copies
+ * are both retained to preserve append-only immutability; the only privileged
+ * bypass is the s-35 demo-reset hatch (`app.allow_audit_delete='on'`, set
+ * transaction-locally by seeds/reset.ts, never by retention/production code).
  */
 export async function archiveAuditLogsBatch(
   ctx: RepoContext,

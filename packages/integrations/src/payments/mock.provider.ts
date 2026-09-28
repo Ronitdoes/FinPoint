@@ -183,7 +183,9 @@ export class MockPaymentProvider implements PaymentProvider {
           providerReference: `mock_ref_${id}`,
           fee: {
             amount: override.feeAmount ?? 250n,
-            currency: override.feeCurrency ?? "USD",
+            // getPaymentStatus has no currency context; default to INR (repo primary)
+            // with per-override feeCurrency threading where provided.
+            currency: override.feeCurrency ?? "INR",
           },
           paidAt: new Date(),
           rawResponse: { mock: true, overridden: true },
@@ -207,14 +209,15 @@ export class MockPaymentProvider implements PaymentProvider {
       };
     }
 
-    // Default mock response: SUCCEEDED
+    // Default mock response: SUCCEEDED (INR default; getPaymentStatus carries
+    // no currency context — callers needing USD set a feeCurrency override).
     return {
       id,
       status: "SUCCEEDED",
       providerReference: `mock_ref_${id}`,
       fee: {
         amount: 250n,
-        currency: "USD",
+        currency: "INR",
       },
       paidAt: new Date(),
       rawResponse: { mock: true },

@@ -335,6 +335,10 @@ export async function failedPaymentRecoveryWorkflow(
       }
 
       // 5c. Policy re-check for RETRY_PAYMENT
+      // s-22/s-24 audit: thread the per-round retry count explicitly so
+      // POL-MAXRETRY can fire per-round (retry_count = completed retries
+      // before this round). checkPolicyAgain falls back to live DB
+      // COUNT(payment_attempts) when counters are absent.
       currentStep = `ROUND_${round}_POLICY_CHECK`;
       const policyCheck = await activities.checkPolicyAgain({
         ...actCtx,
@@ -343,6 +347,7 @@ export async function failedPaymentRecoveryWorkflow(
         amountMinor: snapshot.case.amountAtRisk.toString(),
         currency: snapshot.case.currency,
         customerId: snapshot.customer?.id,
+        counters: { retry_count: round - 1 },
       });
 
       if (policyCheck.requiresApproval) {
@@ -380,7 +385,55 @@ export async function failedPaymentRecoveryWorkflow(
         return { outcome: "STOPPED", stopReason: rejectionReason };
       }
 
-      // 5d. Execute Payment Retry
+      // 5d. Pre-retry fresh-state re-check (audit s-22): reload snapshot immediately
+      // before money movement to catch external success / opt-out / dispute that landed
+      // during the wait without a signal (missed webhook). Provider-level status polling
+      // for UNKNOWN outcomes is handled post-attempt via refreshPaymentStatus; crash-window
+      // double-execution is covered by idempotency-key claim + s-31 EXECUTING sweeper
+      // (reconciler backstop resolves via provider status query, never blind re-executes).
+      currentStep = `ROUND_${round}_PRE_RETRY_RECHECK`;
+      const preRetrySnapshot = await activities.loadCaseSnapshot(actCtx);
+      snapshot = preRetrySnapshot;
+      if (
+        snapshot.case.status === "RECOVERED" ||
+        snapshot.case.status === "STOPPED" ||
+        snapshot.case.status === "FAILED"
+      ) {
+        return { outcome: snapshot.case.status, stopReason: snapshot.case.statusReason ?? undefined };
+      }
+      if (externalPaymentSucceeded) {
+        currentStep = "EXTERNAL_PAYMENT_RECOVERED";
+        const extPaymentId =
+          externalPaymentPayload?.paymentId ??
+          snapshot.case.sourceEntityId ??
+          input.paymentId;
+        await activities.recordOutcome({
+          ...actCtx,
+          outcome: "RECOVERED",
+          recoveredAmountMinor:
+            externalPaymentPayload?.amount?.toString() ??
+            input.amountMinor ??
+            snapshot.case.amountAtRisk.toString(),
+          currency: input.currency ?? snapshot.case.currency,
+          paymentId: extPaymentId,
+          recoverySource: "EXTERNAL_PAYMENT_SIGNAL",
+        });
+        return { outcome: "RECOVERED" };
+      }
+      if (isStopped || snapshot.customer?.optedOut) {
+        const reason = stopReason ?? (snapshot.customer?.optedOut ? "CUSTOMER_OPTED_OUT" : "STOP_SIGNAL_RECEIVED");
+        await activities.stopCaseWithReason({ ...actCtx, stopReason: reason });
+        return { outcome: "STOPPED", stopReason: reason };
+      }
+      if (
+        snapshot.case.statusReason === "DISPUTED" ||
+        snapshot.case.stopConditions?.includes("DISPUTED")
+      ) {
+        await activities.stopCaseWithReason({ ...actCtx, stopReason: "DISPUTED" });
+        return { outcome: "STOPPED", stopReason: "DISPUTED" };
+      }
+
+      // 5e. Execute Payment Retry
       currentStep = `ROUND_${round}_EXECUTE_RETRY`;
       currentRetryCount = round;
       const paymentId = (snapshot.case.sourceEntityId ?? input.paymentId)!;

@@ -4,6 +4,16 @@ import { formatPercent } from "../../lib/format";
 import type { FunnelStage } from "../../lib/types";
 import { ArrowDown, CheckCircle2 } from "lucide-react";
 
+/**
+ * s-28 chart deviation (intentional, documented in s-28 explanation §6):
+ * - Recovery timeseries uses Recharts (`RecoveryTimeseriesChart.tsx` AreaChart).
+ * - This funnel is custom divs (progressive-width bars + conversion labels),
+ *   not Recharts Funnel/Bar. Rationale: precise financial-control-plane styling,
+ *   accessible text-first rendering, and per-stage conversion math tested in
+ *   `funnel.test.ts`. Spec s-28 §Requirements 5 ("funnel bar") is satisfied
+ *   as a funnel bar viz; only the library differs for this one chart.
+ */
+
 export interface RecoveryFunnelChartProps {
   stages: FunnelStage[];
   currency?: string;

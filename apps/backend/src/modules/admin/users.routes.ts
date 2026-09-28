@@ -16,8 +16,14 @@ import { ValidationError } from "../../lib/errors";
 export const adminUsersRoutes: FastifyPluginAsync = async (
   fastify: FastifyInstance,
 ) => {
-  // All admin users routes require authenticated session/key and ADMIN role
-  const adminGuards = [fastify.requireAuth, fastify.requireRole("ADMIN")];
+  // Admin user management: session ADMIN only for humans, or machine keys
+  // with explicit `admin:manage` scope (least privilege — s-09 fix).
+  // Previously any valid `rrk_` key passed via role ADMIN; now scope-gated.
+  const adminGuards = [
+    fastify.requireAuth,
+    fastify.requireRole("ADMIN"),
+    fastify.requireScope("admin:manage"),
+  ];
 
   /**
    * POST /admin/users — Provision a new operator user in current tenant.

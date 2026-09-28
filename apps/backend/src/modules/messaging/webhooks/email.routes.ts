@@ -1,7 +1,9 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+import { DEFAULT_WEBHOOK_TIMEOUT_MS } from "@repo/config";
 import type { MessageStatus, DomainEvent } from "@repo/domain";
 import { NotAcceptableError } from "../../../lib/errors";
+import { CustomerContextService } from "../../customers/customer-context.service";
 import { checkIpBlock } from "../../security/ip-block.service";
 import { recordWebhookAuthFailure } from "../../security/webhook-abuse";
 
@@ -24,11 +26,19 @@ export const emailWebhookRoutes: FastifyPluginAsync<EmailWebhookOptions> = async
     }
   };
 
+  // s-07 §Technical Implementation: webhook 25s budget (same mechanism as
+  // `modules/webhooks/routes.ts` — per-route `handlerTimeout` enforces it;
+  // `config.requestTimeoutMs` mirrors it for discoverability).
+  const webhookTimeoutMs =
+    (fastify as any).config?.http?.webhookTimeoutMs ??
+    DEFAULT_WEBHOOK_TIMEOUT_MS;
+
   const getSecret = (): string => {
+    // Typed-config first (CONVENTIONS §1); hardcoded dev default last.
+    // No raw process.env fallback — buildApp always decorates typed config.
     return (
       opts.webhookSecret ||
       (fastify as any).config?.messaging?.emailWebhookSecret ||
-      process.env.EMAIL_WEBHOOK_SECRET ||
       "email_webhook_secret"
     );
   };
@@ -44,8 +54,27 @@ export const emailWebhookRoutes: FastifyPluginAsync<EmailWebhookOptions> = async
     const expectedSecret = getSecret();
     const providedToken = tokenInPath || headerToken;
 
-    // Verify token / secret
-    if (providedToken && providedToken !== expectedSecret) {
+    // Verify token / secret (ADR-012: webhooks verified before any processing).
+    // Missing token is rejected — no silent open. An explicit non-prod bypass
+    // exists only when ALLOW_UNSIGNED_WEBHOOKS=true via typed config
+    // (`config.messaging.allowUnsignedWebhooks`; documented test/local-dev
+    // escape hatch; never honored in production).
+    const appEnv = (fastify as any).config?.app?.env as string | undefined;
+    const allowUnsignedBypass =
+      (fastify as any).config?.messaging?.allowUnsignedWebhooks === true &&
+      appEnv !== "production";
+    const tokensMatch =
+      !!providedToken &&
+      (() => {
+        try {
+          const a = Buffer.from(providedToken, "utf8");
+          const b = Buffer.from(expectedSecret, "utf8");
+          return a.length === b.length && timingSafeEqual(a, b);
+        } catch {
+          return false;
+        }
+      })();
+    if (!tokensMatch && !allowUnsignedBypass) {
       await recordWebhookAuthFailure(fastify, request, "EMAIL");
       return reply.status(401).send({
         error: {
@@ -113,6 +142,14 @@ export const emailWebhookRoutes: FastifyPluginAsync<EmailWebhookOptions> = async
               optedOut: true,
             });
 
+            // s-13 freshness: bust cached customer context (opted_out flag changed).
+            // Best-effort — invalidateCache logs WARN and never throws.
+            await CustomerContextService.invalidateCache(
+              fastify.redisClient,
+              existingMsg.tenantId,
+              existingMsg.customerId,
+            );
+
             await fastify.repos.createCustomerResponse({ db: fastify.db }, {
               tenantId: existingMsg.tenantId,
               customerId: existingMsg.customerId,
@@ -155,11 +192,13 @@ export const emailWebhookRoutes: FastifyPluginAsync<EmailWebhookOptions> = async
   fastify.post(
     "/",
     {
+      handlerTimeout: webhookTimeoutMs,
       config: {
         rateLimit: {
           max: 600,
           timeWindow: "1 minute",
         },
+        requestTimeoutMs: webhookTimeoutMs,
       },
       preHandler: [checkIpBlock, validateContentType],
     },
@@ -170,11 +209,13 @@ export const emailWebhookRoutes: FastifyPluginAsync<EmailWebhookOptions> = async
   fastify.post(
     "/:token",
     {
+      handlerTimeout: webhookTimeoutMs,
       config: {
         rateLimit: {
           max: 600,
           timeWindow: "1 minute",
         },
+        requestTimeoutMs: webhookTimeoutMs,
       },
       preHandler: [checkIpBlock, validateContentType],
     },

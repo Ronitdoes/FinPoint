@@ -75,7 +75,14 @@ export class CustomerContextService {
   }
 
   /**
-   * Explicit cache invalidation helper (called when opt-out changes, message is sent, or outcome is recorded).
+   * Explicit cache invalidation helper for both purpose keys (`api_read`, `ai_decision`).
+   * Wired call sites (s-13 freshness): WhatsApp STOP opt-out
+   * (`messaging/webhooks/whatsapp.routes.ts`), email unsubscribe/spam opt-out
+   * (`messaging/webhooks/email.routes.ts`), message SENT (`messaging/send.service.ts`,
+   * best-effort so sends never fail on cache errors), and outcome recorded
+   * (`outcomes/record.service.ts`, alongside the analytics bust after commit).
+   * Safe to call when Redis is absent. Staleness remains bounded by the 30s TTL
+   * (60s max-stale for `ai_decision`) as a safety net.
    */
   public static async invalidateCache(
     redis: Redis | null | undefined,

@@ -17,7 +17,10 @@ export interface UpsertCoreResult {
   checkoutId?: string;
 }
 
-// Allowed state transitions to guard against out-of-order regressions (Spec 01 §21, s-10 §State Transitions)
+// Allowed state transitions: app-memory guard against out-of-order regressions
+// (Spec 01 §21, s-10 §State Transitions). Disallowed targets skip the write and record
+// an order-regression metric instead. DB-level WHERE-status guards live in the
+// risks/cases/actions repos; this path relies on insertEventIfNew dedupe + this skip.
 const PAYMENT_ALLOWED_TRANSITIONS: Record<string, string[]> = {
   CREATED: ["PENDING", "FAILED", "SUCCEEDED"],
   PENDING: ["FAILED", "SUCCEEDED", "PENDING"],

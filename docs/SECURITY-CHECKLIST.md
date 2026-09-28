@@ -17,7 +17,7 @@ that proves it — nothing in this file relies on "we were careful."
 
 | # | Check | Implementation | Test file(s) | Status |
 |---|---|---|---|---|
-| 1 | No provider secret in frontend bundle | Only `NEXT_PUBLIC_*` crosses the boundary (`packages/config` `webConfig`); sweep scans tracked files + built `.next` bundle + docker contexts | `tests/security/secrets.sweep.test.ts`, `scripts/security-sweep.mjs` | ✅ green (bundle scan clean, 27 files) |
+| 1 | No provider secret in frontend bundle | Only `NEXT_PUBLIC_*` crosses the boundary (`packages/config` `webConfig`); sweep scans tracked files + built `.next` bundle + docker contexts | `tests/security/secrets.sweep.test.ts`, `scripts/security-sweep.mjs` | ✅ green (bundle scan clean, 27 files at s-30 close; 10,334 at s-35 — see `docs/RELEASE-v0.1.0.md`) |
 | 2 | No raw secret in logs | Pino `redact` paths + request serializer (`apps/backend/src/plugins/logger.ts`, `@repo/observability`); planted-secret run asserts zero occurrences | `tests/security/log-redaction.e2e.test.ts`, `apps/backend/src/tests/security.test.ts` | ✅ green |
 | 3 | Webhook signatures validated | Constant-time HMAC on every surface (Stripe ±5 m window, Razorpay, WhatsApp `x-hub-signature-256`, email token); verification precedes any processing | `apps/backend/src/tests/webhooks.test.ts`, `apps/backend/src/tests/messaging-integration.test.ts` (re-run in `test:security`) | ✅ green |
 | 4 | Tenant context mandatory | `getTenantScope` throws `TENANT_CONTEXT_MISSING` (400); tenant never read from unverified params | `tests/security/cross-tenant.probe.test.ts` (36 probes) | ✅ green |
@@ -116,6 +116,8 @@ Reviewed, documented, token approach deferred with rationale:
   `SameSite` is relaxed — then implement double-submit CSRF tokens before
   shipping the form.
 
+Re-verified without behavior change: `modules/auth/routes.ts` still sets `rr_session` with `httpOnly` + `sameSite: "lax"` (Secure outside localhost in production) on both the login-set and logout-clear paths, and `plugins/cors.ts` keeps an explicit origin allowlist with `credentials: true` (no wildcard reflection, non-listed origins safely rejected); state-changing endpoints remain JSON-only so cross-site simple-form forgery has no foothold, no cookie-mutating HTML form has been added since s-30, and the token-CSRF-deferred posture therefore stands as accepted.
+
 ## 6. Least-privilege credentials & rotation (s-30 req 7)
 
 - Per-provider minimum-scope table:
@@ -188,6 +190,7 @@ increase, `ratelimit_hits_total` spike on `auth` class, and
 - CSRF tokens deferred while no cookie form exists (§5).
 - `/metrics` is unauthenticated (Prometheus scraping; s-34 to restrict to
   private network / add scrape auth).
+- Re-verified: `GET /metrics` remains unauthenticated on the app port (no auth guard in `modules/meta/routes.ts`) — it MUST stay network-restricted (private SG/VPC-only ingress, never a public LB route) before any public exposure.
 - Redis has no AUTH in local compose (loopback-only); prod requires ACLs (§6).
 - `bun audit` availability varies by environment; s-33 CI must run
   `security:audit` with a pinned auditor and fail the pipeline on breach.

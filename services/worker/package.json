@@ -29,21 +29,21 @@
     "@repo/observability": "workspace:*",
     "@repo/orchestration": "workspace:*",
     "@repo/policy": "workspace:*",
-    "@temporalio/activity": "^1.11.4",
-    "@temporalio/client": "^1.11.4",
-    "@temporalio/common": "^1.11.4",
-    "@temporalio/worker": "^1.11.4",
-    "@temporalio/workflow": "^1.11.4",
-    "zod": "^3.24.2"
+    "@temporalio/activity": "^1.23.0",
+    "@temporalio/client": "^1.23.0",
+    "@temporalio/common": "^1.23.0",
+    "@temporalio/worker": "^1.23.0",
+    "@temporalio/workflow": "^1.23.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/testing": "workspace:*",
     "@repo/typescript-config": "workspace:*",
-    "@temporalio/testing": "^1.11.4",
-    "@types/node": "^20",
+    "@temporalio/testing": "^1.23.0",
+    "@types/node": "^22.20.2",
     "eslint": "^9",
     "typescript": "^5",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.7"
   }
 }

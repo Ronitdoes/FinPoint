@@ -22,6 +22,10 @@ export const DEV_MOCK_STRIPE_WEBHOOK_SECRET =
 export const DEV_MOCK_RAZORPAY_WEBHOOK_SECRET =
   "rzp_dev_mock_secret_for_local_demo_testing_only";
 
+// Webhook signing secrets resolve via typed config
+// (`(app as any).config.payments.*`, CONVENTIONS §1) with DEV_MOCK fallback
+// for local demo. No raw `process.env` reads in this module.
+
 /**
  * Computes Stripe v1 signature header.
  */
@@ -121,7 +125,6 @@ export async function simulatePaymentFail(
   if (provider === "STRIPE") {
     const stripeSecret =
       (app as any).config?.payments?.stripeWebhookSecret ||
-      process.env.STRIPE_WEBHOOK_SECRET ||
       DEV_MOCK_STRIPE_WEBHOOK_SECRET;
 
     const eventId = `evt_demo_${randomUUID().slice(0, 12)}`;
@@ -167,7 +170,6 @@ export async function simulatePaymentFail(
   } else {
     const razorpaySecret =
       (app as any).config?.payments?.razorpayWebhookSecret ||
-      process.env.RAZORPAY_WEBHOOK_SECRET ||
       DEV_MOCK_RAZORPAY_WEBHOOK_SECRET;
 
     const eventId = `event_demo_${randomUUID().slice(0, 12)}`;
@@ -340,7 +342,6 @@ export async function simulatePaymentSucceed(
   if (provider === "STRIPE") {
     const stripeSecret =
       (app as any).config?.payments?.stripeWebhookSecret ||
-      process.env.STRIPE_WEBHOOK_SECRET ||
       DEV_MOCK_STRIPE_WEBHOOK_SECRET;
 
     const eventId = `evt_demo_succ_${randomUUID().slice(0, 12)}`;
@@ -380,7 +381,6 @@ export async function simulatePaymentSucceed(
   } else {
     const razorpaySecret =
       (app as any).config?.payments?.razorpayWebhookSecret ||
-      process.env.RAZORPAY_WEBHOOK_SECRET ||
       DEV_MOCK_RAZORPAY_WEBHOOK_SECRET;
 
     const eventId = `event_demo_succ_${randomUUID().slice(0, 12)}`;
@@ -709,7 +709,6 @@ export async function simulateInvoiceOverdue(
 
   const stripeSecret =
     (app as any).config?.payments?.stripeWebhookSecret ||
-    process.env.STRIPE_WEBHOOK_SECRET ||
     DEV_MOCK_STRIPE_WEBHOOK_SECRET;
 
   const eventId = `evt_demo_inv_${randomUUID().slice(0, 12)}`;

@@ -76,6 +76,13 @@ describe("secrets.sweep: CI gate integrity", () => {
     expect(script.includes(".next")).toBe(true);
   });
 
+  it("guards app.allow_audit_delete setter to reset.ts + 0010 only", () => {
+    expect(script.includes("allow_audit_delete")).toBe(true);
+    expect(script.includes("audit_delete_hatch")).toBe(true);
+    expect(script.includes("packages/db/src/seeds/reset.ts")).toBe(true);
+    expect(script.includes("0010_audit_reset_hatch.sql")).toBe(true);
+  });
+
   it("catches live-shaped values but ignores placeholders", () => {
     expect(scanText("key=sk_live_4eC39HqLyjWDarjtT1zdp7dc")).toHaveLength(1);
     expect(scanText("key=sk_test_51H7xYZabcDEF123456")).toHaveLength(1);
@@ -119,6 +126,32 @@ describe("secrets.sweep: live repo hygiene", () => {
     expect(tracked).toContain(".env.example");
     expect(tracked).not.toContain("infra/docker/.env");
     expect(tracked.filter((f) => /(^|\/)\.env$/.test(f))).toEqual([]);
+  });
+
+  it("app.allow_audit_delete is SET only in reset.ts (+0010 allowlisted)", () => {
+    const tracked = execFileSync("git", ["ls-files"], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    })
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const setter = /SET\s+(LOCAL\s+)?app\.allow_audit_delete/i;
+    const offenders: string[] = [];
+    for (const rel of tracked) {
+      if (
+        rel === "packages/db/src/seeds/reset.ts" ||
+        rel === "packages/db/drizzle/0010_audit_reset_hatch.sql"
+      ) {
+        continue;
+      }
+      if (!/\.(ts|js|mjs|cjs|sql)$/.test(rel)) continue;
+      const abs = join(REPO_ROOT, rel);
+      if (!existsSync(abs)) continue;
+      const text = readFileSync(abs, "utf8");
+      if (setter.test(text)) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("built frontend bundle contains no live-shaped secrets (when built)", () => {

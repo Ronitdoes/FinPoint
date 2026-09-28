@@ -151,9 +151,12 @@ describe("chaos: Stripe provider timeout", { timeout: 90000 }, () => {
           { db },
           { tenantId, idempotencyKey },
         );
-        return attempt?.status === "SUCCEEDED";
+        if (attempt?.status !== "SUCCEEDED") return false;
+        // Converge the action row too (atomic poll write; guards read timing).
+        const act = await findActionById({ db }, { tenantId, actionId: action.id });
+        return act?.status === "EXECUTED";
       },
-      { timeoutMs: 20000, label: "attempt resolves to SUCCEEDED via status poll" },
+      { timeoutMs: 20000, label: "attempt + action resolve to SUCCEEDED via status poll" },
     );
 
     // Exactly one attempt row: the timeout never double-charged.

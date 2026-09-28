@@ -20,18 +20,21 @@
     "db:seed": "bun run src/seeds/demo.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "lint": "eslint .",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@repo/domain": "workspace:*",
-    "dotenv": "^16.4.7",
-    "drizzle-orm": "^0.38.4",
-    "postgres": "^3.4.5"
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
-    "@types/node": "^20",
-    "drizzle-kit": "^0.30.2",
+    "@types/node": "^22.20.2",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9",
     "typescript": "^5"
   }
 }

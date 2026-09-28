@@ -85,7 +85,7 @@ export function registerJobs(
   }
 
   if (opts.attributionSweeper?.enabled) {
-    const sweeper = new AttributionSweeper(app.db, app.repos);
+    const sweeper = new AttributionSweeper(app.db, app.repos, (app as any).redisClient ?? null);
     const intervalMs = opts.attributionSweeper.intervalMs ?? 60 * 60 * 1000;
     stops.push(
       scheduleCronJob(app, {

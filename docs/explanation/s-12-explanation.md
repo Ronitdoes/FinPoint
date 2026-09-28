@@ -54,7 +54,7 @@ Per `specs/steps/s-12.md`, Spec 01 §8, Spec 02 §6, Spec 03 §6, and ADR-006:
 6. **Internal Domain Event (`risk.calculated`)**:
    - Emitted onto `revenue-events.v1` upon risk creation/recomputation with correlation and traceparent continuity.
 7. **REST Read Endpoints**:
-   - `GET /risks`: Paginated list of risks scoped to the authenticated tenant with cursor pagination and multi-filter support (`status`, `band`, `riskType`, `customerId`, `from`, `to`).
+   - `GET /risks`: Paginated list of risks scoped to the authenticated tenant with cursor pagination and multi-filter support (`status`, `band`, `risk_type`, `customer_id`, `from`, `to`).
    - `GET /risks/:id`: Single risk detail with full factors breakdown, enforcing strict tenant isolation (cross-tenant requests return 404).
 
 ---
@@ -88,7 +88,7 @@ apps/backend/
 │   │       │   ├── score-payment-failure.ts # Payment failure scorer
 │   │       │   ├── score-checkout.ts        # Checkout abandonment scorer
 │   │       │   ├── score-invoice.ts         # Invoice overdue scorer
-│   │       │   └── rules.test.ts            # 35 table-driven unit tests
+│     │   │       └── rules.test.ts            # 35 runtime unit tests (26 textual blocks: 25 it + 1 it.each expanding to 10 band cases, verified via grep)
 │   │       ├── risk.service.ts      # Aggregate queries, metric emission, span tracing, risk.calculated publishing
 │   │       ├── consumer.ts          # EventBus subscription (group: risk-engine, topic: revenue-events.v1)
 │   │       └── routes.ts            # Fastify plugin for GET /risks and GET /risks/:id
@@ -96,7 +96,7 @@ apps/backend/
 │   │   └── routes.ts                # Registered riskRoutes under /risks
 │   ├── app.ts                       # Registered registerRiskConsumer(app) during initialization
 │   └── tests/
-│       └── risk.test.ts             # 10 comprehensive integration & performance smoke tests
+│       └── risk.test.ts             # 11 comprehensive integration & performance smoke tests (verified via grep; drift note: progress.md s-12 row cites historical 10 — current 11 reflects provider-id fallback gap fix, see §11 Test 4)
 ```
 
 ---
@@ -258,7 +258,7 @@ Three high-performance repository methods handle risk persistence:
    - Closes all active `OPEN` risks for a subject by setting `status = 'EXPIRED'`, `expiresAt = now()`.
    - Used on resolution events (`payment.succeeded`, `invoice.paid`, `checkout.completed`).
 3. **`listRisks(ctx, query)`**:
-   - Provides tenant-isolated querying with filtering on `status`, `band`, `riskType`, `customerId`, and date range (`from`, `to`).
+   - Provides tenant-isolated querying with filtering on `status`, `band`, `risk_type`, `customer_id`, and date range (`from`, `to`).
    - Uses cursor-based pagination encoded in base64 (`${computedAt.toISOString()}|${id}`).
 
 ---
@@ -287,10 +287,11 @@ export async function registerRiskConsumer(app: FastifyInstance): Promise<void> 
    - Computes deterministic score and factor breakdown.
    - Upserts `OPEN` risk row via `upsertOpenRisk`.
    - Emits internal domain event `risk.calculated` onto `revenue-events.v1` preserving `correlation_id` and W3C `traceparent`.
-   - Records Prometheus metrics (`recordRiskCalculation(tenantId, riskType, band, durationSec)`).
+    - Records Prometheus metrics (`recordRiskCalculation(band, durationMs)`).
    - If evaluation duration > 50ms, logs a structured warning.
 2. **Resolution Events (`payment.succeeded`, `invoice.paid`, `checkout.completed`)**:
    - Closes any matching `OPEN` risks via `closeRisksForSubject`.
+   - Webhook envelopes carry provider ids, so each close path first resolves to the canonical DB anchor (`resolvePaymentForRisk`, `resolveInvoiceForRisk`, `resolveCheckoutForRisk` — the latter falls back from UUID lookup to the `source_ref` filter, mirroring the payment/invoice resolvers). The `checkout.abandoned` trigger path resolves identically so both sides anchor on the same id.
 
 ---
 
@@ -301,8 +302,8 @@ export async function registerRiskConsumer(app: FastifyInstance): Promise<void> 
 - Query parameters (validated via zod):
   - `status`: `OPEN` | `ASSESSED` | `EXPIRED`
   - `band`: `LOW` | `MEDIUM` | `HIGH` | `CRITICAL`
-  - `riskType`: `PAYMENT_FAILURE` | `CHECKOUT_ABANDONMENT` | `INVOICE_OVERDUE`
-  - `customerId`: UUID
+  - `risk_type`: `PAYMENT_FAILURE` | `CHECKOUT_ABANDONMENT` | `INVOICE_OVERDUE`
+  - `customer_id`: UUID
   - `from`, `to`: ISO timestamps
   - `cursor`: base64 pagination cursor
   - `limit`: 1–100 (default 50)
@@ -330,7 +331,7 @@ export async function registerRiskConsumer(app: FastifyInstance): Promise<void> 
 
 The test suite covers both unit-level determinism and full integration lifecycle:
 
-### Unit Tests (`rules.test.ts` — 35 tests)
+### Unit Tests (`rules.test.ts` — 35 runtime tests: 26 textual blocks = 25 `it` + 1 `it.each` expanding to 10 band cases, verified via grep)
 - Table-driven tests for every individual rule.
 - Boundary test cases:
   - Failed payment counts: 0, 1, 2, 3.
@@ -341,17 +342,18 @@ The test suite covers both unit-level determinism and full integration lifecycle
   - Clamping at 100 maximum under cumulative weights.
   - Configuration override testing for weights and thresholds.
 
-### Integration Tests (`risk.test.ts` — 10 tests)
+### Integration Tests (`risk.test.ts` — 11 tests)
 1. `payment.failed` event processing -> persists `OPEN` risk, computes factors, publishes `risk.calculated` with correlation continuity.
 2. Duplicate event redelivery -> idempotent, single row preserved.
 3. Resolution event `payment.succeeded` -> transitions `OPEN` risk to `EXPIRED` (`resolved_upstream`).
-4. `checkout.abandoned` -> creates `OPEN` risk with `CHECKOUT_ABANDONMENT` type.
-5. `invoice.overdue` -> creates `OPEN` risk with `INVOICE_OVERDUE` type.
-6. `GET /risks` -> returns paginated list for authenticated tenant.
-7. `GET /risks` -> strictly isolates Tenant B from Tenant A's risks.
-8. `GET /risks/:id` -> returns full factor breakdown.
-9. `GET /risks/:id` -> returns 404 for cross-tenant requests.
-10. Performance smoke test -> 500 deterministic rule evaluations execute with average latency < 50ms (achieved <0.1ms).
+4. `checkout.completed` carrying the provider `source_ref` -> resolves to the canonical checkout id (`resolveCheckoutForRisk` mirror of the payment/invoice resolvers) and transitions the `OPEN` risk to `EXPIRED`.
+5. `checkout.abandoned` -> creates `OPEN` risk with `CHECKOUT_ABANDONMENT` type.
+6. `invoice.overdue` -> creates `OPEN` risk with `INVOICE_OVERDUE` type.
+7. `GET /risks` -> returns paginated list for authenticated tenant.
+8. `GET /risks` -> strictly isolates Tenant B from Tenant A's risks.
+9. `GET /risks/:id` -> returns full factor breakdown.
+10. `GET /risks/:id` -> returns 404 for cross-tenant requests.
+11. Performance smoke test -> 500 deterministic rule evaluations execute with average latency < 50ms (achieved <0.1ms).
 
 ---
 
@@ -361,14 +363,14 @@ All acceptance criteria from `specs/steps/s-12.md` have been met:
 
 | Requirement | Acceptance Criteria | Verified By | Status |
 |---|---|---|---|
-| Rule implementation | Spec 01 §8 deterministic rules implemented | `rules.test.ts` (35 table tests) | PASS |
+| Rule implementation | Spec 01 §8 deterministic rules implemented | `rules.test.ts` (35 runtime: 26 textual blocks = 25 `it` + 1 `it.each` → 10 band cases, verified via grep) | PASS |
 | Score & band range | Score in [0, 100], bands LOW/MEDIUM/HIGH/CRITICAL | `rules.test.ts` | PASS |
 | Explainability JSONB | `factors` contains rules, points, matched, totalScore, band | `risk.test.ts` Test 1 & 8 | PASS |
 | Idempotent upsert | Duplicate event updates OPEN row without duplicate rows | `risk.test.ts` Test 2 | PASS |
-| Resolution closing | `payment.succeeded` marks OPEN risk `EXPIRED` | `risk.test.ts` Test 3 | PASS |
+| Resolution closing | `payment.succeeded` / `checkout.completed` (via provider-id resolution) marks OPEN risk `EXPIRED` | `risk.test.ts` Tests 3, 4 | PASS |
 | Internal event emission | `risk.calculated` published with correlation continuity | `risk.test.ts` Test 1 | PASS |
-| REST read APIs | `GET /risks` and `GET /risks/:id` with tenant scoping | `risk.test.ts` Tests 6, 7, 8, 9 | PASS |
-| Performance latency | Deterministic evaluation < 50ms budget | `risk.test.ts` Test 10 (< 0.1ms avg) | PASS |
+| REST read APIs | `GET /risks` and `GET /risks/:id` with tenant scoping | `risk.test.ts` Tests 7, 8, 9, 10 | PASS |
+| Performance latency | Deterministic evaluation < 50ms budget | `risk.test.ts` Test 11 (< 0.1ms avg) | PASS |
 | Verification suite | `bun run check-types` & `bun test` green | Monorepo test suite (509 tests) | PASS |
 
 ---

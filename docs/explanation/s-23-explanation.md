@@ -27,7 +27,7 @@ Workflow B coordinates the automated recovery of abandoned carts and checkouts (
 2. **Confirmed Abandonment Qualification**: When the inactivity watch timer expires, the checkout status is verified from the database. If still abandoned, the workflow qualifies the case, calculates deterministic risk scores, builds customer context, invokes AI decisioning, and evaluates policy constraints.
 3. **Touch 1 Reminder Invariant**: The initial outbound touch (WhatsApp or Email) provides a friendly cart reminder and recovery link with **strictly zero discount** (Spec 03 Scenario B invariant).
 4. **4-Hour Decision Window**: After Touch 1 dispatch, the case enters `WAITING` status for 4 hours, monitoring for customer purchase completion or opt-out signals.
-5. **Touch 2 Policy-Gated Incentive**: If the customer has not completed their order and policy approved an incentive (capped at ₹500 / 50,000 paise per `POL-DISCOUNT`), Touch 2 offers the coupon incentive. If the policy rejected the incentive (e.g. cart value or discount exceeds limits), Touch 2 is skipped and the case closes gracefully with `STOPPED (NO_ACTION_ALLOWED)`.
+5. **Touch 2 Policy-Gated Incentive**: If the customer has not completed their order and policy approved an incentive (capped at ₹5,000 (500,000 paise) per `POL-DISCOUNT`), Touch 2 offers the coupon incentive. If the policy rejected the incentive (e.g. cart value or discount exceeds limits), Touch 2 is skipped and the case closes gracefully with `STOPPED (NO_ACTION_ALLOWED)`.
 6. **Pre-Dispatch Completion Race Guard**: Prior to sending either outbound touch (reminder or incentive), an atomic transactional check (`completeRaceGuard`) verifies that no purchase event or concurrent payment completed. If completed, message transmission is aborted instantly and the workflow terminates as `RECOVERED`.
 
 ---
@@ -55,7 +55,7 @@ flowchart TD
     CheckPolicy -- Incentive Approved --> Touch2Guard[Race Guard Check 2]
     
     Touch2Guard -- Purchase landed --> Rec3[Record Outcome: RECOVERED]
-    Touch2Guard -- Safe to send --> Touch2Send[Send Touch 2 Incentive\nCapped at ₹500 Discount]
+    Touch2Guard -- Safe to send --> Touch2Send[Send Touch 2 Incentive\nCapped at ₹5,000 Discount]
     
     Touch2Send --> Wait2[Phase 6: Wait 24 Hours]
     Wait2 -- external-checkout-completed --> Rec4[Record Outcome: RECOVERED]
@@ -81,11 +81,17 @@ In `packages/db/src/repositories/checkouts.repo.ts`:
 
 Per Spec 03 Scenario B:
 - Customers often abandon carts temporarily (distraction, device switching). Offering immediate discounts erodes merchant margin and trains customers to abandon carts intentionally.
-- **Touch 1** sends only a reminder:
+- **Touch 1 (REMINDER, step "1")** sends only a reminder:
   - Template: `checkout_abandonment_reminder`
   - Variables: `customer_name`, `cart_value`, `currency`, `checkout_url`.
-  - Discount: strictly zero.
-- **Touch 2** sends an incentive only after the 4-hour window expires without a purchase, and only if approved by policy (`POL-DISCOUNT` cap ₹500).
+  - Discount: strictly zero — enforced by tests 2–4 which inspect the `sendTemplateMessage`
+    spy payload and assert no `discount*`/`coupon*` keys or `coupon`/`SAVE500` values in
+    Touch 1 variables, while Touch 2 asserts `discount_amount` + `coupon` URL present.
+- **Touch 2 (INCENTIVE, step "2")** sends an incentive only after the 4-hour window expires without a purchase, and only if approved by policy (`POL-DISCOUNT` cap ₹5,000 (500,000 paise)).
+
+Step-label convention: workflow + ledger keys use `"1"` (REMINDER) / `"2"` (INCENTIVE);
+`completeRaceGuard` accepts legacy `"REMINDER"`/`"INCENTIVE"` aliases and normalizes them
+to `"1"`/`"2"` for ledger consistency (`{tenant}:{case}:{channel}:{template}:1|2`).
 
 ---
 
@@ -93,17 +99,25 @@ Per Spec 03 Scenario B:
 
 To prevent sending recovery reminders to customers who already purchased:
 
-### Database Race Guard (`completeRaceGuard`)
+### Database Race Guard (`completeRaceGuard`) — best-effort window (audit s-23 fix)
 In `packages/db/src/repositories/checkouts.repo.ts`:
 ```ts
 export async function completeRaceGuard(
   ctx: ContextWithDb,
-  input: { tenantId: string; checkoutId: string; step: "REMINDER" | "INCENTIVE" },
-): Promise<{ safeToSend: boolean; status: string; completedAt: Date | null }>
+  input: { tenantId: string; checkoutId: string; step?: string }, // "1"=REMINDER, "2"=INCENTIVE
+): Promise<{ safeToSend: boolean; checkout: Checkout | null; completedAt?: Date }>
 ```
 - Performs a fresh read of the checkout row.
 - If `status === 'COMPLETED'` or `completedAt !== null`, returns `safeToSend: false`.
-- If safe to send, records a `TOUCH_CONTACTED` event (`step: "REMINDER"` or `step: "INCENTIVE"`) inside the transaction.
+- If safe to send, records a `RECOVERY_CONTACTED` ledger event (`step: "1"` or `"2"`) inside the caller's transaction.
+- **Atomicity scope (corrected)**: this is best-effort, NOT fully atomic. The check + ledger
+  flag run in one DB transaction but WITHOUT `SELECT FOR UPDATE` row locking, and the actual
+  provider send happens in a later `sendTemplateMessage` activity. Spec s-23.md:41 explicitly
+  concedes this window. Purchases landing between guard and send are caught by the post-wait
+  fresh-DB re-read (`checkCheckoutStatus`) + `external-checkout-completed` signal wakeup, which
+  converge to `RECOVERED` without duplicate sends. Code comments in `checkouts.repo.ts` and
+  `checkout-race-guard.ts` now state this explicitly; no `SELECT FOR UPDATE` was added to avoid
+  widening lock scope for a window already backstopped.
 
 ### Worker Activity (`checkoutRaceGuard`)
 In `services/worker/src/activities/checkout-race-guard.ts`:
@@ -184,7 +198,7 @@ The matrix test suite (`services/worker/src/workflows/checkout-abandonment.test.
 - [x] Inactivity watch timer (30m) implemented; exits silently with NO case created if purchased early.
 - [x] First-touch reminder enforces strict zero-discount invariant.
 - [x] Pre-dispatch race guard (`completeRaceGuard` & `checkoutRaceGuard`) checks and flags checkout before every touch.
-- [x] Touch 2 policy-gated incentive offer (<= ₹500 cap) skipped if policy rejects.
+- [x] Touch 2 policy-gated incentive offer (<= ₹5,000 (500,000 paise) cap) skipped if policy rejects.
 - [x] Signal bridge `CheckoutCompletedSignalBridge` handles `checkout.completed` and `payment.succeeded`.
 - [x] All 8 acceptance matrix test scenarios pass under time-skipping Temporal environment.
 - [x] Traceability and progress tracking documents updated.

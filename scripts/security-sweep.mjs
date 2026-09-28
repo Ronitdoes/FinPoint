@@ -55,6 +55,9 @@ const VALUE_ALLOWLIST = new Set([
   // PII-scanner fixture: sequential digits, obviously synthetic.
   "apps/backend/src/tests/audit-timeline-integration.test.ts::sk_live_99998888777766665555",
   "apps/backend/src/tests/audit-timeline-integration.test.ts::sk_test_123456789012345678",
+  // PII redaction unit fixture (s-25): sequential digits, obviously synthetic.
+  // Same vetted value as the audit-timeline integration fixture above.
+  "packages/db/src/repositories/pii-redact.test.ts::sk_live_99998888777766665555",
   // Logger redaction fixture: sequential digits.
   "packages/observability/src/logger.test.ts::sk_live_1234567890",
   // Razorpay dev-fallback default + contract fixtures: literal words, never
@@ -63,6 +66,14 @@ const VALUE_ALLOWLIST = new Set([
   "packages/integrations/src/payments/razorpay.adapter.ts::rzp_test_secret",
   // Frozen roadmap prose naming the key pattern (specs/ are append-only).
   "specs/steps/s-30.md::BEGIN PRIVATE KEY",
+  // s-30 explainer quotes the same vetted prose (pattern name in English
+  // words, not key material). Added s-35 release sweep with rationale.
+  "docs/explanation/s-30-explanation.md::BEGIN PRIVATE KEY",
+  // load-lite mjs builds a per-run random loopback signing secret
+  // (`whsec_loadlite_<8 random hex>`) for local load tests only; the static
+  // prefix trips the webhook_secret pattern but no credential is stored.
+  // Added s-35 release sweep with rationale.
+  "scripts/load-lite.mjs::whsec_loadlite",
 ]);
 
 // Files whose full content is exempt (they define the gate itself).
@@ -204,6 +215,42 @@ for (const { file, required } of dockerignoreChecks) {
         sample: `${file} must exclude ${pattern}`,
       });
     }
+  }
+}
+
+// 4. Audit-delete hatch guard: `app.allow_audit_delete` must only ever be SET
+// inside the slug-guarded demo reset (packages/db/src/seeds/reset.ts) and the
+// s-35 migration that defines the hatch (0010). Any other SET would weaken the
+// append-only compliance guarantee. Docs/prose (.md) excluded — only code/SQL
+// setters are gated.
+const AUDIT_DELETE_SETTER = /SET\s+(LOCAL\s+)?app\.allow_audit_delete/i;
+const AUDIT_DELETE_SET_ALLOWLIST = new Set([
+  "packages/db/src/seeds/reset.ts",
+  "packages/db/drizzle/0010_audit_reset_hatch.sql",
+]);
+for (const rel of trackedFiles()) {
+  if (AUDIT_DELETE_SET_ALLOWLIST.has(rel)) continue;
+  if (!/\.(ts|js|mjs|cjs|sql)$/.test(rel)) continue;
+  const abs = join(REPO_ROOT, rel);
+  let buffer;
+  try {
+    const st = statSync(abs);
+    if (!st.isFile() || st.size > 5 * 1024 * 1024) continue;
+    buffer = readFileSync(abs);
+  } catch {
+    continue;
+  }
+  if (isBinaryLike(buffer)) continue;
+  const text = buffer.toString("utf8");
+  AUDIT_DELETE_SETTER.lastIndex = 0;
+  if (AUDIT_DELETE_SETTER.test(text)) {
+    const line = text.slice(0, text.search(AUDIT_DELETE_SETTER)).split("\n").length;
+    failures.push({
+      file: rel,
+      line,
+      pattern: "audit_delete_hatch",
+      sample: "app.allow_audit_delete SET outside allowlist",
+    });
   }
 }
 

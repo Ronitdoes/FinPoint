@@ -15,6 +15,9 @@ export default defineConfig({
           include: [
             "packages/*/src/**/*.test.ts",
             "apps/*/src/**/*.test.ts",
+            // Component (TSX) tests for frontend primitives; each file opts
+            // into a DOM environment via pragma comment.
+            "apps/*/src/**/*.test.tsx",
             "services/*/src/**/*.test.ts",
           ],
         },

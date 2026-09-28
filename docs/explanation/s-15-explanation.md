@@ -144,7 +144,7 @@ To prepare for Step 21 (Human Escalation & Approvals), Step 15 implements the co
 
 ```typescript
 export function requiresApproval(
-  decision: DecisionRecord | null | undefined,
+  decision: DecisionLike | null | undefined,
   surface: RiskType | string,
 ): boolean {
   if (!decision || !decision.actions || decision.actions.length === 0) {
@@ -160,7 +160,7 @@ export function requiresApproval(
   // 2. Direct payment collection actions require human review if confidence < 0.6
   const confidence = decision.diagnosis?.confidence ?? 1.0;
   const hasHighTouchPaymentAction = decision.actions.some((a) =>
-    ["RETRY_PAYMENT", "CREATE_PAYMENT_LINK", "REQUEST_PAYMENT_METHOD_UPDATE"].includes(a.type),
+    ["RETRY_PAYMENT", "CREATE_PAYMENT_LINK"].includes(a.type),
   );
 
   if (hasHighTouchPaymentAction && confidence < 0.6) {
@@ -171,10 +171,18 @@ export function requiresApproval(
 }
 ```
 
+> **Audit correction**: an earlier revision of this section (and its prose) listed `REQUEST_PAYMENT_METHOD_UPDATE` in the high-stakes set. It is not in the set — neither in this hook nor in the `POL-CONFIDENCE` policy evaluator. The authoritative set is exactly `{RETRY_PAYMENT, CREATE_PAYMENT_LINK, OFFER_INCENTIVE}`, matching the s-15 requiresApproval rule v1 and the `POL-CONFIDENCE` `applies_to` list.
+
+### Single-source hook (audit fix)
+The high-stakes set previously existed as two independent literals — one in `governance/confidence.ts`, one in `packages/policy/src/rules/confidence.ts`. It is now the single exported constant `HIGH_STAKES_CONFIDENCE_ACTIONS` in `@repo/domain` (`packages/domain/src/policy/limits.ts`), imported by both sides (pinned by `limits.test.ts`). Note on layering: `@repo/policy` cannot import from `apps/backend` (CONVENTIONS §1 forbids packages importing from apps), so `@repo/domain` — not governance — is the source; governance documents this at the top of `confidence.ts`.
+
 ### Evaluation Rules:
 1. **Financial Concessions**: Any decision recommending `OFFER_INCENTIVE` returns `true`, regardless of confidence score.
-2. **Low-Confidence Financial Actions**: Any decision recommending `RETRY_PAYMENT`, `CREATE_PAYMENT_LINK`, or `REQUEST_PAYMENT_METHOD_UPDATE` where `diagnosis.confidence < 0.6` returns `true`.
+2. **Low-Confidence Financial Actions**: Any decision recommending `RETRY_PAYMENT` or `CREATE_PAYMENT_LINK` where `diagnosis.confidence < 0.6` returns `true`.
 3. **Standard Communication Actions**: Informational messaging (`SEND_EMAIL`, `SEND_WHATSAPP`, `SEND_SMS`) with high confidence returns `false` (autonomous execution allowed).
+
+### POL-CONFIDENCE re-derivation (audit clarification)
+`AiDecideService` does **not** call `requiresApproval` and persists no approval flag — `ai_decisions` deliberately has no `requires_approval` column (adding one would be a schema migration for state the policy layer already derives). Instead `POL-CONFIDENCE` re-derives the gate independently at policy-evaluation time from `decision.diagnosis_confidence` plus the action type, against the same shared `HIGH_STAKES_CONFIDENCE_ACTIONS` set, with the explicit `requires_approval` decision flag honored as an override when present (see `packages/policy/src/rules/confidence.ts` and the comment at the `COMPLETED` persistence block in `decide.service.ts`).
 
 ---
 
@@ -207,6 +215,7 @@ Two read routes provide governance observability while upholding role-based data
 ### 2. `GET /ai/decisions/:id`
 - **Permissions**: Minimum `OPERATIONS` role.
 - **Tenant Scoping**: Queries must match `tenant_id` from the session; cross-tenant attempts return `404 CASE_NOT_FOUND`.
+- **Data Protection Masking (audit fix, same contract as the list route)**: `inputSnapshot` and `outputRaw` are returned ONLY to `ADMIN` callers passing `?include=input_snapshot`. Every other caller receives the curated record without snapshot fields — previously this route spread the full row to any `OPERATIONS+` caller. Pinned by the masking test in `ai-governance-adversarial.test.ts` ("masks inputSnapshot/outputRaw unless ADMIN with ?include=input_snapshot").
 
 ---
 
@@ -285,7 +294,7 @@ The test suite in `apps/backend/src/tests/ai-governance-adversarial.test.ts` pro
 | **3** | **Low Confidence Hook** | Confidence = 0.4 + `RETRY_PAYMENT` $\rightarrow$ `requiresApproval(decision, surface) === true`. | ✅ PASS |
 | **4** | **High Confidence Hook** | Confidence = 0.9 + `SEND_EMAIL` $\rightarrow$ `requiresApproval(decision, surface) === false`. | ✅ PASS |
 | **5** | **Unsafe Action Recommendation** | Action outside surface allowlist (e.g. `RETRY_PAYMENT` on `INVOICE_OVERDUE`) fails semantic validation and degrades to fallback. | ✅ PASS |
-| **6** | **Policy-Violating Suggestion** | Incentive amount exceeding policy cap ($> ₹50.00$ / 5,000 paise) is rejected by semantic validation before reaching the policy layer. | ✅ PASS |
+| **6** | **Policy-Violating Suggestion** | Incentive amount exceeding policy cap ($> ₹5{,}000$ / 500,000 paise, `MAX_AUTO_DISCOUNT_MINOR`) is rejected by semantic validation before reaching the policy layer. | ✅ PASS |
 | **7** | **Missing Context Fields** | Payload missing customer ID or recovery case fields throws `ContextInvalidError` without making any LLM network calls. | ✅ PASS |
 | **8** | **LLM Network Timeout** | Latency exceeds budget $\rightarrow$ client retries $\times 2$ with jitter $\rightarrow$ graceful rule fallback within SLA. | ✅ PASS |
 | **9** | **Provider 500 Outages** | Consecutive failures trip the `LlmCircuitBreaker` to `OPEN`; subsequent calls skip network calls entirely. | ✅ PASS |

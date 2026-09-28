@@ -161,6 +161,82 @@ describe("apiConfig", () => {
     const config = apiConfig(env);
     expect(config.ai.baseUrl).toBeNull();
   });
+
+  describe("http + release groups (s-02 audit fix)", () => {
+    it("defaults CORS allowlist to empty, cookieSecure to null, release stamps to dev", () => {
+      const config = apiConfig(baseEnv());
+      expect(config.http.corsAllowedOrigins).toEqual([]);
+      expect(config.http.cookieSecure).toBeNull();
+      expect(config.release.version).toBe("dev");
+      expect(config.release.gitSha).toBe("dev");
+      expect(Object.isFrozen(config.http)).toBe(true);
+      expect(Object.isFrozen(config.release)).toBe(true);
+    });
+
+    it("parses CORS_ALLOWED_ORIGINS comma-separated with trimming", () => {
+      const config = apiConfig({
+        ...baseEnv(),
+        CORS_ALLOWED_ORIGINS:
+          "https://app.example.com, https://admin.example.com ,,",
+      });
+      expect([...config.http.corsAllowedOrigins]).toEqual([
+        "https://app.example.com",
+        "https://admin.example.com",
+      ]);
+    });
+
+    it("honors COOKIE_SECURE + release overrides", () => {
+      const config = apiConfig({
+        ...baseEnv(),
+        COOKIE_SECURE: "true",
+        APP_VERSION: "v0.1.0",
+        GIT_SHA: "abc123",
+      });
+      expect(config.http.cookieSecure).toBe(true);
+      expect(config.release.version).toBe("v0.1.0");
+      expect(config.release.gitSha).toBe("abc123");
+    });
+
+    it("defaults request timeouts to 10s global / 25s webhook (s-07)", () => {
+      const config = apiConfig(baseEnv());
+      expect(config.http.requestTimeoutMs).toBe(10000);
+      expect(config.http.webhookTimeoutMs).toBe(25000);
+      expect(Object.isFrozen(config.http)).toBe(true);
+    });
+
+    it("honors REQUEST_TIMEOUT_MS + WEBHOOK_TIMEOUT_MS overrides", () => {
+      const config = apiConfig({
+        ...baseEnv(),
+        REQUEST_TIMEOUT_MS: "5000",
+        WEBHOOK_TIMEOUT_MS: "30000",
+      });
+      expect(config.http.requestTimeoutMs).toBe(5000);
+      expect(config.http.webhookTimeoutMs).toBe(30000);
+    });
+
+    it("rejects non-positive timeout values", () => {
+      expectConfigError(
+        () => apiConfig({ ...baseEnv(), REQUEST_TIMEOUT_MS: "0" }),
+        "REQUEST_TIMEOUT_MS",
+      );
+      expectConfigError(
+        () => apiConfig({ ...baseEnv(), WEBHOOK_TIMEOUT_MS: "-1" }),
+        "WEBHOOK_TIMEOUT_MS",
+      );
+    });
+
+    it("defaults allowUnsignedWebhooks to null and honors explicit values", () => {
+      expect(apiConfig(baseEnv()).messaging.allowUnsignedWebhooks).toBeNull();
+      expect(
+        apiConfig({ ...baseEnv(), ALLOW_UNSIGNED_WEBHOOKS: "true" }).messaging
+          .allowUnsignedWebhooks,
+      ).toBe(true);
+      expect(
+        apiConfig({ ...baseEnv(), ALLOW_UNSIGNED_WEBHOOKS: "false" }).messaging
+          .allowUnsignedWebhooks,
+      ).toBe(false);
+    });
+  });
 });
 
 describe("workerConfig", () => {

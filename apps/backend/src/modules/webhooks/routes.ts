@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
+import { DEFAULT_WEBHOOK_TIMEOUT_MS } from "@repo/config";
 import { processInboundWebhook } from "./ingest.service";
-import { NotAcceptableError } from "../../lib/errors";
+import { NotAcceptableError, UnmappablePayloadError } from "../../lib/errors";
 import { whatsappWebhookRoutes } from "../messaging/webhooks/whatsapp.routes";
 import { emailWebhookRoutes } from "../messaging/webhooks/email.routes";
 import { checkIpBlock } from "../security/ip-block.service";
@@ -21,6 +22,17 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
   fastify,
   opts,
 ) => {
+  // s-07 §Technical Implementation: webhook 25s budget. The socket-level
+  // `requestTimeout` is global-only (Node http server), so the longer budget
+  // is enforced with Fastify v5's per-route `handlerTimeout`: app-level,
+  // overrides the server default, 503s + aborts `request.signal` on expiry.
+  // `config.requestTimeoutMs` mirrors the value for discoverability (the
+  // spec's "route-level config.requestTimeoutMs") while `handlerTimeout` is
+  // what actually enforces it — no Promise.race wrapper needed.
+  const webhookTimeoutMs =
+    (fastify as any).config?.http?.webhookTimeoutMs ??
+    DEFAULT_WEBHOOK_TIMEOUT_MS;
+
   // Pre-handler hook to enforce application/json Content-Type (406 on mismatch)
   const validateContentType = async (request: FastifyRequest, _reply: FastifyReply) => {
     const contentType = request.headers["content-type"];
@@ -29,7 +41,14 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
     }
   };
 
-  // Helper to extract raw body buffer/string
+  // Helper to extract raw body buffer/string.
+  // s-10 audit fix (fail-closed): app.ts registers a buffer content-type parser
+  // that ALWAYS sets request.rawBody for application/json, and the pre-handler
+  // above rejects non-JSON content-types with 406 — so reaching this helper
+  // without a rawBody means parser misconfiguration, not a provider edge case.
+  // Re-serializing request.body via JSON.stringify would produce bytes that
+  // differ from what the provider signed (key order/whitespace), silently
+  // breaking signature trust; hence a 400 instead of a silent re-serialization.
   const getRawBody = (request: FastifyRequest): string | Buffer => {
     if ((request as any).rawBody !== undefined) {
       return (request as any).rawBody;
@@ -37,18 +56,22 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
     if (typeof request.body === "string" || Buffer.isBuffer(request.body)) {
       return request.body;
     }
-    return JSON.stringify(request.body);
+    throw new UnmappablePayloadError(
+      "Missing raw webhook body for signature verification",
+    );
   };
 
   // POST /webhooks/stripe
   fastify.post(
     "/stripe",
     {
+      handlerTimeout: webhookTimeoutMs,
       config: {
         rateLimit: {
           max: 600,
           timeWindow: "1 minute",
         },
+        requestTimeoutMs: webhookTimeoutMs,
       },
       preHandler: [checkIpBlock, validateContentType],
     },
@@ -57,10 +80,12 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
       const query = request.query as Record<string, string | undefined>;
 
       const isMockMode = (fastify as any).config?.demo?.mockProviders === true;
+      // Typed-config first (CONVENTIONS §1); explicit route opts override for
+      // tests. No raw process.env fallback — config is always decorated by
+      // buildApp and validated fail-fast at boot.
       const rawStripeSecret =
         opts.stripeWebhookSecret ||
-        (fastify as any).config?.payments?.stripeWebhookSecret ||
-        process.env.STRIPE_WEBHOOK_SECRET;
+        (fastify as any).config?.payments?.stripeWebhookSecret;
 
       const stripeSecret =
         rawStripeSecret && rawStripeSecret.trim() !== ""
@@ -102,11 +127,13 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
   fastify.post(
     "/razorpay",
     {
+      handlerTimeout: webhookTimeoutMs,
       config: {
         rateLimit: {
           max: 600,
           timeWindow: "1 minute",
         },
+        requestTimeoutMs: webhookTimeoutMs,
       },
       preHandler: [checkIpBlock, validateContentType],
     },
@@ -117,8 +144,7 @@ export const webhooksRoutes: FastifyPluginAsync<WebhookRouteOptions> = async (
       const isMockMode = (fastify as any).config?.demo?.mockProviders === true;
       const rawRazorpaySecret =
         opts.razorpayWebhookSecret ||
-        (fastify as any).config?.payments?.razorpayWebhookSecret ||
-        process.env.RAZORPAY_WEBHOOK_SECRET;
+        (fastify as any).config?.payments?.razorpayWebhookSecret;
 
       const razorpaySecret =
         rawRazorpaySecret && rawRazorpaySecret.trim() !== ""

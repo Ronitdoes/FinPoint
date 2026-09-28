@@ -7,6 +7,7 @@ import {
   withSpan,
   recordEventIngested,
   recordEventDuplicate,
+  recordTenantFallback,
   recordWebhookDelivery,
   recordWebhookLatency,
 } from "@repo/observability";
@@ -79,7 +80,20 @@ export async function processInboundWebhook(
       try {
         json = JSON.parse(rawStr);
       } catch {
+        // s-10 audit fix (intentional fail-closed, documented in
+        // docs/explanation/s-10-explanation.md §13): transport-level malformed
+        // JSON is rejected with UNMAPPABLE_PAYLOAD WITHOUT persisting a FAILED
+        // row. No reliable tenant/external_event_id can be derived from
+        // unparseable bytes, so storing would create phantom rows outside the
+        // (source, external_event_id) idempotency anchor. Observability is
+        // preserved via the unmappable delivery counter + WARN log below.
+        // (Note: over HTTP, app.ts's buffer parser already rejects unparseable
+        // bodies with 400 before this branch; this covers direct invocations.)
         recordWebhookDelivery(provider, "unmappable");
+        deps.logger.warn(
+          { provider, correlationId },
+          "Inbound webhook rejected: malformed JSON payload (no event row stored)",
+        );
         throw new UnmappablePayloadError("Malformed JSON payload");
       }
 
@@ -100,7 +114,17 @@ export async function processInboundWebhook(
   let tenantId = queryTenantId || headerTenantId || payloadTenantId;
 
   if (!tenantId) {
-    // Fallback: look up default/bootstrap tenant in database
+    // Fallback: look up default/bootstrap tenant in database.
+    // s-10 audit fix: provider webhooks carry no SIGNED tenant claim, so this
+    // fallback is intentional — but it must be visible. Emit a WARN log +
+    // webhook_tenant_fallback_total metric so operators can detect merchants
+    // that never send tenant context (and notice unexpected cross-tenant
+    // attribution), instead of failing silently.
+    deps.logger.warn(
+      { provider, correlationId },
+      "Inbound webhook without tenant context; falling back to default tenant",
+    );
+    recordTenantFallback(provider);
     const [firstTenant] = await deps.repos.listTenants({ db: deps.db }, { limit: 1 });
     if (firstTenant) {
       tenantId = firstTenant.id;

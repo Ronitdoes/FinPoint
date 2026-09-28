@@ -707,6 +707,15 @@ describe("Step 21 Integration: Human Escalation, Approvals & SLA Subsystem", { t
       const matchingEvent = publishedEvents.find((e) => e.payload?.taskId === overdueTask.id);
       expect(matchingEvent).toBeDefined();
       expect(matchingEvent?.payload.taskType).toBe("COMPLIANCE_REVIEW");
+      // s-21 audit fix: entity must reference the HUMAN_TASK, customer resolved
+      // from the owning case (never task.caseId masquerading as customer_id).
+      expect(matchingEvent?.entity_type).toBe("HUMAN_TASK");
+      expect(matchingEvent?.entity_id).toBe(overdueTask.id);
+      expect(matchingEvent?.customer_id).toBe(customer.id);
+      expect(matchingEvent?.customer_id).not.toBe(caseRow.id);
+      expect(matchingEvent?.tenant_id).toBe(tenantA.id);
+      expect(matchingEvent?.payload.caseId).toBe(caseRow.id);
+      expect(matchingEvent?.payload.customerId).toBe(customer.id);
 
       // Idempotency: second sweep should not re-flag the same task
       const secondSweep = await sweeper.sweepOverdueTasks(new Date(), tenantA.id);
@@ -814,7 +823,7 @@ describe("Step 21 Integration: Human Escalation, Approvals & SLA Subsystem", { t
         },
       );
 
-      // 2. Policy engine requires human approval for high value discount (> ₹500 cap)
+      // 2. Policy engine requires human approval for high value discount (> ₹5,000 cap)
       const action = await insertAction(
         { db },
         {

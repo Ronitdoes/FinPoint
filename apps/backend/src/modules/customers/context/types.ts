@@ -6,6 +6,14 @@ import { CUSTOMER_STATUSES } from "@repo/domain";
  * Every sub-object is strictly validated with .strict() to reject unknown injected keys.
  */
 
+/**
+ * Customer context schema version (s-13 Definition of Done: "schema exported & versioned").
+ * Tracked as an exported constant rather than embedded in the payload so the
+ * 8KB budget is reserved for decision-relevant aggregates. Consumers asserting
+ * prompt input against the s-13 contract should pin this constant.
+ */
+export const CUSTOMER_CONTEXT_SCHEMA_VERSION = "1" as const;
+
 export const CustomerProfileContextSchema = z
   .object({
     id: z.string().uuid(),

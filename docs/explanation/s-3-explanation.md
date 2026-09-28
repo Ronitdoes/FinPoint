@@ -254,7 +254,7 @@ Exports hard numerical boundaries for the MVP policy engine (Spec 03 §6):
 export const MAX_PAYMENT_RETRIES = 3;
 export const MAX_WHATSAPP_PER_7_DAYS = 2;
 export const MAX_EMAIL_PER_14_DAYS = 3;
-export const MAX_AUTO_DISCOUNT_MINOR = 500_000;      // 500,000 paise = ₹500 (or $50.00 equivalent)
+export const MAX_AUTO_DISCOUNT_MINOR = 500_000;      // 500,000 paise = ₹5,000
 export const HIGH_VALUE_APPROVAL_MINOR = 10_000_000;  // 10,000,000 paise = ₹100,000
 ```
 

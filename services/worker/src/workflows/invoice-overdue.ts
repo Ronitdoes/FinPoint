@@ -94,6 +94,41 @@ export async function invoiceOverdueWorkflow(
   let replyPayload: CustomerRepliedSignalPayload | undefined;
   let lastHumanDecision: HumanDecisionSignalPayload | undefined;
   let activeChildPtpHandle: ChildWorkflowHandle<typeof promiseToPayWorkflow> | undefined;
+  // Determinism-safe child-forward queue (audit fix): signal handlers below are
+  // synchronous and ONLY set in-memory flags + stash pending forwards here. The
+  // main flow drains the queue via forwardPendingChildSignals() — immediately
+  // after startChild plus concurrently while awaiting the child result — so no
+  // `await` (and no signal I/O) ever runs inside a handler. Child.signal() calls
+  // are workflow commands and deterministic when awaited in the main flow; the
+  // try/catch covers the already-completed-child race.
+  type PendingChildForward =
+    | { kind: "stop"; payload: { reason?: string } }
+    | { kind: "invoice-paid"; payload: InvoicePaidSignalPayload }
+    | { kind: "external-payment"; payload: ExternalPaymentSucceededPayload }
+    | { kind: "dispute"; payload: DisputeOpenedSignalPayload };
+  const pendingChildSignals: PendingChildForward[] = [];
+  async function forwardPendingChildSignals(
+    child: ChildWorkflowHandle<typeof promiseToPayWorkflow>,
+  ): Promise<void> {
+    while (pendingChildSignals.length > 0) {
+      const batch = pendingChildSignals.splice(0, pendingChildSignals.length);
+      for (const item of batch) {
+        try {
+          if (item.kind === "stop") {
+            await child.signal(stopSignal, item.payload);
+          } else if (item.kind === "invoice-paid") {
+            await child.signal(invoicePaidSignal, item.payload);
+          } else if (item.kind === "external-payment") {
+            await child.signal(externalPaymentSucceededSignal, item.payload);
+          } else {
+            await child.signal(disputeOpenedSignal, item.payload);
+          }
+        } catch {
+          // Child workflow might have already completed
+        }
+      }
+    }
+  }
   const humanDecisionResolvers = new Map<
     string,
     (val: HumanDecisionSignalPayload) => void
@@ -119,6 +154,8 @@ export async function invoiceOverdueWorkflow(
     if (payload?.reason === "DISPUTED") {
       isDisputed = true;
     }
+    // Stash only — drained by the main flow (see pendingChildSignals).
+    pendingChildSignals.push({ kind: "stop", payload });
   });
 
   setHandler(humanDecisionSignal, (payload) => {
@@ -130,34 +167,24 @@ export async function invoiceOverdueWorkflow(
     }
   });
 
-  setHandler(invoicePaidSignal, async (payload: InvoicePaidSignalPayload) => {
+  setHandler(invoicePaidSignal, (payload: InvoicePaidSignalPayload) => {
     invoicePaid = true;
     paymentId = payload.paymentId;
     paidAmount = payload.amount;
     paidCurrency = payload.currency;
-    if (activeChildPtpHandle) {
-      try {
-        await activeChildPtpHandle.signal(invoicePaidSignal, payload);
-      } catch {
-        // Child workflow might have already completed
-      }
-    }
+    // Stash only — drained by the main flow (see pendingChildSignals).
+    pendingChildSignals.push({ kind: "invoice-paid", payload });
   });
 
   setHandler(
     externalPaymentSucceededSignal,
-    async (payload: ExternalPaymentSucceededPayload) => {
+    (payload: ExternalPaymentSucceededPayload) => {
       invoicePaid = true;
       paymentId = payload.paymentId;
       paidAmount = payload.amount;
       paidCurrency = payload.currency;
-      if (activeChildPtpHandle) {
-        try {
-          await activeChildPtpHandle.signal(externalPaymentSucceededSignal, payload);
-        } catch {
-          // Child workflow might have already completed
-        }
-      }
+      // Stash only — drained by the main flow (see pendingChildSignals).
+      pendingChildSignals.push({ kind: "external-payment", payload });
     },
   );
 
@@ -167,15 +194,25 @@ export async function invoiceOverdueWorkflow(
     if (payload.type === "OPT_OUT") {
       isStopped = true;
       stopReason = "CUSTOMER_OPTED_OUT";
+      // Stash opt-out stop — drained by the main flow.
+      pendingChildSignals.push({ kind: "stop", payload: { reason: "CUSTOMER_OPTED_OUT" } });
     } else if (payload.type === "COMPLAINT" || payload.type === "DISPUTE") {
       isDisputed = true;
       disputeReason = payload.text ?? "CUSTOMER_DISPUTE_SIGNAL";
+      // Stash dispute — drained by the main flow.
+      pendingChildSignals.push({
+        kind: "dispute",
+        payload: { invoiceId, reason: disputeReason },
+      });
     }
   });
 
   setHandler(disputeOpenedSignal, (payload: DisputeOpenedSignalPayload) => {
     isDisputed = true;
     disputeReason = payload.reason ?? "INVOICE_DISPUTED";
+    // Stash only — drained by the main flow (see pendingChildSignals).
+    // Parent handlePromiseToPay then calls handleDisputeStop immediately.
+    pendingChildSignals.push({ kind: "dispute", payload });
   });
 
   // 3. Setup Query Handler
@@ -242,17 +279,25 @@ export async function invoiceOverdueWorkflow(
   }
 
   // Helper: Process Promise to Pay Child Workflow
+  // promisedDate is optional: when the customer reply omits promisedByDate, the
+  // value is left undefined and createPromiseToPay activity defaults to +7d
+  // (activity time) + returns the computed wait. Workflow bodies must NOT call
+  // Date.now() (Temporal determinism, audit s-24 fix).
   async function handlePromiseToPay(
     customerId: string,
     amountAtRisk: string,
     currency: string,
-    promisedDate: string,
+    promisedDate?: string,
   ): Promise<InvoiceOverdueWorkflowOutput | null> {
     currentStep = "PTP_CHILD_WORKFLOW";
     const childWorkflowId = `ptp:${effectiveCaseId}:${info.runId}`;
 
     const childHandle = await startChild(promiseToPayWorkflow, {
       workflowId: childWorkflowId,
+      // s-24 fix: parent stop/close cancels the running PTP child instead of
+      // orphaning it. Signal forwarding below remains for paid/dispute cases.
+      parentClosePolicy: "TERMINATE",
+      cancellationType: "TRY_CANCEL",
       args: [
         {
           tenantId: input.tenantId,
@@ -269,17 +314,45 @@ export async function invoiceOverdueWorkflow(
 
     activeChildPtpHandle = childHandle;
 
-    if (invoicePaid) {
-      await childHandle.signal(invoicePaidSignal, {
-        invoiceId,
-        paymentId,
-        amount: paidAmount,
-        currency: paidCurrency,
-      });
-    }
+    // Drain stashed forwards (covers signals that arrived before startChild,
+    // e.g. invoicePaid during the ladder wait) then keep draining concurrently
+    // while the child runs so it wakes without waiting its timer.
+    await forwardPendingChildSignals(childHandle);
 
-    const ptpResult: PromiseToPayWorkflowOutput = await childHandle.result();
+    let ptpResult: PromiseToPayWorkflowOutput | undefined;
+    let childFailure: unknown;
+    let childSettled = false;
+    const childResultPromise = childHandle.result().then(
+      (r) => {
+        ptpResult = r;
+        childSettled = true;
+        return r;
+      },
+      (e) => {
+        childFailure = e;
+        childSettled = true;
+        throw e;
+      },
+    );
+    while (!childSettled) {
+      if (pendingChildSignals.length > 0) {
+        await forwardPendingChildSignals(childHandle);
+        continue;
+      }
+      // Wakes on new signals (pendingChildSignals push) or on child completion
+      // (child-completed workflow task re-evaluates the predicate). No timers.
+      await condition(() => pendingChildSignals.length > 0 || childSettled);
+    }
+    // Ensure the result promise is observed (propagates rejection if any).
+    try {
+      await childResultPromise;
+    } catch {
+      // childFailure captured above; fall through to rethrow below.
+    }
     activeChildPtpHandle = undefined;
+    pendingChildSignals.length = 0;
+    if (childFailure !== undefined) throw childFailure;
+    if (ptpResult === undefined) throw new Error("PTP_CHILD_NO_RESULT");
 
     if (ptpResult.status === "HONORED") {
       currentStep = "PTP_RECOVERED";
@@ -310,15 +383,36 @@ export async function invoiceOverdueWorkflow(
 
     if (ptpResult.status === "BROKEN") {
       currentStep = "PTP_BROKEN_FOLLOWUP";
-      // Send single follow-up message
+      // Send single follow-up message (ladder +1 convention: check with
+      // emailCount + 1, increment only when actually allowed — audit s-24 fix).
+      // Fresh invoice re-check before the broken-promise follow-up send.
+      {
+        const freshBroken = await activities.checkInvoiceStatus({ ...actCtx, invoiceId });
+        if (freshBroken.isPaid) {
+          invoicePaid = true;
+          await activities.recordOutcome({
+            ...actCtx,
+            outcome: "RECOVERED",
+            recoveredAmountMinor: amountAtRisk,
+            currency,
+            invoiceId,
+            recoverySource: "WORKFLOW_LINKED",
+          });
+          return { outcome: "RECOVERED", recoveredAmountMinor: amountAtRisk };
+        }
+        if (freshBroken.isDisputed || isDisputed) {
+          return await handleDisputeStop(disputeReason ?? "Dispute detected before broken-promise follow-up");
+        }
+      }
       const brokenMsgPolicy = await activities.checkPolicyAgain({
         ...actCtx,
         actionType: "SEND_EMAIL",
         customerId,
-        counters: { email_count_14d: ++emailCount },
+        counters: { email_count_14d: emailCount + 1 },
       });
 
       if (brokenMsgPolicy.allowed) {
+        emailCount++;
         await activities.sendTemplateMessage({
           ...actCtx,
           customerId,
@@ -439,6 +533,35 @@ export async function invoiceOverdueWorkflow(
     // =========================================================================
     currentStep = "LADDER_STEP_1_START";
 
+    // Audit s-24 fix: fresh invoice re-check before every ladder send (same pattern
+    // as s-23 race guard). Aborts send if paid/disputed since the last checkpoint.
+    {
+      const fresh1 = await activities.checkInvoiceStatus({ ...actCtx, invoiceId });
+      if (fresh1.isPaid) {
+        invoicePaid = true;
+        currentStep = "RECOVERED_BEFORE_LADDER_1_SEND";
+        await activities.recordOutcome({
+          ...actCtx,
+          outcome: "RECOVERED",
+          recoveredAmountMinor: amountAtRiskMinor,
+          currency,
+          invoiceId,
+          recoverySource: "WORKFLOW_LINKED",
+        });
+        return { outcome: "RECOVERED", stage: "LADDER_1" };
+      }
+      if (fresh1.isDisputed || isDisputed) {
+        return await handleDisputeStop(disputeReason ?? "Dispute detected before Ladder 1 send");
+      }
+      if (isStopped) {
+        await activities.stopCaseWithReason({
+          ...actCtx,
+          stopReason: stopReason ?? "STOP_SIGNAL_RECEIVED",
+        });
+        return { outcome: "STOPPED", stopReason };
+      }
+    }
+
     // Policy re-check for Step 1
     const policy1 = await activities.checkPolicyAgain({
       ...actCtx,
@@ -485,8 +608,12 @@ export async function invoiceOverdueWorkflow(
     );
 
     // Response Branching Check after Step 1
+    // Audit s-24 determinism fix: promisedByDate comes from the customer reply
+    // signal; when omitted, pass undefined and let createPromiseToPay activity
+    // default to +7d (activity time) and return the computed wait. No Date.now()
+    // in workflow bodies.
     if (customerReplied && replyPayload?.type === "PROMISE_TO_PAY") {
-      const promisedDate = replyPayload.promisedByDate ?? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      const promisedDate = replyPayload.promisedByDate;
       const ptpResult = await handlePromiseToPay(
         customerId,
         amountAtRiskMinor,
@@ -533,6 +660,33 @@ export async function invoiceOverdueWorkflow(
     // =========================================================================
     currentStep = "LADDER_STEP_2_START";
     customerReplied = false; // Reset response flag for next step
+
+    // Audit s-24 fix: fresh invoice re-check before Ladder 2 send.
+    {
+      const fresh2 = await activities.checkInvoiceStatus({ ...actCtx, invoiceId });
+      if (fresh2.isPaid) {
+        invoicePaid = true;
+        await activities.recordOutcome({
+          ...actCtx,
+          outcome: "RECOVERED",
+          recoveredAmountMinor: amountAtRiskMinor,
+          currency,
+          invoiceId,
+          recoverySource: "WORKFLOW_LINKED",
+        });
+        return { outcome: "RECOVERED", stage: "LADDER_2" };
+      }
+      if (fresh2.isDisputed || isDisputed) {
+        return await handleDisputeStop(disputeReason ?? "Dispute detected before Ladder 2 send");
+      }
+      if (isStopped) {
+        await activities.stopCaseWithReason({
+          ...actCtx,
+          stopReason: stopReason ?? "STOP_SIGNAL_RECEIVED",
+        });
+        return { outcome: "STOPPED", stopReason };
+      }
+    }
 
     const channel2 = (input.metadata?.step2Channel as "WHATSAPP" | "EMAIL") ?? "EMAIL";
     const counters2: Record<string, number> =
@@ -587,7 +741,7 @@ export async function invoiceOverdueWorkflow(
     );
 
     if (customerReplied && replyPayload?.type === "PROMISE_TO_PAY") {
-      const promisedDate = replyPayload.promisedByDate ?? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      const promisedDate = replyPayload.promisedByDate;
       const ptpResult = await handlePromiseToPay(
         customerId,
         amountAtRiskMinor,
@@ -635,6 +789,33 @@ export async function invoiceOverdueWorkflow(
     currentStep = "LADDER_STEP_3_START";
     customerReplied = false;
 
+    // Audit s-24 fix: fresh invoice re-check before Ladder 3 send.
+    {
+      const fresh3 = await activities.checkInvoiceStatus({ ...actCtx, invoiceId });
+      if (fresh3.isPaid) {
+        invoicePaid = true;
+        await activities.recordOutcome({
+          ...actCtx,
+          outcome: "RECOVERED",
+          recoveredAmountMinor: amountAtRiskMinor,
+          currency,
+          invoiceId,
+          recoverySource: "WORKFLOW_LINKED",
+        });
+        return { outcome: "RECOVERED", stage: "LADDER_3" };
+      }
+      if (fresh3.isDisputed || isDisputed) {
+        return await handleDisputeStop(disputeReason ?? "Dispute detected before Ladder 3 send");
+      }
+      if (isStopped) {
+        await activities.stopCaseWithReason({
+          ...actCtx,
+          stopReason: stopReason ?? "STOP_SIGNAL_RECEIVED",
+        });
+        return { outcome: "STOPPED", stopReason };
+      }
+    }
+
     // Check High-Value Rule / Incentive Approval (POL-HIGHVALUE: amount > ₹100,000)
     const proposedIncentiveDiscount = input.metadata?.proposedIncentiveDiscountMinor as number | undefined;
     let paymentLinkUrl = `https://pay.example.com/inv/${invoiceId}`;
@@ -671,6 +852,58 @@ export async function invoiceOverdueWorkflow(
           currentStep = "LADDER_STEP_3_INCENTIVE_REJECTED";
         }
       }
+    }
+
+    // s-22/s-24 audit: policy gate on bare payment-link creation. Previously
+    // only discounted links were gated (via OFFER_INCENTIVE above), so a
+    // high-value link with no proposed discount bypassed the
+    // CREATE_PAYMENT_LINK arm of POL-HIGHVALUE entirely. Mirrors the discount
+    // gate pattern: REQUIRE_APPROVAL escalates to a human approval task, and
+    // a human reject or hard REJECT stops the case (a link is the
+    // money-collection instrument, unlike an optional discount, so there is
+    // no safe "proceed without" variant).
+    const linkPolicy = await activities.checkPolicyAgain({
+      ...actCtx,
+      actionType: "CREATE_PAYMENT_LINK",
+      amountMinor: amountAtRiskMinor,
+      currency,
+      customerId,
+    });
+
+    if (linkPolicy.requiresApproval) {
+      currentStep = "LADDER_STEP_3_LINK_APPROVAL";
+      const createdTask = await activities.createHumanTask({
+        ...actCtx,
+        taskType: "APPROVAL",
+        title: `Approve high-value payment link for invoice ${invoiceId}`,
+        description: `Invoice amount (₹${Number(amountAtRiskMinor) / 100}) exceeds ₹100,000 threshold; operator authorization required before payment link creation.`,
+        priority: "HIGH",
+      });
+
+      const approval = await awaitHumanApproval(
+        actCtx,
+        createdTask.taskId,
+        activities,
+        () => lastHumanDecision,
+      );
+
+      if (!approval.approved) {
+        currentStep = "LADDER_STEP_3_LINK_REJECTED";
+        await activities.stopCaseWithReason({
+          ...actCtx,
+          stopReason: "HUMAN_REJECTED",
+          notes: approval.notes,
+        });
+        return { outcome: "STOPPED", stopReason: "HUMAN_REJECTED" };
+      }
+    } else if (!linkPolicy.allowed) {
+      currentStep = "LADDER_STEP_3_LINK_POLICY_REJECTED";
+      const rejectionReason = linkPolicy.rejectionReason ?? "POLICY_REJECTED";
+      await activities.stopCaseWithReason({
+        ...actCtx,
+        stopReason: rejectionReason,
+      });
+      return { outcome: "STOPPED", stopReason: rejectionReason };
     }
 
     // Generate payment link
@@ -730,7 +963,7 @@ export async function invoiceOverdueWorkflow(
     );
 
     if (customerReplied && replyPayload?.type === "PROMISE_TO_PAY") {
-      const promisedDate = replyPayload.promisedByDate ?? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      const promisedDate = replyPayload.promisedByDate;
       const ptpResult = await handlePromiseToPay(
         customerId,
         amountAtRiskMinor,

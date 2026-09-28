@@ -5,6 +5,7 @@ import {
   type NewCaseEvent,
 } from "../schema/audit";
 import { type RepoContext, getExecutor } from "./types";
+import { sanitizePii } from "./pii-redact";
 
 export interface RecordCaseEventInput {
   tenantId: string;
@@ -35,6 +36,10 @@ export interface ListCaseEventsResult {
 
 /**
  * Appends a case timeline event (strictly append-only — no update or delete operations).
+ *
+ * Write-path PII redaction (s-25 MED fix, CONVENTIONS §7/§12): `payload` and
+ * `description` are passed through `sanitizePii` before insert so the stored
+ * row never holds raw emails, phone numbers, card PANs, or secret tokens.
  */
 export async function recordCaseEvent(
   ctx: RepoContext,
@@ -49,8 +54,11 @@ export async function recordCaseEvent(
       eventType: input.eventType,
       actorType: input.actorType,
       actorId: input.actorId,
-      description: input.description,
-      payload: input.payload ?? {},
+      description:
+        input.description === undefined
+          ? undefined
+          : sanitizePii(input.description),
+      payload: sanitizePii(input.payload ?? {}),
       occurredAt: input.occurredAt ?? new Date(),
     })
     .returning();

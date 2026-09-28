@@ -3,7 +3,7 @@ import type { Database } from "@repo/db";
 import type { Repositories } from "../../plugins/db";
 import type { ServerConfig } from "@repo/config";
 import type { RiskType } from "@repo/domain";
-import { getLogger, recordLlmCall, recordFallback } from "@repo/observability";
+import { getLogger, recordLlmCall, recordFallback, recordAiCost } from "@repo/observability";
 import { getDemoInjections } from "../demo/injections";
 import {
   CaseNotFoundError,
@@ -96,7 +96,13 @@ export class AiDecideService {
       );
     }
 
-    // 1. Idempotency handling
+    // 1. Idempotency handling (lease 60s + response-snapshot retention 24h).
+    // tryAcquire(ttlSeconds: 60) holds a PROCESSING lease for 60s so concurrent
+    // retries observe IN_FLIGHT instead of double-spending on LLM inference.
+    // The row's expiresAt is set to max(ttl*10, 86400)s = 24h (see
+    // packages/db idempotency.repo), so same-key replays within 24h return the
+    // ORIGINAL decision snapshot via getResponseSnapshot without a new LLM call.
+    // complete() without ttlSeconds preserves that 24h retention.
     if (idempotencyKey) {
       compositeKey = `${tenantId}:${idempotencyKey}`;
       const requestHash = sha256(JSON.stringify(requestPayload));
@@ -227,12 +233,19 @@ export class AiDecideService {
 
     let decisionResponse: DecisionResponse;
 
-    // Helper to generate fallback and write transactional cost entry
+    // Helper to generate fallback and write transactional cost entry.
+    // Contract note: the decide path never persists a FAILED row. Every failure
+    // mode (transport exhaustion, validation failure after N=1 repair, circuit
+    // open, unexpected error) degrades to FALLBACK_RULE_BASED via runFallback.
+    // The only exception is config.ai.enableRuleFallback === false, which throws
+    // without persisting any row. FAILED remains a reserved DECISION_STATUSES
+    // enum value, not a status this service writes.
     const runFallback = async (reason: string, errorMsg?: string): Promise<DecisionResponse> => {
       if (config.ai.enableRuleFallback === false) {
         throw new Error(errorMsg || `LLM decision failed and rule fallback is disabled (${reason})`);
       }
       recordFallback(reason);
+      recordAiCost(configuredModel, "FALLBACK_RULE_BASED", 0);
       const fallbackDecision = generateFallbackDecision({
         riskType: recoveryCase.riskType as RiskType,
         riskBand: riskRecord?.band,
@@ -376,7 +389,12 @@ export class AiDecideService {
         }
 
         if (validDecision) {
-          // Persist COMPLETED decision row and Cost Ledger Entry in-tx (Step 15 §1)
+          // Persist COMPLETED decision row and Cost Ledger Entry in-tx (Step 15 §1).
+          // Note: no requiresApproval flag is persisted (ai_decisions has no such
+          // column by design). POL-CONFIDENCE re-derives the confidence gate
+          // independently at policy-evaluation time from diagnosis_confidence +
+          // action types, sharing the single HIGH_STAKES set in @repo/domain —
+          // see governance/confidence.ts and s-15 explanation §4.
           const persisted = await repos.withTransaction({ db }, async (tx) => {
             const dec = await repos.createDecision(
               { tx },
@@ -426,6 +444,7 @@ export class AiDecideService {
             completion: result.outputTokens,
             total: result.inputTokens + result.outputTokens,
           });
+          recordAiCost(result.model, "COMPLETED", result.costMinorUnits);
 
           decisionResponse = {
             decisionId: persisted.id,
@@ -483,6 +502,8 @@ export class AiDecideService {
 
             return dec;
           });
+
+          recordAiCost(result.model, "INVALID_OUTPUT", result.costMinorUnits);
 
           decisionResponse = await runFallback(
             "validation_failure",

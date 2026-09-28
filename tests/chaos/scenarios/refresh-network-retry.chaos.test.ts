@@ -36,7 +36,9 @@ describe("chaos: browser refresh + network retry", { timeout: 60000 }, () => {
       tenant_id: tenantId,
       entity_type: "PAYMENT",
       entity_id: entityId,
-      payload: { chaos: "refresh-retry" },
+      // s-11 gaps: amount-like field required by per-type POST /events
+      // validation; the chaos marker rides along untouched.
+      payload: { chaos: "refresh-retry", amount: 5000 },
     };
   }
 

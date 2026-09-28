@@ -18,6 +18,8 @@ Consumers (risk engine, context assembly, analytics) are decoupled from ingestio
 3. Selection is env-driven only; application code paths are identical either way.
 4. Redpanda runs via Docker Compose when enabled (s-02); no managed broker dependency for MVP.
 
+> Clarification (s-11): partitioning is tenant-keyed (`tenant_id` as message key) with dedicated retry/dlq topics alongside the main topic. The single-topic description above is the original decision; s-11 refines it without changing the interface contract.
+
 ## Consequences
 
 - Demos and CI run with zero broker infrastructure while preserving publish/consume semantics.

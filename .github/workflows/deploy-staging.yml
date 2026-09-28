@@ -48,11 +48,45 @@ jobs:
       REDPANDA_BROKERS: ${{ secrets.STAGING_REDPANDA_BROKERS }}
       MOCK_PROVIDERS: "false"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"
       - run: bun install --frozen-lockfile
+      - name: Preflight — staging DB secrets present
+        run: |
+          missing=0
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::STAGING_DATABASE_URL is empty — set it on the 'staging' environment (see docs/deploy/environments.md). Refusing to migrate localhost."
+            missing=1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::STAGING_DIRECT_URL is empty — set it on the 'staging' environment (DDL must bypass the pooler; see docs/deploy/migrations.md §1). Refusing to migrate localhost."
+            missing=1
+          fi
+          # GitHub runners have no Postgres on localhost. A localhost secret
+          # always surfaces later as ECONNREFUSED 127.0.0.1:5432 — fail here
+          # with the real cause. Only hosts are logged, never credentials.
+          for var_name in DATABASE_URL DIRECT_URL; do
+            if [ "$var_name" = "DATABASE_URL" ]; then
+              secret_name="STAGING_DATABASE_URL"
+              val="${DATABASE_URL:-}"
+            else
+              secret_name="STAGING_DIRECT_URL"
+              val="${DIRECT_URL:-}"
+            fi
+            if [ -z "$val" ]; then continue; fi
+            lower="$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')"
+            case "$lower" in
+              *localhost*|*127.0.0.1*|*0.0.0.0*)
+                echo "::error::$secret_name points at localhost ($var_name) — GitHub runners have no DB on localhost, so db:migrate fails with ECONNREFUSED. Set $secret_name to the managed staging host (pooled for DATABASE_URL, direct for DIRECT_URL; see docs/deploy/environments.md §2). Refusing to migrate localhost."
+                missing=1
+                ;;
+            esac
+            host="$(printf '%s' "$val" | sed -E 's|^[a-zA-Z][a-zA-Z0-9+.-]*://([^@]+@)?([^/:?#]+).*|\2|')"
+            echo "$var_name host: ${host:-<unparseable>} (credentials redacted)"
+          done
+          exit $missing
       - name: Apply pending migrations (advisory-locked, forward-only)
         run: bun run db:migrate
       - name: Verify schema is current
@@ -87,7 +121,7 @@ jobs:
       SMOKE_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
       SMOKE_EXPECT_SHA: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4"

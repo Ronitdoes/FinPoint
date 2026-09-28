@@ -37,6 +37,49 @@ const TERMINAL_STATUSES = new Set([
 ]);
 
 /**
+ * Per-surface discovery spine (audit fix): expected opening event per riskType.
+ * Exported so CI / tests / docs can reference the canonical payment/invoice/
+ * checkout sequences without re-discovering them.
+ */
+export const SURFACE_DISCOVERY_EVENTS: Record<string, string> = {
+  PAYMENT_FAILURE: "PAYMENT_FAILED",
+  INVOICE_OVERDUE: "INVOICE_OVERDUE",
+  CHECKOUT_ABANDONMENT: "CHECKOUT_ABANDONED",
+};
+
+/**
+ * Canonical per-surface lifecycle sequences (audit fix): discovery -> assessment
+ * -> decision -> policy -> execution -> terminal. Used for documentation and
+ * for the discovery-stage check in `validateCaseTimelineSequence` below.
+ */
+export const SURFACE_SEQUENCES: Record<string, string[]> = {
+  PAYMENT_FAILURE: [
+    "PAYMENT_FAILED",
+    "RISK_CALCULATED",
+    "AI_DECISION_CREATED",
+    "POLICY_ALLOWED | POLICY_REJECTED",
+    "WORKFLOW_STARTED",
+    "RECOVERY_RECORDED | PAYMENT_SUCCEEDED | CASE_STOPPED",
+  ],
+  INVOICE_OVERDUE: [
+    "INVOICE_OVERDUE",
+    "RISK_CALCULATED",
+    "AI_DECISION_CREATED",
+    "POLICY_ALLOWED | POLICY_REJECTED",
+    "WORKFLOW_STARTED",
+    "RECOVERY_RECORDED | PAYMENT_SUCCEEDED | CASE_STOPPED",
+  ],
+  CHECKOUT_ABANDONMENT: [
+    "CHECKOUT_ABANDONED",
+    "RISK_CALCULATED",
+    "AI_DECISION_CREATED",
+    "POLICY_ALLOWED | POLICY_REJECTED",
+    "WORKFLOW_STARTED",
+    "RECOVERY_RECORDED | PAYMENT_SUCCEEDED | CASE_STOPPED",
+  ],
+};
+
+/**
  * Pure sequence validator for a case's timeline event history.
  */
 export function validateCaseTimelineSequence(caseInfo: {
@@ -48,6 +91,14 @@ export function validateCaseTimelineSequence(caseInfo: {
   const actualSequence = caseInfo.events.map((e) => e.eventType);
   const eventSet = new Set(actualSequence);
   const missingEvents: string[] = [];
+
+  // 0. Per-surface discovery spine (audit fix): e.g. PAYMENT_FAILURE -> PAYMENT_FAILED.
+  const expectedDiscovery = caseInfo.riskType
+    ? SURFACE_DISCOVERY_EVENTS[caseInfo.riskType]
+    : undefined;
+  if (expectedDiscovery && !eventSet.has(expectedDiscovery)) {
+    missingEvents.push(expectedDiscovery);
+  }
 
   // 1. Every processed case must have risk assessment
   if (!eventSet.has("RISK_CALCULATED") && !eventSet.has("CASE_DETECTED")) {

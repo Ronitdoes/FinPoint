@@ -188,7 +188,7 @@ export async function seedScenarios(
         sku: "PRO-ANNUAL-REC",
         name: "Pro Annual Platform License",
         quantity: 1,
-        unitPriceMinor: 799900,
+        unitAmountMinor: 799900,
       },
     ],
     metadata: { seeded: true, scenario: "B", durationSeconds: 252 },

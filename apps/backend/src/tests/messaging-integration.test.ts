@@ -498,6 +498,88 @@ describe("Messaging Adapters & Delivery Ledger Integration Suite", { timeout: 60
       });
       expect(msg?.status).toBe("DELIVERED");
     });
+
+    it("rejects Email webhook with missing token (G1: no silent open) and wrong token", async () => {
+      const payload = {
+        type: "email.delivered",
+        email_id: "nonexistent-id",
+        created_at: new Date().toISOString(),
+      };
+
+      // Missing token -> 401 (unless explicit ALLOW_UNSIGNED_WEBHOOKS bypass).
+      const resMissing = await app.inject({
+        method: "POST",
+        url: "/webhooks/email",
+        headers: { "content-type": "application/json" },
+        payload,
+      });
+      expect(resMissing.statusCode).toBe(401);
+      expect(resMissing.json().error?.code).toBe("UNAUTHORIZED");
+
+      // Wrong token -> 401.
+      const resWrong = await app.inject({
+        method: "POST",
+        url: "/webhooks/email",
+        headers: {
+          "content-type": "application/json",
+          "x-webhook-token": "wrong_secret",
+        },
+        payload,
+      });
+      expect(resWrong.statusCode).toBe(401);
+    });
+
+    it("maps WhatsApp failed subcodes to BOUNCED/REJECTED, defaults to FAILED", async () => {
+      const { mapWhatsAppFailedStatus } = await import("../modules/messaging/webhooks/whatsapp.routes");
+      expect(mapWhatsAppFailedStatus([{ code: 131026 }])).toBe("BOUNCED");
+      expect(mapWhatsAppFailedStatus([{ code: "131031" }])).toBe("BOUNCED");
+      expect(mapWhatsAppFailedStatus([{ code: 131049 }])).toBe("REJECTED");
+      expect(
+        mapWhatsAppFailedStatus([{ code: 131026, message: "Message undeliverable" }]),
+      ).toBe("BOUNCED");
+      expect(mapWhatsAppFailedStatus([{ code: 999999, message: "transient error" }])).toBe("FAILED");
+      expect(mapWhatsAppFailedStatus(undefined)).toBe("FAILED");
+    });
+
+    it("redacts payment URLs/invoice/amounts in variables and scrubs delivery payloads", async () => {
+      const { scrubDeliveryEventPayload } = await import("../modules/messaging/routes");
+      const scrubbed: any = scrubDeliveryEventPayload({
+        provider: "WHATSAPP_CLOUD",
+        raw_status: "failed",
+        recipient_id: "+14155552671",
+        data: {
+          payment_url: "https://pay.example.com/inv/9",
+          invoice_number: "INV-999",
+          amount_due: "250.00",
+          status: "failed",
+        },
+      });
+      expect(scrubbed.recipient_id).not.toBe("+14155552671");
+      expect(scrubbed.data.payment_url).toBe("[REDACTED]");
+      expect(scrubbed.data.invoice_number).toBe("[REDACTED]");
+      expect(scrubbed.data.amount_due).toBe("[REDACTED]");
+      expect(scrubbed.provider).toBe("WHATSAPP_CLOUD");
+    });
+
+    it("rejects non-primitive template variables via registry guard", async () => {
+      const { assertValidTemplateVariables } = await import("@repo/integrations");
+      expect(() =>
+        assertValidTemplateVariables("payment_retry_notice", {
+          customer_name: "Alice",
+          amount: "10.00",
+          currency: "USD",
+          payment_link: { url: "https://pay.example.com" } as any,
+          due_date: "2026-09-01",
+        }),
+      ).toThrow();
+    });
+
+    it("listTemplates is channel-aware (WHATSAPP and EMAIL both resolve foundation ids)", async () => {
+      const { listTemplates } = await import("@repo/integrations");
+      expect(listTemplates("WHATSAPP").length).toBeGreaterThanOrEqual(4);
+      expect(listTemplates("EMAIL").length).toBeGreaterThanOrEqual(4);
+      expect(listTemplates().length).toBeGreaterThanOrEqual(4);
+    });
   });
 
   describe("5. Inbound STOP Keyword & Customer Opt-Out Automation", () => {

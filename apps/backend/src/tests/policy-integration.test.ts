@@ -11,6 +11,7 @@ import {
   createCustomer,
   createCase,
   createPayment,
+  createPaymentAttempt,
   insertMessage,
   createDecision,
   findPolicyRuleByCode,
@@ -287,12 +288,15 @@ describe("Step 16 Integration: Policy Engine & Endpoints", { timeout: 60000 }, (
       expect(codes).toContain("POL-CONFIDENCE");
       expect(codes).toContain("POL-PAYMENT-SUCCESS");
 
-      // Verify each default rule has an active version 1 snapshot
+      // Verify each default rule has a version-1 snapshot.
+      // listPolicyVersions orders DESC (latest first), so locate v1 explicitly
+      // instead of assuming versions[0] is v1 (other suites add versions).
       for (const rule of defaultRules) {
         const versions = await listPolicyVersions({ db }, { ruleId: rule.id });
         expect(versions.length).toBeGreaterThanOrEqual(1);
-        expect(versions[0]?.version).toBe(1);
-        expect(versions[0]?.snapshot).toBeDefined();
+        const v1 = versions.find((v) => v.version === 1);
+        expect(v1).toBeDefined();
+        expect(v1?.snapshot).toBeDefined();
       }
     }, 30000);
 

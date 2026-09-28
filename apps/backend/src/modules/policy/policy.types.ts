@@ -34,6 +34,11 @@ export const UpdatePolicyRuleSchema = z.object({
   description: z.string().optional(),
   definition: z.record(z.unknown()).optional(),
   enabled: z.boolean().optional(),
+  // Optimistic concurrency token implementing the contracted 409
+  // CONCURRENT_VERSION (s-16 audit): when supplied, the update is rejected
+  // if the rule's current version differs.
+  expected_version: z.number().int().positive().optional(),
+  expectedVersion: z.number().int().positive().optional(),
 });
 
 export type UpdatePolicyRuleBody = z.infer<typeof UpdatePolicyRuleSchema>;

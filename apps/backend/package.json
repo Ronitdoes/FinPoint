@@ -8,13 +8,14 @@
     "start": "bun src/server.ts",
     "build": "bun build src/server.ts --outdir dist --target bun",
     "check-types": "tsc --noEmit",
+    "lint": "eslint .",
     "test": "vitest run"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
-    "@fastify/cors": "^10.0.2",
-    "@fastify/rate-limit": "^10.2.2",
-    "@node-rs/argon2": "^2.1.0",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/rate-limit": "^11.2.0",
+    "@node-rs/argon2": "^2.2.1",
     "@repo/config": "workspace:*",
     "@repo/db": "workspace:*",
     "@repo/domain": "workspace:*",
@@ -23,17 +24,19 @@
     "@repo/orchestration": "workspace:*",
     "@repo/policy": "workspace:*",
     "@repo/worker": "workspace:*",
-    "dotenv": "^16.4.7",
-    "fastify": "^5.2.1",
-    "fastify-plugin": "^5.0.1",
-    "ioredis": "^5.4.2",
-    "pino": "^9.6.0",
-    "pino-pretty": "^13.0.0",
-    "zod": "^3.24.2"
+    "dotenv": "^17.4.2",
+    "fastify": "^5.12.4",
+    "fastify-plugin": "^6.0.0",
+    "ioredis": "^6.0.0",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
     "@types/bun": "latest",
-    "@types/node": "^20.0.0",
+    "@types/node": "^22.20.2",
+    "eslint": "^9",
     "typescript": "^5"
   }
 }

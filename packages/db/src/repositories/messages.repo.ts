@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import {
   messages,
   messageDeliveryEvents,
@@ -7,6 +7,7 @@ import {
   type MessageDeliveryEvent,
   type NewMessageDeliveryEvent,
 } from "../schema/messages";
+import type { MessageStatus } from "@repo/domain";
 import { type RepoContext, getExecutor } from "./types";
 import { DuplicateMessageError, isUniqueViolation } from "./errors";
 
@@ -30,7 +31,7 @@ export interface InsertMessageInput {
 export interface UpdateMessageStatusInput {
   tenantId: string;
   messageId: string;
-  status: NewMessage["status"];
+  status: MessageStatus;
   providerMessageId?: string;
   sentAt?: Date;
   finalStatusAt?: Date;
@@ -116,6 +117,13 @@ export async function findMessageByIdempotencyKey(
   return message ?? null;
 }
 
+/**
+ * Allowlisted cross-tenant lookup: inbound provider webhooks arrive keyed only by
+ * provider message id (no tenant context yet), so tenant scoping is optional here.
+ *
+ * @allowCrossTenant - sweeper/admin read (webhook correlation without tenant context;
+ *   callers must use the row's tenantId for all subsequent writes)
+ */
 export async function findMessageByProviderMessageId(
   ctx: RepoContext,
   { tenantId, providerMessageId }: { tenantId?: string; providerMessageId: string },
@@ -133,10 +141,54 @@ export async function findMessageByProviderMessageId(
   return message ?? null;
 }
 
+/**
+ * Legal predecessors for each message status target (CONVENTIONS §9 guarded writes).
+ *
+ * Forward view:
+ * - QUEUED    → SENT, FAILED            (provider accept / synchronous send failure)
+ * - SENT      → DELIVERED, READ, FAILED, BOUNCED, REJECTED
+ * - DELIVERED → READ, FAILED, BOUNCED, REJECTED
+ * - READ / FAILED / BOUNCED / REJECTED → terminal, no outgoing transitions
+ *
+ * REJECTED (provider policy/template rejections, email drops) mirrors BOUNCED:
+ * reachable only once the provider has accepted the message (post-SENT).
+ * Terminal sources appear in NO predecessor list, so any write from a terminal
+ * row matches zero rows and returns null — the cases.repo.ts race pattern.
+ */
+export const MESSAGE_LEGAL_PREDECESSORS: Record<MessageStatus, MessageStatus[]> = {
+  QUEUED: [],
+  SENT: ["QUEUED"],
+  DELIVERED: ["SENT"],
+  READ: ["SENT", "DELIVERED"],
+  FAILED: ["QUEUED", "SENT", "DELIVERED"],
+  BOUNCED: ["SENT", "DELIVERED"],
+  REJECTED: ["SENT", "DELIVERED"],
+};
+
+/**
+ * Guarded message status transition (CONVENTIONS §9; s-06 guarded writes).
+ *
+ * Atomically moves a message to `input.status` only when its current status is a
+ * legal predecessor (see MESSAGE_LEGAL_PREDECESSORS). Returns the updated row, or
+ * `null` when the row is missing, already terminal, or the transition is illegal
+ * (concurrent webhook deliveries racing on the same receipt converge here).
+ *
+ * Callers treat `null` as "already settled / raced" — delivery receipts are still
+ * appended (append-only), so no receipt is lost when the status write is skipped.
+ * Webhook handlers pre-check terminal status app-side; this WHERE clause is the
+ * DB-level enforcement of the same rule.
+ */
 export async function updateMessageStatus(
   ctx: RepoContext,
   input: UpdateMessageStatusInput,
 ): Promise<Message | null> {
+  const allowedFrom = MESSAGE_LEGAL_PREDECESSORS[input.status] ?? [];
+  if (allowedFrom.length === 0) {
+    // No legal predecessor exists for this target (e.g. back to QUEUED):
+    // refuse without touching the row.
+    return null;
+  }
+
   const executor = getExecutor(ctx);
   const updateData: Partial<NewMessage> = {
     status: input.status,
@@ -155,6 +207,7 @@ export async function updateMessageStatus(
       and(
         eq(messages.tenantId, input.tenantId),
         eq(messages.id, input.messageId),
+        inArray(messages.status, allowedFrom),
       ),
     )
     .returning();

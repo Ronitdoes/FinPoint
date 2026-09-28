@@ -923,6 +923,44 @@ describe("Step 27 Integration: Analytics Service & APIs", { timeout: 60000 }, ()
       expect(body.error.message).toContain("cannot be after");
     });
 
+    it("caps single-sided ?from=X alone against now() with 400 when unbounded (>370d)", async () => {
+      const oldFrom = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
+      const res = await app.inject({
+        method: "GET",
+        url: `/analytics/summary?from=${oldFrom}`,
+        headers: { cookie: viewerCookie },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error.code).toBe("BAD_REQUEST");
+      expect(body.error.message).toContain("exceeds maximum allowed window");
+    });
+
+    it("caps single-sided ?to=Y alone against now() with 400 when unbounded (>370d)", async () => {
+      const oldTo = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
+      const res = await app.inject({
+        method: "GET",
+        url: `/analytics/summary?to=${oldTo}`,
+        headers: { cookie: viewerCookie },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error.code).toBe("BAD_REQUEST");
+      expect(body.error.message).toContain("exceeds maximum allowed window");
+    });
+
+    it("allows recent single-sided bounds within 370d", async () => {
+      const recentFrom = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+      const res = await app.inject({
+        method: "GET",
+        url: `/analytics/summary?from=${recentFrom}`,
+        headers: { cookie: viewerCookie },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
     it("returns zero-shaped valid response for empty date range without errors", async () => {
       const res = await app.inject({
         method: "GET",

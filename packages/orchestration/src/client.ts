@@ -25,6 +25,18 @@ export interface RecoveryWorkflowClient {
 /**
  * Default Workflow Client for case orchestration (Spec 01 §13, Step 17, Step 20 client interface).
  * Idempotently manages workflow state and row persistence with deterministic temporal workflow ID `recover:{caseId}`.
+ *
+ * L1 unification note: this client is the offline-safe DB-row half of dispatch.
+ * Live Temporal dispatch is owned by `@repo/worker` (`services/worker/src/client.ts`,
+ * `recover:{caseId}` + `ALLOW_DUPLICATE_FAILED_ONLY`, ADR-005). The backend routes
+ * through `LiveWorkflowClient` (`apps/backend/src/lib/live-workflow-client.ts`),
+ * which delegates to the worker client when its module loads and falls back to
+ * this class otherwise. This class MUST NOT import `@repo/worker` (declared
+ * dependency cycle: worker already depends on orchestration) nor
+ * `@temporalio/*` (keeps the offline/dev path native-free). The `recover:{caseId}`
+ * constructor below intentionally duplicates the worker's `WORKFLOW_ID` helper
+ * (which lives in workflow-isolated code importing `@temporalio/workflow` and
+ * cannot be shared); keep the two in sync.
  */
 export class DefaultWorkflowClient implements RecoveryWorkflowClient {
   constructor(private readonly db?: Database) {}
@@ -32,6 +44,13 @@ export class DefaultWorkflowClient implements RecoveryWorkflowClient {
   /**
    * Idempotently starts recovery workflow for a given case.
    * Uses deterministic WorkflowId `recover:{caseId}` per Step 20 §Requirements 3.
+   *
+   * Idempotency semantics mirror the worker client: only a RUNNING row is a
+   * fast-path duplicate (`accepted: false`). A row in any other status means a
+   * prior execution finished/failed and is re-activated (status back to RUNNING
+   * with a fresh runId, `accepted: true`) — matching Temporal's
+   * `ALLOW_DUPLICATE_FAILED_ONLY` reuse policy instead of permanently
+   * rejecting the case.
    */
   async startRecoveryWorkflow(
     input: StartWorkflowInput,
@@ -49,13 +68,15 @@ export class DefaultWorkflowClient implements RecoveryWorkflowClient {
       };
     }
 
-    // 1. Idempotency check: see if a workflow already exists for this case
+    // 1. Idempotency check: only a RUNNING row is a duplicate fast-path
+    // (worker parity: services/worker/src/client.ts). A non-RUNNING row is a
+    // finished/failed execution and is re-activated below.
     const existing = await findWorkflowByCaseId(
       { db },
       { tenantId: input.tenantId, caseId: input.caseId },
     );
 
-    if (existing) {
+    if (existing && existing.status === "RUNNING") {
       return {
         workflowId: existing.id,
         temporalWorkflowId: existing.temporalWorkflowId,
@@ -63,25 +84,42 @@ export class DefaultWorkflowClient implements RecoveryWorkflowClient {
       };
     }
 
-    // 2. Persist initial RUNNING workflow row
+    // 2. Persist initial RUNNING workflow row, or re-activate a terminal row
+    // via a guarded conditional write (CONVENTIONS §9: updateWorkflowStatus
+    // carries the tenant/workflow guard).
     const runId = randomUUID();
-    const created = await createWorkflow(
-      { db },
-      {
-        tenantId: input.tenantId,
-        caseId: input.caseId,
-        temporalWorkflowId,
-        runId,
-        type: input.workflowType,
-        status: "RUNNING",
-      },
-    );
+    let workflowRowId: string;
+    if (!existing) {
+      const created = await createWorkflow(
+        { db },
+        {
+          tenantId: input.tenantId,
+          caseId: input.caseId,
+          temporalWorkflowId,
+          runId,
+          type: input.workflowType,
+          status: "RUNNING",
+        },
+      );
+      workflowRowId = created.id;
+    } else {
+      await updateWorkflowStatus(
+        { db },
+        {
+          tenantId: input.tenantId,
+          workflowId: existing.id,
+          status: "RUNNING",
+          runId,
+        },
+      );
+      workflowRowId = existing.id;
+    }
 
     // 3. Record initial workflow event
     await recordWorkflowEvent(
       { db },
       {
-        workflowRowId: created.id,
+        workflowRowId,
         type: "WORKFLOW_INITIATED",
         payload: {
           workflowType: input.workflowType,
@@ -97,14 +135,14 @@ export class DefaultWorkflowClient implements RecoveryWorkflowClient {
       {
         tenantId: input.tenantId,
         caseId: input.caseId,
-        workflowId: created.id,
+        workflowId: workflowRowId,
         temporalWorkflowId,
       },
       "Recovery workflow successfully initiated",
     );
 
     return {
-      workflowId: created.id,
+      workflowId: workflowRowId,
       temporalWorkflowId,
       accepted: true,
     };

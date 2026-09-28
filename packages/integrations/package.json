@@ -11,6 +11,7 @@
     "./payments": "./src/payments/index.ts"
   },
   "scripts": {
+    "lint": "eslint .",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
@@ -18,12 +19,14 @@
     "@repo/domain": "workspace:*",
     "@repo/observability": "workspace:*",
     "kafkajs": "^2.2.4",
-    "zod": "^3.24.2"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/kafkajs": "^1.9.0",
-    "@types/node": "^20",
+    "@types/node": "^22.20.2",
+    "eslint": "^9",
     "typescript": "^5"
   }
 }

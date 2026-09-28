@@ -119,9 +119,10 @@ File: [`apps/backend/src/modules/outcomes/record.service.ts`](../../apps/backend
 
 - **Idempotency Check:** Re-checks existing outcome before and inside database transaction (`withTransaction`).
 - **Cost Rollup:** Invokes `getRecoveryCostSumForCase` to capture all incurred LLM, messaging, payment retry, and manual handling costs.
-- **Guarded Status Transition:**
-  - If case is non-terminal (`DETECTED`, `QUALIFIED`, `DECISION_PENDING`, `POLICY_REVIEW`, `IN_PROGRESS`, `WAITING`, `ESCALATED`), transitions atomically to `RECOVERED` with reason `RECOVERED_AUTHORITATIVE`.
-  - If case is already `STOPPED` or `FAILED`, status is left untouched.
+- **Guarded Status Transition (audit fix: atomic RECOVERED-vs-STOPPED precedence):**
+  - Non-terminal (`DETECTED`, `QUALIFIED`, `DECISION_PENDING`, `POLICY_REVIEW`, `IN_PROGRESS`, `WAITING`, `ESCALATED`) → `RECOVERED` via guarded `UPDATE … WHERE status IN (…)` (CONVENTIONS §9).
+  - Live `WORKFLOW_LINKED` recovery racing a concurrent `STOPPED` wins: the guarded `UPDATE` includes `STOPPED` in its `WHERE` clause, so the last committer deterministically decides with `RECOVERED` overwriting a simultaneous `STOPPED` (money fact wins over the stop signal). This single edge intentionally bypasses the domain `canTransition` terminal guard at the DB layer; all other terminal guards hold.
+  - Late `ATTRIBUTION_WINDOW` sweeps never reopen: `STOPPED`/`FAILED` stay as-is while the outcome row is still recorded (analytics sums `recovery_outcomes`, never case status).
 - **Workflow Completion:** Marks any running Temporal workflow record as `COMPLETED`.
 - **Case Event Emission:** Inserts `RECOVERY_RECORDED` into `case_events` with detailed payload (`outcomeId`, `recoveredAmount`, `recoveryCost`, `netRecovered`, `attributionMethod`).
 - **Observability:** Increments Prometheus counter `outcome_recorded_total{method="..."}`.
@@ -132,7 +133,7 @@ File: [`apps/backend/src/modules/outcomes/record.service.ts`](../../apps/backend
 
 File: [`apps/backend/src/modules/outcomes/attribution.sweeper.ts`](../../apps/backend/src/modules/outcomes/attribution.sweeper.ts)
 
-The `AttributionSweeper` class executes scheduled or on-demand sweeps across closed cases without outcomes:
+The `AttributionSweeper` class executes scheduled or on-demand sweeps across closed cases without outcomes. Constructor signature (audit fix): `new AttributionSweeper(db, repos, redisClient?)` — Redis is passed through to the inner `OutcomeRecordService` so `ATTRIBUTION_WINDOW` outcomes bust the analytics cache via `invalidateAnalyticsCache` (previously the sweeper constructed the record service without Redis, leaving the 30s `analytics:*` cache stale after late attribution). Production wiring in `apps/backend/src/jobs/index.ts` passes `(app as any).redisClient`.
 
 ```typescript
 public async runSweep(options: SweepOptions = {}): Promise<SweepResult> {
@@ -293,5 +294,7 @@ The test suite validates 8 comprehensive integration scenarios:
 ## 12. Deviations & Design Decisions
 
 - **No Status Reopening on Late Attribution:** When a late payment arrives for a case already closed as `STOPPED`, the case status remains `STOPPED`. As specified in Spec 02 §9 and Step 26 DoD, closed cases are never reopened; analytics queries count recovered revenue directly from the `recovery_outcomes` table.
+- **RECOVERED-wins race precedence (audit fix):** Spec concurrency note ("RECOVERED wins over STOPPED if simultaneous") is implemented as method-aware atomic precedence: live `WORKFLOW_LINKED` `recordOutcome` attempts `RECOVERED` from `[...nonTerminal, STOPPED]` via guarded conditional `UPDATE`, while `ATTRIBUTION_WINDOW` attempts only from non-terminal. Sequential race test proves both branches (`STOPPED+WORKFLOW_LINKED→RECOVERED`, `STOPPED+ATTRIBUTION_WINDOW→STOPPED` with outcome counted). Rationale for method-awareness: a live payment success racing a stop signal means the money fact is newer than the stop intent, whereas a late sweeper match must not resurrect an intentionally closed case.
+- **Sweeper Redis passthrough (audit fix):** `AttributionSweeper` now accepts `redisClient` and forwards it to `OutcomeRecordService`, closing the stale-cache gap where `ATTRIBUTION_WINDOW` outcomes left `analytics:*` keys warm for up to 30s.
 - **Dedicated `NoOutcomeError`:** Implemented a canonical domain error `NoOutcomeError` mapped to 404 with error code `NO_OUTCOME` to ensure API error responses adhere to the standard format.
 - **Zero-Cost Handling:** Ensured `COALESCE(SUM(amount), 0)` at the SQL layer so cases without actions resolve cleanly with `recoveryCost = 0n` without null pointer issues.

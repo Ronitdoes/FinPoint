@@ -2,6 +2,10 @@ import type { UserRole } from "../enums/user-role";
 
 /**
  * Domain Permission Actions (Spec 01 §22 and Step 09).
+ *
+ * Note (s-09 audit G-09-1, non-breaking): STOP_CASE (FINANCE + ADMIN only) is
+ * a deliberate superset beyond the s-09 spec table — spec semantics for all
+ * listed actions are unchanged. Covered exhaustively in matrix.test.ts.
  */
 export const PERMISSION_ACTIONS = [
   "READ_CASES_ANALYTICS",

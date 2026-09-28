@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -43,17 +43,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 describe("Step 24 — Workflow C: Overdue Invoice & Promise-to-Pay Matrix", () => {
+  // Time-skipped multi-week simulations can exceed the default 30s timeout
+  // on loaded machines (docker stack + parallel suites).
+  vi.setConfig({ testTimeout: 180000, hookTimeout: 120000 });
   let testEnv: TestWorkflowEnvironment;
 
   beforeAll(async () => {
-    try {
-      testEnv = await TestWorkflowEnvironment.createTimeSkipping();
-    } catch {
-      testEnv = await TestWorkflowEnvironment.createLocal({
-        server: { port: 7233 },
-      });
+    // Retry time-skipping: parallel vitest files can collide starting the
+    // Java test server. Fall back to an ISOLATED local test server on an
+    // ephemeral port — never :7233 (real compose Temporal, no `default` ns).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        testEnv = await TestWorkflowEnvironment.createTimeSkipping();
+        return;
+      } catch {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
     }
-  }, 60000);
+    console.warn(
+      "[worker-tests] time-skipping test server unavailable; using real-time local server",
+    );
+    testEnv = await TestWorkflowEnvironment.createLocal();
+  }, 120000);
 
   afterAll(async () => {
     if (testEnv) {
@@ -77,8 +88,11 @@ describe("Step 24 — Workflow C: Overdue Invoice & Promise-to-Pay Matrix", () =
         return {
           promiseId: ptpId,
           status: "MADE",
-          promisedByDate: input.promisedByDate,
+          promisedByDate: input.promisedByDate ?? "2026-09-15",
           caseId: input.caseId,
+          waitDelay: "1s",
+          waitDelayMs: 1000,
+          computedDefaultDate: !input.promisedByDate,
         };
       },
       async resolvePromiseToPay(input) {
@@ -168,8 +182,11 @@ describe("Step 24 — Workflow C: Overdue Invoice & Promise-to-Pay Matrix", () =
         return {
           promiseId: ptpId,
           status: "MADE",
-          promisedByDate: input.promisedByDate,
+          promisedByDate: input.promisedByDate ?? "2026-09-15",
           caseId: input.caseId,
+          waitDelay: "1s",
+          waitDelayMs: 1000,
+          computedDefaultDate: !input.promisedByDate,
         };
       },
       async resolvePromiseToPay(input) {
@@ -248,8 +265,11 @@ describe("Step 24 — Workflow C: Overdue Invoice & Promise-to-Pay Matrix", () =
         return {
           promiseId: ptpId,
           status: "MADE",
-          promisedByDate: input.promisedByDate,
+          promisedByDate: input.promisedByDate ?? "2026-09-15",
           caseId: input.caseId,
+          waitDelay: "1s",
+          waitDelayMs: 1000,
+          computedDefaultDate: !input.promisedByDate,
         };
       },
     });
@@ -457,6 +477,107 @@ describe("Step 24 — Workflow C: Overdue Invoice & Promise-to-Pay Matrix", () =
     // Payment link generated & 3 ladder messages sent
     expect(spyApprove.calls.createPaymentLinkAndStore).toBeDefined();
     expect(spyApprove.calls.sendTemplateMessage.length).toBe(3);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 5b: Bare High-Value Link Gate (s-22/s-24 audit)
+  // No proposed discount -> OFFER_INCENTIVE gate skipped, but the bare
+  // createPaymentLinkAndStore must still pass a CREATE_PAYMENT_LINK policy
+  // gate (POL-HIGHVALUE arm). Approve -> link created; reject -> STOPPED
+  // without any link creation.
+  // ---------------------------------------------------------------------------
+  it("5b. bare high-value link -> CREATE_PAYMENT_LINK gate fires; approve -> link created, reject -> STOPPED without link", async () => {
+    const workflowsPath = path.resolve(__dirname, "./index.ts");
+
+    async function runBareLinkFlow(approved: boolean) {
+      const caseId = randomUUID();
+      const invoiceId = randomUUID();
+      const tenantId = randomUUID();
+      const taskId = randomUUID();
+
+      const { mockActivities, spy } = createActivityMocks({
+        async checkPolicyAgain(input) {
+          if (input.actionType === "CREATE_PAYMENT_LINK") {
+            return {
+              allowed: true,
+              requiresApproval: true,
+              ruleCode: "POL-HIGHVALUE",
+              policyEvaluationId: randomUUID(),
+            };
+          }
+          return {
+            allowed: true,
+            requiresApproval: false,
+            ruleCode: "PASS",
+          };
+        },
+        async createHumanTask() {
+          return {
+            taskId,
+            status: "PENDING",
+            createdAt: new Date().toISOString(),
+          };
+        },
+      });
+
+      const taskQueue = `test-queue-${randomUUID()}`;
+      const worker = await Worker.create({
+        connection: testEnv.nativeConnection,
+        namespace: testEnv.client.options.namespace,
+        taskQueue,
+        workflowsPath,
+        activities: mockActivities,
+      });
+
+      // No proposedIncentiveDiscountMinor: the OFFER_INCENTIVE gate is skipped,
+      // isolating the bare-link CREATE_PAYMENT_LINK gate.
+      const input: RecoveryWorkflowInput = {
+        tenantId,
+        caseId,
+        invoiceId,
+        workflowType: "invoiceOverdueWorkflow",
+        metadata: {
+          ladder1Delay: "10ms",
+          ladder2Delay: "10ms",
+          ladder3Delay: "10ms",
+        },
+      };
+
+      const result = await worker.runUntil(async () => {
+        const handle = await testEnv.client.workflow.start(invoiceOverdueWorkflow, {
+          taskQueue,
+          workflowId: WORKFLOW_ID(caseId),
+          args: [input],
+        });
+
+        await handle.signal(humanDecisionSignal, {
+          taskId,
+          approved,
+          decidedBy: "operator@finance.com",
+        });
+
+        return await handle.result();
+      });
+
+      return { result, spy };
+    }
+
+    // Approve path: gate fires, approval recorded, link created, ladder completes
+    const { result: approvedResult, spy: approveSpy } = await runBareLinkFlow(true);
+    expect(approvedResult.outcome).toBe("ESCALATED");
+    const linkGateCalls = (approveSpy.calls["checkPolicyAgain"] ?? []).filter(
+      (args) => (args[0] as { actionType?: string }).actionType === "CREATE_PAYMENT_LINK",
+    );
+    expect(linkGateCalls.length).toBe(1);
+    expect(linkGateCalls[0]?.[0]).toMatchObject({ actionType: "CREATE_PAYMENT_LINK" });
+    expect(approveSpy.calls["createHumanTask"]).toBeDefined();
+    expect(approveSpy.calls["createPaymentLinkAndStore"]).toBeDefined();
+
+    // Reject path: stopped, no link ever created
+    const { result: rejectedResult, spy: rejectSpy } = await runBareLinkFlow(false);
+    expect(rejectedResult).toEqual({ outcome: "STOPPED", stopReason: "HUMAN_REJECTED" });
+    expect(rejectSpy.calls["createHumanTask"]).toBeDefined();
+    expect(rejectSpy.calls["createPaymentLinkAndStore"]).toBeUndefined();
   });
 
   // ---------------------------------------------------------------------------
@@ -705,6 +826,105 @@ describe("Step 24 — Workflow C: Overdue Invoice & Promise-to-Pay Matrix", () =
     expect(spy.calls.recordOutcome[0][0]).toMatchObject({
       outcome: "RECOVERED",
       recoverySource: "PRE_EXISTING",
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 10: Dispute mid-PTP-wait propagation (audit s-24)
+  // Parent -> PTP child, dispute signal mid-child-wait forwards via
+  // activeChildPtpHandle so the child returns DISPUTED without timer wait;
+  // parent then STOPs + creates a single DISPUTE_REVIEW task.
+  // ---------------------------------------------------------------------------
+  it("10. dispute mid-PTP-wait -> child DISPUTED + parent STOPPED + single DISPUTE_REVIEW task", async () => {
+    const caseId = randomUUID();
+    const invoiceId = randomUUID();
+    const tenantId = randomUUID();
+    const ptpId = randomUUID();
+
+    let parentHandle: WorkflowHandle<typeof invoiceOverdueWorkflow> | undefined;
+    const { mockActivities, spy } = createActivityMocks({
+      async createPromiseToPay(input) {
+        // Dispute mid-PTP-wait: signal the parent synchronously from within
+        // this activity (same deterministic pattern as Scenario 4's
+        // sendTemplateMessage hook). At this point the parent has already set
+        // activeChildPtpHandle, so its disputeOpenedSignal handler forwards
+        // to the child; the child observes isDisputed before entering its
+        // "24h" condition wait (time-skipping would otherwise skip the timer
+        // instantly, so a real-time setTimeout would race and flake).
+        if (parentHandle) {
+          await parentHandle.signal(disputeOpenedSignal, {
+            invoiceId,
+            caseId,
+            reason: "Services not delivered as specified",
+          });
+        }
+        return {
+          promiseId: ptpId,
+          status: "MADE",
+          promisedByDate: input.promisedByDate ?? "2026-09-15",
+          caseId: input.caseId,
+          waitDelay: "24h",
+          waitDelayMs: 24 * 3600 * 1000,
+          computedDefaultDate: !input.promisedByDate,
+        };
+      },
+    });
+
+    const taskQueue = `test-queue-${randomUUID()}`;
+    const workflowsPath = path.resolve(__dirname, "./index.ts");
+
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      namespace: testEnv.client.options.namespace,
+      taskQueue,
+      workflowsPath,
+      activities: mockActivities,
+    });
+
+    const input: RecoveryWorkflowInput = {
+      tenantId,
+      caseId,
+      invoiceId,
+      workflowType: "invoiceOverdueWorkflow",
+      metadata: {
+        ladder1Delay: "10ms",
+        ladder2Delay: "10ms",
+        ladder3Delay: "10ms",
+      },
+    };
+
+    const result = await worker.runUntil(async () => {
+      parentHandle = await testEnv.client.workflow.start(invoiceOverdueWorkflow, {
+        taskQueue,
+        workflowId: WORKFLOW_ID(caseId),
+        args: [input],
+      });
+
+      // Customer replies PROMISE_TO_PAY -> parent starts the PTP child.
+      await parentHandle.signal(customerRepliedSignal, {
+        type: "PROMISE_TO_PAY",
+        promisedByDate: "2026-09-15",
+        promisedAmountMinor: "2500000",
+      });
+
+      return await parentHandle.result();
+    });
+
+    // Parent stopped with dispute reason.
+    expect(result.outcome).toBe("STOPPED");
+    expect(result.stopReason).toBe("DISPUTED");
+
+    // Single dispute-review task (no duplicate escalation/general tasks).
+    expect(spy.calls.createHumanTask).toBeDefined();
+    expect(spy.calls.createHumanTask.length).toBe(1);
+    expect(spy.calls.createHumanTask[0][0]).toMatchObject({
+      taskType: "DISPUTE_REVIEW",
+    });
+
+    // Parent recorded the dispute stop.
+    expect(spy.calls.stopCaseWithReason).toBeDefined();
+    expect(spy.calls.stopCaseWithReason[0][0]).toMatchObject({
+      stopReason: "DISPUTED",
     });
   });
 });

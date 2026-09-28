@@ -4,10 +4,13 @@ import {
   findOverduePromises,
   findCaseById,
   findInvoiceById,
+  listPaymentsForCustomer,
   markPromiseHonored,
+  markPromiseBroken,
   markPromiseExpired,
   createHumanTask,
   recordCaseEvent,
+  insertEventIfNew,
   type Database,
 } from "@repo/db";
 import type { EventBus } from "@repo/integrations";
@@ -49,7 +52,9 @@ export class DailyReconciler {
   /**
    * Reconciles orphaned OVERDUE invoices that have no active recovery case
    * (e.g. Due to missed invoice.overdue webhooks or network partitions).
-   * Idempotently emits invoice.overdue domain events onto the event bus.
+   * Idempotent (s-24 fix): deterministic `external_event_id` per invoice per
+   * day via `insertEventIfNew`; repeat passes while the pipeline is slow/down
+   * emit no duplicate bus events.
    */
   public async reconcileOrphanedInvoices(
     tenantId: string,
@@ -61,9 +66,47 @@ export class DailyReconciler {
     );
 
     const emittedEvents: string[] = [];
+    const today = new Date().toISOString().slice(0, 10);
 
     for (const invoice of orphanedInvoices) {
       const correlationId = randomUUID();
+      const externalEventId = `reconciler-invoice-${invoice.id}-${today}`;
+      const payload = {
+        invoice_id: invoice.id,
+        invoice_number: invoice.number,
+        amount: Number(invoice.amount),
+        currency: invoice.currency,
+        due_at: invoice.dueAt.toISOString(),
+        reconciled: true,
+      };
+
+      // Dedupe anchor: only the first pass per day publishes.
+      if (this.db) {
+        try {
+          const res = await insertEventIfNew(
+            { db: this.db },
+            {
+              tenantId,
+              source: "INTERNAL",
+              externalEventId,
+              type: "invoice.overdue",
+              customerId: invoice.customerId,
+              entityType: "INVOICE",
+              entityId: invoice.id,
+              rawPayload: payload,
+              payload,
+              correlationId,
+              status: "RECEIVED",
+              receivedAt: new Date(),
+            },
+          );
+          if (res.duplicate) continue;
+        } catch {
+          // If the events table is unavailable, fall through to publish
+          // (at-least-once) rather than skipping the orphan entirely.
+        }
+      }
+
       const event: DomainEvent = {
         id: randomUUID(),
         type: "invoice.overdue",
@@ -74,12 +117,8 @@ export class DailyReconciler {
         entity_id: invoice.id,
         entity_type: "INVOICE",
         payload: {
-          invoice_id: invoice.id,
-          invoice_number: invoice.number,
-          amount: Number(invoice.amount),
-          currency: invoice.currency,
-          due_at: invoice.dueAt.toISOString(),
-          reconciled: true,
+          ...payload,
+          reconciler_event_id: externalEventId,
         },
         correlation_id: correlationId,
       };
@@ -135,6 +174,19 @@ export class DailyReconciler {
           );
           if (invoice && (invoice.status === "PAID" || invoice.paidAt !== null)) {
             invoicePaid = true;
+            // Link the real SUCCEEDED payment (s-24 fix): never fabricate a
+            // UUID. If none is found, honor without a payment link rather
+            // than corrupting the HONORED attribution chain.
+            try {
+              const payments = await listPaymentsForCustomer(
+                { db: this.db },
+                { tenantId, customerId: invoice.customerId, limit: 20 },
+              );
+              const match = payments.find((p) => p.status === "SUCCEEDED");
+              paymentId = match?.id;
+            } catch {
+              paymentId = undefined;
+            }
           }
         }
 
@@ -144,7 +196,7 @@ export class DailyReconciler {
             {
               tenantId,
               promiseId: ptp.id,
-              paymentId: paymentId ?? randomUUID(),
+              paymentId,
               resolvedAt: new Date(),
             },
           );

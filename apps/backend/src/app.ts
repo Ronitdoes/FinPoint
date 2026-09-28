@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import Redis from "ioredis";
 import { randomUUID } from "node:crypto";
-import { apiConfig, type ServerConfig } from "@repo/config";
+import { apiConfig, DEFAULT_REQUEST_TIMEOUT_MS, type ServerConfig } from "@repo/config";
 
 import { contextPlugin } from "./plugins/context";
 import { loggerPlugin, createLoggerConfig } from "./plugins/logger";
@@ -31,6 +31,14 @@ declare module "fastify" {
     eventBus: EventBus;
     config: ServerConfig;
   }
+  interface FastifyContextConfig {
+    /**
+     * s-07 discoverability mirror of the route's `handlerTimeout` budget
+     * (ms). Enforcement comes from `handlerTimeout`; this key only
+     * documents the budget on the route (webhook routes set 25s).
+     */
+    requestTimeoutMs?: number;
+  }
 }
 
 export interface AppOptions {
@@ -56,12 +64,28 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
 
   const loggerOptions = opts.logger !== undefined ? opts.logger : createLoggerConfig(logLevel);
 
+  // s-07 §Technical Implementation: default 10s request budget.
+  // Fastify v5 exposes two complementary knobs, set here from
+  // `config.http.requestTimeoutMs` (REQUEST_TIMEOUT_MS, default 10000):
+  // - `requestTimeout`: Node socket-level guard — max ms to receive the full
+  //   request from the client (DoS protection; does NOT bound handler work).
+  // - `handlerTimeout`: app-level guard over the whole route lifecycle; on
+  //   expiry Fastify 503s (FST_ERR_HANDLER_TIMEOUT) and aborts
+  //   `request.signal` for cooperative cancellation. Unlike the socket
+  //   option it is overridable per-route — webhook routes raise it to
+  //   `config.http.webhookTimeoutMs` (25s). `connectionTimeout` is left at
+  //   the Fastify default (idle-socket close, unrelated to request budget).
+  const requestTimeoutMs =
+    config.http?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+
   const app = Fastify({
     logger: loggerOptions,
     bodyLimit: 256 * 1024, // 256KB strict limit (specs/steps/s-07.md §Technical Implementation)
     trustProxy: opts.trustProxy ?? false,
     requestIdHeader: "x-request-id",
     genReqId: () => randomUUID(),
+    requestTimeout: requestTimeoutMs,
+    handlerTimeout: requestTimeoutMs,
   });
 
   // Register raw body preserving parser for JSON payloads (s-10 §Requirements 2)
@@ -145,9 +169,10 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
   // 2. Logger plugin (Request duration metric recording)
   await app.register(loggerPlugin);
 
-  // 3. CORS plugin
+  // 3. CORS plugin (origins from typed config; no process.env reads in plugin)
   await app.register(corsPlugin, {
     isProduction: config.app.env === "production",
+    allowedOrigins: [...config.http.corsAllowedOrigins],
   });
 
   // 4. Rate Limiting plugin (s-30 per-class policy; identity-keyed)

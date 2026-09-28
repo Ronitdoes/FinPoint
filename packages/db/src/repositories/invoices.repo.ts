@@ -122,6 +122,18 @@ export async function findInvoiceByProviderId(
   return invoice ?? null;
 }
 
+/**
+ * App-guarded status write (NOT a DB-guarded transition — intentional).
+ *
+ * Invoice rows mirror provider-side billing state where reordered webhooks are normal
+ * (e.g. a stale SENT arriving after OVERDUE). The transition allowlist lives app-side
+ * in `apps/backend/src/modules/webhooks/core-upserts.ts` (INVOICE_ALLOWED_TRANSITIONS),
+ * which skips regressions and records an order-regression metric instead of writing.
+ *
+ * Dedupe anchors: `invoices_tenant_number_unique` + `invoices_tenant_provider_invoice_id_unique`
+ * — one row per invoice, so concurrent ingests converge on the existing row before this
+ * write runs. See packages/db/README.md §4 for the DB-guarded vs app-guarded split.
+ */
 export async function updateInvoiceStatus(
   ctx: RepoContext,
   input: UpdateInvoiceStatusInput,

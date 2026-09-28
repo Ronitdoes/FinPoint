@@ -279,8 +279,14 @@ export function createActivityMocks(
       return {
         promiseId: randomUUID(),
         status: "MADE",
-        promisedByDate: input.promisedByDate,
+        promisedByDate: input.promisedByDate ?? "2026-09-20",
         caseId: input.caseId,
+        // Deterministic test wait. Real activity computes waitDelay from
+        // promised_by_date + 24h grace (audit s-24). No metadata override:
+        // CreatePromiseToPayActivityInput carries no metadata field.
+        waitDelay: "24h",
+        waitDelayMs: 24 * 3600 * 1000,
+        computedDefaultDate: !input.promisedByDate,
       };
     },
 

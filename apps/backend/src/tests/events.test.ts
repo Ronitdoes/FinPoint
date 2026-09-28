@@ -248,7 +248,9 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
           type: "checkout.started",
           tenant_id: otherTenantId, // Mismatch!
           entity_id: "chk_cross_tenant",
-          payload: {},
+          // s-11 gaps: schema-valid payload so the request reaches the
+          // tenant-isolation check (not 422 per-type validation).
+          payload: { cart_total: 1000, currency: "USD" },
         },
       });
 
@@ -274,6 +276,50 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
 
       expect(res.statusCode).toBe(422);
       expect(res.json().error.code).toBe("VALIDATION");
+    }, 30000);
+
+    it("5b. Per-type payload violations -> 422 VALIDATION (s-11 gaps)", async () => {
+      const violations = [
+        {
+          type: "payment.failed",
+          entity_type: "PAYMENT",
+          entity_id: `pay_empty_${randomUUID()}`,
+          payload: {},
+        },
+        {
+          type: "payment.failed",
+          entity_type: "PAYMENT",
+          entity_id: `pay_wrongtype_${randomUUID()}`,
+          payload: { amount: "not-a-number", currency: 12345 },
+        },
+        {
+          type: "invoice.overdue",
+          entity_type: "INVOICE",
+          entity_id: `in_empty_${randomUUID()}`,
+          payload: {},
+        },
+        {
+          type: "checkout.started",
+          entity_type: "CHECKOUT",
+          entity_id: `chk_empty_${randomUUID()}`,
+          payload: {},
+        },
+      ];
+
+      for (const body of violations) {
+        const res = await app.inject({
+          method: "POST",
+          url: "/events",
+          headers: {
+            authorization: `Bearer ${apiKeyWithEventsWrite}`,
+            "content-type": "application/json",
+          },
+          payload: { ...body, tenant_id: tenantId },
+        });
+
+        expect(res.statusCode, JSON.stringify(body)).toBe(422);
+        expect(res.json().error.code).toBe("VALIDATION");
+      }
     }, 30000);
 
     it("6. Idempotency-Key reuse: same payload returns 202 snapshot; different payload returns 409 IDEMPOTENCY_KEY_REUSED", async () => {
@@ -469,6 +515,43 @@ describe("Step 11 Integration: Internal Event Bus & Replay (/events)", { timeout
 
       expect(res.statusCode).toBe(403);
       expect(res.json().error.code).toBe("FORBIDDEN");
+    }, 30000);
+
+    it("5. Replaying the same event twice yields two distinct rows (fresh UUID per replay, no externalEventId anchor)", async () => {
+      const replayOnce = async () => {
+        const res = await app.inject({
+          method: "POST",
+          url: "/events/replay",
+          headers: {
+            cookie: operationsUserCookie,
+            "content-type": "application/json",
+          },
+          payload: {
+            eventId: originalEventId,
+          },
+        });
+        expect(res.statusCode).toBe(202);
+        return res.json().replayIds[0] as string;
+      };
+
+      const firstReplayId = await replayOnce();
+      const secondReplayId = await replayOnce();
+
+      // Each replay inserts a fresh row: replays carry no externalEventId, so
+      // insertEventIfNew always generates a new UUID (never dedupes).
+      expect(firstReplayId).not.toBe(originalEventId);
+      expect(secondReplayId).not.toBe(originalEventId);
+      expect(secondReplayId).not.toBe(firstReplayId);
+
+      for (const replayId of [firstReplayId, secondReplayId]) {
+        const [row] = await db
+          .select()
+          .from(events)
+          .where(eq(events.id, replayId));
+        expect(row).toBeDefined();
+        expect(row.status).toBe("PROCESSED");
+        expect((row.payload as any).replayed_from).toBe(originalEventId);
+      }
     }, 30000);
   });
 });

@@ -200,6 +200,17 @@ export const eventOrderRegressionTotal = new Counter({
   registers: [metricsRegistry],
 });
 
+// s-10 audit fix: explicit metric for the default-tenant fallback path in
+// ingest.service.ts. Webhooks carry no signed tenant claim, so deliveries
+// without tenant context fall back to the bootstrap tenant — that fallback
+// must be observable so operators can detect merchants that never send it.
+export const webhookTenantFallbackTotal = new Counter({
+  name: "webhook_tenant_fallback_total",
+  help: "Total webhook deliveries ingested without explicit tenant context that fell back to the default tenant",
+  labelNames: ["provider"] as const,
+  registers: [metricsRegistry],
+});
+
 // 11. Event Bus Metrics (Step 11 — Spec 01 §20)
 export const busPublishedTotal = new Counter({
   name: "bus_published_total",
@@ -361,8 +372,7 @@ export function recordWebhookLatency(
   webhookDurationMs.observe({ provider, status }, durationMs);
 }
 
-export function recordEventOrderRegression(
-  provider: string,
+export function recordEventOrderRegression(  provider: string,
   entityType: string,
   fromStatus: string,
   toStatus: string,
@@ -373,6 +383,10 @@ export function recordEventOrderRegression(
     from_status: fromStatus,
     to_status: toStatus,
   });
+}
+
+export function recordTenantFallback(provider: string): void {
+  webhookTenantFallbackTotal.inc({ provider });
 }
 
 export function recordBusPublished(topic: string): void {
@@ -521,6 +535,43 @@ export function recordAttributionSweeperMatch(count = 1): void {
 
 export function recordCostEntryGap(category: string, count = 1): void {
   costEntryGapsTotal.inc({ category }, count);
+}
+
+// 18b. AI Governance Metrics (Step 15 §Observability — Spec 00 §9, Spec 01 §20)
+// Emitted by AiDecideService cost-ledger write sites (decide.service.ts) and
+// the confidence gate (ai/governance/confidence.ts). Eval harness summaries
+// stay out of runtime metrics by design (printed report only).
+export const aiCostCaseMinor = new Histogram({
+  name: "ai_cost_case_minor",
+  help: "Per-case LLM inference cost in minor units (paise/cents) at decision persistence time",
+  labelNames: ["model", "status"] as const,
+  buckets: [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500],
+  registers: [metricsRegistry],
+});
+
+export const aiRequiresApprovalTotal = new Counter({
+  name: "ai_requires_approval_total",
+  help: "Total confidence-gate evaluations partitioned by gate result",
+  labelNames: ["result"] as const,
+  registers: [metricsRegistry],
+});
+
+export function recordAiCost(
+  model: string,
+  status: string,
+  costMinorUnits: bigint | number,
+): void {
+  const value =
+    typeof costMinorUnits === "bigint"
+      ? Number(costMinorUnits)
+      : costMinorUnits;
+  aiCostCaseMinor.observe({ model, status }, value);
+}
+
+export function recordRequiresApproval(
+  result: "required" | "not_required" | string,
+): void {
+  aiRequiresApprovalTotal.inc({ result });
 }
 
 // 19. Security Hardening Metrics (Step 30 — Spec 03 §11)

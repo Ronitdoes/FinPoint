@@ -201,7 +201,10 @@ export class InfraSampler {
   /** Default queue probe: real `DescribeTaskQueue` poller count; 0 on any failure. */
   private async describeQueue(taskQueue: string): Promise<QueueStats> {
     try {
-      const { getTemporalClient } = await import("@repo/worker");
+      // NOTE (s-35): import the "./client" subpath, not the package root:
+      // the root re-exports registry/worker which drag @temporalio/worker's
+      // webpack chain into `bun build` of the backend image (loader-utils).
+      const { getTemporalClient } = await import("@repo/worker/client");
       const client = await getTemporalClient(this.deps.temporalAddress);
       const resp = (await (client as any).workflowService.describeTaskQueue({
         namespace: this.deps.temporalNamespace ?? "revenue-recovery",

@@ -21,17 +21,27 @@ export interface WorkflowTestSetup {
 export async function createTestWorkflowEnvironment(
   activityOverrides: Partial<RecoveryActivities> = {},
 ): Promise<WorkflowTestSetup> {
-  let testEnv: TestWorkflowEnvironment;
-
-  try {
-    testEnv = await TestWorkflowEnvironment.createTimeSkipping();
-  } catch {
-    // Fallback to local server connection on localhost:7233 if time-skipping native binary fails
-    testEnv = await TestWorkflowEnvironment.createLocal({
-      server: {
-        port: 7233,
-      },
-    });
+  // Retry time-skipping: parallel vitest files can collide starting the
+  // Java test server. Fall back to an ISOLATED local test server on an
+  // ephemeral port — never :7233, which belongs to the real compose
+  // Temporal (it has no `default` namespace, so every workflow start
+  // fails with NamespaceNotFound).
+  let testEnv: TestWorkflowEnvironment | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      testEnv = await TestWorkflowEnvironment.createTimeSkipping();
+      break;
+    } catch {
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  if (!testEnv) {
+    // Real-time server: long-timer tests will hang. Warn loudly instead of
+    // failing minutes later with an opaque timeout (cf. Sep-17 audit).
+    console.warn(
+      "[worker-tests] time-skipping test server unavailable; using real-time local server",
+    );
+    testEnv = await TestWorkflowEnvironment.createLocal();
   }
 
   const { client, nativeConnection } = testEnv;

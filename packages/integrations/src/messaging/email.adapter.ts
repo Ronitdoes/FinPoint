@@ -1,9 +1,16 @@
+import type { MessagingConfig } from "@repo/config";
 import type { MessagingProvider, SendResult, SendTemplateInput } from "./types";
 import { assertValidTemplateVariables, renderTemplate } from "./templates/registry";
 
 export interface EmailAdapterOptions {
   apiKey?: string | null;
   fromEmail?: string | null;
+  /**
+   * Preferred typed-config injection (CONVENTIONS §1: only `@repo/config`
+   * reads `process.env`). The resolver (`resolveMessagingProvider`) forwards
+   * the validated values; direct callers should pass credentials explicitly.
+   */
+  messagingConfig?: Partial<MessagingConfig> | null;
   baseUrl?: string;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
@@ -34,8 +41,15 @@ export class EmailAdapter implements MessagingProvider {
   private readonly timeoutMs: number;
 
   constructor(options: EmailAdapterOptions = {}) {
-    this.apiKey = options.apiKey || process.env.EMAIL_API_KEY || "mock_email_key";
-    this.fromEmail = options.fromEmail || process.env.EMAIL_FROM || "recovery@example.com";
+    // CONVENTIONS §1: this package never reads `process.env` directly —
+    // credentials arrive via explicit options or the injected typed
+    // `messagingConfig` (type-only `@repo/config` import, so no runtime
+    // cycle). The `mock_email_key` / `recovery@example.com` literals are a
+    // grandfathered offline/test default of last resort, not live credentials
+    // (live keys are fail-fast required by `@repo/config` when
+    // MOCK_PROVIDERS=false).
+    this.apiKey = options.apiKey || options.messagingConfig?.emailApiKey || "mock_email_key";
+    this.fromEmail = options.fromEmail || options.messagingConfig?.emailFrom || "recovery@example.com";
     this.baseUrl = options.baseUrl || "https://api.resend.com/emails";
     this.fetchFn = options.fetchFn || fetch;
     this.timeoutMs = options.timeoutMs ?? 10000;
@@ -56,6 +70,7 @@ export class EmailAdapter implements MessagingProvider {
       input.variables,
     );
 
+    const entityRefId = `${input.tenantId}:${input.caseId || "direct"}:${input.templateId}:${input.idempotencyKey}`;
     const payload = {
       from: this.fromEmail,
       to: [input.toAddress],
@@ -66,6 +81,10 @@ export class EmailAdapter implements MessagingProvider {
         "X-Idempotency-Key": input.idempotencyKey,
         "X-Case-ID": input.caseId || "",
         "X-Tenant-ID": input.tenantId,
+        "X-Entity-Ref-ID": entityRefId,
+        "Message-ID": `<${input.idempotencyKey}@recovery.local>`,
+        "List-Unsubscribe": `<mailto:unsubscribe@example.com?subject=unsubscribe:${input.tenantId}:${input.customerId}>, <https://example.com/unsubscribe?tenant=${encodeURIComponent(input.tenantId)}&customer=${encodeURIComponent(input.customerId)}>`,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
       },
     };
 

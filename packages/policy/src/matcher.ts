@@ -177,14 +177,28 @@ export function matchRuleDefinition(
     }
   }
 
-  // 3. Rule matched - determine verdict and effects
+  // 3. Rule matched - determine verdict and effects.
+  // s-16 audit: the LIMIT effect is mapped explicitly instead of silently
+  // falling through to REJECT. LIMIT means "clamp the numeric target into
+  // bounds" → ADJUST when a clamp directive is present. A LIMIT rule WITHOUT
+  // a clamp target is a misconfiguration: fail closed with REJECT and an
+  // explicit reason code so the author can fix the definition. Unknown
+  // effects also fail closed as REJECT (never open).
   const rawEffect = (definition.effect || "REJECT").toUpperCase();
+  if (rawEffect === "LIMIT" && !(definition.clamp && definition.clamp.field)) {
+    return {
+      matched: true,
+      verdict: "REJECT",
+      rule_code: ruleCode,
+      reason: definition.reason_code || "LIMIT_WITHOUT_CLAMP_TARGET",
+    };
+  }
   const verdict =
     rawEffect === "REQUIRE_APPROVAL"
       ? "REQUIRE_APPROVAL"
       : rawEffect === "ALLOW"
         ? "ALLOW"
-        : rawEffect === "ADJUST"
+        : rawEffect === "ADJUST" || rawEffect === "LIMIT"
           ? "ADJUST"
           : "REJECT";
 
@@ -217,7 +231,7 @@ export function matchRuleDefinition(
   }
 
   return {
-    matched: true,
+    matched: rawEffect === "LIMIT" ? adjustedParams !== undefined : true,
     verdict,
     rule_code: ruleCode,
     reason,

@@ -237,10 +237,13 @@ export async function checkoutAbandonmentWorkflow(
 
     // =========================================================================
     // PHASE 3: TOUCH 1 — REMINDER (FIRST CONTACT DISCIPLINE: ZERO DISCOUNT)
+    // Step label "1" = REMINDER. See completeRaceGuard for "1"/"2" vs legacy
+    // REMINDER/INCENTIVE alias mapping; ledger keys use :1|:2 suffixes.
     // =========================================================================
     currentStep = "TOUCH_1_RACE_GUARD";
 
-    // Transactional completion race guard before send (s-23 §Requirements 7)
+    // Best-effort completion race guard before send (s-23 §Requirements 7; see
+    // completeRaceGuard docs for window semantics).
     const raceGuard1 = await activities.checkoutRaceGuard({
       ...actCtx,
       checkoutId,
@@ -409,7 +412,8 @@ export async function checkoutAbandonmentWorkflow(
       return { outcome: "STOPPED", stopReason: rejectionReason, caseId: effectiveCaseId };
     }
 
-    // Completion race guard before sending incentive
+    // Completion race guard before sending incentive (Touch 2 INCENTIVE = step "2").
+    // Best-effort window per s-23.md:41; post-wait re-read + signal wakeup backstop it.
     currentStep = "TOUCH_2_RACE_GUARD";
     const raceGuard2 = await activities.checkoutRaceGuard({
       ...actCtx,

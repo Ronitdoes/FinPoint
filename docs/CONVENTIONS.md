@@ -67,8 +67,9 @@ Binding rules for all code in this repository. Later steps inherit these; change
 ```
 
 - The central Fastify error handler maps domain error classes → HTTP status; controllers never hand-build error bodies.
-- Unknown/unexpected errors map to `500` with code `INTERNAL_ERROR`; internals are logged, never leaked to clients.
-- Validation failures use code `VALIDATION_FAILED` with field details.
+- Unknown/unexpected errors map to `500` with code `INTERNAL` (alias `INTERNAL_ERROR`); internals are logged, never leaked to clients.
+- Validation failures use code `VALIDATION` (alias `VALIDATION_FAILED`) with field details.
+- Note (s-07 audit G-07-1, non-breaking): the canonical wire codes implemented in `apps/backend/src/lib/errors.ts` + `apps/backend/src/plugins/error-handler.ts` are `VALIDATION` (422) and `INTERNAL` (500). `VALIDATION_FAILED` and `INTERNAL_ERROR` are accepted aliases for the same cases (used in worker error taxonomy and older docs) and MUST be treated as equivalent by clients. New code MUST emit `VALIDATION`/`INTERNAL`; never introduce a third variant.
 
 ## 7. Logging
 
@@ -133,13 +134,14 @@ All routes requiring caller authorization declare decorators and pre-handlers:
 - **Request Auth Decorator**: Fastify decorates `request.auth` in the global `onRequest` hook:
   ```ts
   request.auth = {
-    kind: "session" | "api_key" | "webhook",
+    kind: "session" | "api_key",
     userId?: string,
     tenantId: string,
     role: "ADMIN" | "FINANCE" | "OPERATIONS" | "SUPPORT" | "VIEWER",
     scopes?: string[],
   };
   ```
+  - Note (patch-02 G-09-1): `"webhook"` was removed from the union (was dead — never assigned). Webhook callers are verified by provider HMAC guards in s-10 (`modules/webhooks/*`) and never receive a `request.auth` principal.
 - **Pre-handler Guards**:
   - `fastify.requireAuth`: Rejects unauthenticated requests with `401 UNAUTHENTICATED`.
   - `fastify.requireRole(...roles)`: Rejects callers without required roles with `403 FORBIDDEN`.
@@ -149,3 +151,6 @@ All routes requiring caller authorization declare decorators and pre-handlers:
 - **Sessions & API Keys**:
   - Dashboard users: `rr_session` cookie (httpOnly, sameSite=Lax, Secure in prod, 12h sliding renewal, argon2id password verification, 5 attempts/min lockout backoff).
   - Machine clients: `Authorization: Bearer rrk_<tenant>_<random>`, SHA-256 lookup, async `last_used_at` touch.
+- **Permission Matrix** (spec 01 §22, s-09 matrix in `packages/domain/src/permissions/matrix.ts`):
+  - Note (s-09 audit G-09-1, non-breaking): the implemented matrix is a deliberate superset of the s-09 spec table — it adds `STOP_CASE` (FINANCE + ADMIN only). Access semantics for all spec-listed actions are unchanged; `STOP_CASE` is denied for VIEWER/SUPPORT/OPERATIONS. See the matrix file header and `matrix.test.ts` (exhaustive role × action coverage including `STOP_CASE`).
+  - Note (patch-02 G-09-2): `requireScope("admin:manage")` MUST always be paired with `requireRole("ADMIN")` (role guard first). The `requireScope` session fallback admits ADMIN or OPERATIONS for any scope by design (operational scopes like `events:write`/`ai:decide`), so the role guard is what enforces admin-only. Webhook callers never receive `request.auth` (HMAC-verified in s-10).

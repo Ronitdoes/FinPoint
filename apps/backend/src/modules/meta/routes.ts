@@ -15,6 +15,10 @@ export const metaRoutes: FastifyPluginAsync<MetaRoutesOptions> = async (
     new MetaService({
       dbHealthCheck: () => fastify.dbHealthCheck(),
       redisClient: (fastify as any).redisClient,
+      temporalAddress: (fastify as any).config?.temporal?.address,
+      version: (fastify as any).config?.release?.version,
+      gitSha: (fastify as any).config?.release?.gitSha,
+      env: (fastify as any).config?.app?.env,
     });
 
   // GET /health — Process liveness probe

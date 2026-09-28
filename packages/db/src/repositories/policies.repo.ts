@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import {
   policyRules,
   policyVersions,
@@ -185,6 +185,33 @@ export async function listPolicyVersions(
     .from(policyVersions)
     .where(eq(policyVersions.ruleId, ruleId))
     .orderBy(desc(policyVersions.version));
+}
+
+/**
+ * Batch-loads the latest version per rule id in a SINGLE query (s-16 audit fix).
+ * Replaces N× getLatestPolicyVersion round trips in evaluation/listing paths.
+ * Returns a map of ruleId → latest PolicyVersion (rules without versions absent).
+ */
+export async function getLatestPolicyVersionsForRules(
+  ctx: RepoContext,
+  { ruleIds }: { ruleIds: string[] },
+): Promise<Map<string, PolicyVersion>> {
+  const result = new Map<string, PolicyVersion>();
+  if (ruleIds.length === 0) {
+    return result;
+  }
+  const executor = getExecutor(ctx);
+  const rows = await executor
+    .select()
+    .from(policyVersions)
+    .where(inArray(policyVersions.ruleId, ruleIds))
+    .orderBy(desc(policyVersions.version));
+  for (const row of rows) {
+    if (!result.has(row.ruleId)) {
+      result.set(row.ruleId, row);
+    }
+  }
+  return result;
 }
 
 /**

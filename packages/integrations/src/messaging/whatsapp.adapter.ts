@@ -1,9 +1,16 @@
+import type { MessagingConfig } from "@repo/config";
 import type { MessagingProvider, SendResult, SendTemplateInput } from "./types";
 import { assertValidTemplateVariables, renderTemplate } from "./templates/registry";
 
 export interface WhatsAppAdapterOptions {
   apiKey?: string | null;
   phoneNumberId?: string | null;
+  /**
+   * Preferred typed-config injection (CONVENTIONS §1: only `@repo/config`
+   * reads `process.env`). The resolver (`resolveMessagingProvider`) forwards
+   * the validated values; direct callers should pass credentials explicitly.
+   */
+  messagingConfig?: Partial<MessagingConfig> | null;
   baseUrl?: string;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
@@ -34,8 +41,16 @@ export class WhatsAppAdapter implements MessagingProvider {
   private readonly timeoutMs: number;
 
   constructor(options: WhatsAppAdapterOptions = {}) {
-    this.apiKey = options.apiKey || process.env.WHATSAPP_API_KEY || "mock_wa_key";
-    this.phoneNumberId = options.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || "mock_wa_phone_id";
+    // CONVENTIONS §1: this package never reads `process.env` directly —
+    // credentials arrive via explicit options or the injected typed
+    // `messagingConfig` (type-only `@repo/config` import, so no runtime
+    // cycle). The `mock_*` literals are a grandfathered offline/test default
+    // of last resort, not live credentials (live keys are fail-fast required
+    // by `@repo/config` when MOCK_PROVIDERS=false).
+    this.apiKey =
+      options.apiKey || options.messagingConfig?.whatsappApiKey || "mock_wa_key";
+    this.phoneNumberId =
+      options.phoneNumberId || options.messagingConfig?.whatsappPhoneNumberId || "mock_wa_phone_id";
     this.baseUrl = options.baseUrl || "https://graph.facebook.com/v19.0";
     this.fetchFn = options.fetchFn || fetch;
     this.timeoutMs = options.timeoutMs ?? 10000;

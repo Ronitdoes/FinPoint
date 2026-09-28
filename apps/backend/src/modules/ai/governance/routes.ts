@@ -16,6 +16,10 @@ const getDecisionParamsSchema = z.object({
   id: z.string().uuid(),
 });
 
+const getDecisionQuerySchema = z.object({
+  include: z.string().optional(),
+});
+
 /**
  * AI Decision Governance & Audit Read Routes (Spec 01 §10, Step 15 §2).
  * Exposes role-gated access (OPERATIONS+) to immutable AI decision records and ledger entries.
@@ -105,6 +109,9 @@ export const decisionGovernanceRoutes: FastifyPluginAsync = async (app) => {
   /**
    * GET /decisions/:id — Retrieve a single AI decision record by ID.
    * Role: >= OPERATIONS
+   * Masking (same contract as the list route): inputSnapshot/outputRaw are
+   * returned ONLY to ADMIN callers passing ?include=input_snapshot; every other
+   * caller receives the curated record without snapshot fields.
    */
   app.get(
     "/decisions/:id",
@@ -126,6 +133,15 @@ export const decisionGovernanceRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const tenantScope = app.getTenantScope(request);
+      const parseQuery = getDecisionQuerySchema.safeParse(request.query);
+      if (!parseQuery.success) {
+        throw new ValidationError("Invalid decision query parameters", {
+          issues: parseQuery.error.issues,
+        });
+      }
+      const isAdmin = request.auth?.role === "ADMIN";
+      const includeSnapshot = isAdmin && parseQuery.data.include === "input_snapshot";
+
       const decision = await app.repos.findDecisionById(
         { db: app.db },
         {
@@ -140,13 +156,20 @@ export const decisionGovernanceRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
-      return reply.status(200).send({
-        ...decision,
+      // Curated record: snapshot fields travel ONLY on ADMIN+?include=input_snapshot.
+      const response: Record<string, unknown> = {
+        ...(decision as unknown as Record<string, unknown>),
         diagnosisConfidence: decision.diagnosisConfidence
           ? Number(decision.diagnosisConfidence)
           : null,
         costMinorUnits: Number(decision.costMinorUnits ?? 0n),
-      });
+      };
+      if (!includeSnapshot) {
+        delete response.inputSnapshot;
+        delete response.outputRaw;
+      }
+
+      return reply.status(200).send(response);
     },
   );
 };

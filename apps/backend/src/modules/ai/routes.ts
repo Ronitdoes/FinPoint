@@ -22,7 +22,13 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
 
   /**
    * POST /ai/decide — Run controlled LLM decision pipeline for a recovery case.
-   * Internal endpoint: requires session role >= OPERATIONS or API key with 'ai:decide' scope.
+   *
+   * Auth mapping via requireScope("ai:decide") (see plugins/rbac.ts):
+   * - session callers: role must be ADMIN or OPERATIONS (scope guard falls back
+   *   to role check for non-api_key auth);
+   * - machine callers (incl. worker principals): api key must carry the
+   *   "ai:decide" scope or the "*" wildcard.
+   * Covered by the RBAC integration test (ai-decision.test.ts case 6: VIEWER → 403).
    */
   app.post(
     "/decide",

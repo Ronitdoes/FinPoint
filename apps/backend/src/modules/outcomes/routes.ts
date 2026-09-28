@@ -118,7 +118,14 @@ export const outcomesRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /**
-   * GET /outcomes/cases/:id — Lookup outcome for specific case ID
+   * GET /outcomes/cases/:id — Lookup outcome for specific case ID.
+   *
+   * Compatibility alias: the canonical path is GET /cases/:id/outcome
+   * (apps/backend/src/modules/cases/routes.ts), which additionally verifies
+   * case existence per tenant before outcome lookup. This alias is kept (do NOT
+   * delete) to avoid breaking existing clients; prefer the canonical path for
+   * new integrations. Both return 404 when tenant-scoped outcome is absent
+   * (alias surfaces NO_OUTCOME; canonical distinguishes NOT_FOUND vs NO_OUTCOME).
    */
   app.get(
     "/cases/:id",

@@ -1,4 +1,6 @@
-# Runbook: Webhook Secret Rotation (s-30 Operations Companion)
+# Runbook: Webhook Secret Rotation — Abuse-Block Companion (s-30)
+
+> Naming note (patch-02): this file (`webhook-secret-rotation.md`, singular) is the s-30 operations companion covering abuse-block interplay, verification signals, and the ADMIN clear path. The canonical rotation procedure lives in [`webhook-secrets-rotation.md`](./webhook-secrets-rotation.md) (plural). Both files are intentional; do not merge without preserving the signals table below.
 
 Canonical rotation procedure lives in
 [`webhook-secrets-rotation.md`](./webhook-secrets-rotation.md) — this page

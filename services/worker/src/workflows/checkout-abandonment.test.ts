@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -34,17 +34,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 describe("Step 23 — Workflow B: Checkout Abandonment Matrix", () => {
+  // Time-skipped waits can exceed the default 30s timeout on loaded machines.
+  vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
   let testEnv: TestWorkflowEnvironment;
 
   beforeAll(async () => {
-    try {
-      testEnv = await TestWorkflowEnvironment.createTimeSkipping();
-    } catch {
-      testEnv = await TestWorkflowEnvironment.createLocal({
-        server: { port: 7233 },
-      });
+    // Retry time-skipping: parallel vitest files can collide starting the
+    // Java test server. Fall back to an ISOLATED local test server on an
+    // ephemeral port — never :7233 (real compose Temporal, no `default` ns).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        testEnv = await TestWorkflowEnvironment.createTimeSkipping();
+        return;
+      } catch {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
     }
-  }, 60000);
+    console.warn(
+      "[worker-tests] time-skipping test server unavailable; using real-time local server",
+    );
+    testEnv = await TestWorkflowEnvironment.createLocal();
+  }, 120000);
 
   afterAll(async () => {
     if (testEnv) {
@@ -234,6 +244,22 @@ describe("Step 23 — Workflow B: Checkout Abandonment Matrix", () => {
     // Exactly one reminder message sent
     expect(spy.calls["sendTemplateMessage"]?.length).toBe(1);
     expect(spy.calls["recordOutcome"]).toBeDefined();
+    // Touch-1 zero-discount invariant (audit s-23): first touch must carry no
+    // discount*/coupon* keys in template variables.
+    {
+      const touch1Input = spy.calls["sendTemplateMessage"]?.[0]?.[0] as {
+        templateName?: string;
+        templateVariables?: Record<string, string>;
+        stepKey?: string;
+      };
+      expect(touch1Input.templateName).toBe("checkout_abandonment_reminder");
+      const varKeys = Object.keys(touch1Input.templateVariables ?? {});
+      expect(varKeys.filter((k) => k.toLowerCase().includes("discount"))).toEqual([]);
+      expect(varKeys.filter((k) => k.toLowerCase().includes("coupon"))).toEqual([]);
+      const varValues = Object.values(touch1Input.templateVariables ?? {}).join(" ").toLowerCase();
+      expect(varValues).not.toContain("coupon");
+      expect(varValues).not.toContain("save500");
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -350,6 +376,27 @@ describe("Step 23 — Workflow B: Checkout Abandonment Matrix", () => {
     // Verifies two touches were sent (Reminder + Incentive)
     expect(spy.calls["sendTemplateMessage"]?.length).toBe(2);
     expect(spy.calls["recordOutcome"]).toBeDefined();
+    // Touch-1 zero-discount + Touch-2 incentive assertions (audit s-23).
+    {
+      const touch1 = spy.calls["sendTemplateMessage"]?.[0]?.[0] as {
+        templateName?: string;
+        templateVariables?: Record<string, string>;
+      };
+      const touch2 = spy.calls["sendTemplateMessage"]?.[1]?.[0] as {
+        templateName?: string;
+        templateVariables?: Record<string, string>;
+      };
+      const t1Keys = Object.keys(touch1.templateVariables ?? {});
+      expect(t1Keys.filter((k) => k.toLowerCase().includes("discount"))).toEqual([]);
+      expect(t1Keys.filter((k) => k.toLowerCase().includes("coupon"))).toEqual([]);
+      expect(Object.values(touch1.templateVariables ?? {}).join(" ").toLowerCase()).not.toContain("coupon");
+      // Touch 2 must carry the policy-approved incentive.
+      expect(touch2.templateName).toBe("checkout_incentive_reminder");
+      const t2Keys = Object.keys(touch2.templateVariables ?? {});
+      expect(t2Keys.some((k) => k.toLowerCase().includes("discount"))).toBe(true);
+      const t2Values = Object.values(touch2.templateVariables ?? {}).join(" ").toLowerCase();
+      expect(t2Values).toContain("coupon");
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -441,6 +488,15 @@ describe("Step 23 — Workflow B: Checkout Abandonment Matrix", () => {
     // Only 1 reminder sent (Touch 2 was skipped because policy rejected incentive)
     expect(spy.calls["sendTemplateMessage"]?.length).toBe(1);
     expect(spy.calls["stopCaseWithReason"]).toBeDefined();
+    // Touch-1 zero-discount invariant holds even when Touch-2 is skipped (audit s-23).
+    {
+      const touch1 = spy.calls["sendTemplateMessage"]?.[0]?.[0] as {
+        templateVariables?: Record<string, string>;
+      };
+      const keys = Object.keys(touch1.templateVariables ?? {});
+      expect(keys.filter((k) => k.toLowerCase().includes("discount"))).toEqual([]);
+      expect(keys.filter((k) => k.toLowerCase().includes("coupon"))).toEqual([]);
+    }
   });
 
   // ---------------------------------------------------------------------------

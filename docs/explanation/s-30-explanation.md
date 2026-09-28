@@ -86,7 +86,7 @@ Stripe/Razorpay routes wrap `processInboundWebhook` in try/catch and record on `
 
 ## 4. Cross-tenant probe matrix
 
-**File:** `tests/security/cross-tenant.probe.test.ts` (36 tests, all green)
+**File:** `tests/security/cross-tenant.probe.test.ts` (36 probe executions across data-driven loops, ~10 `it` blocks, all green)
 
 "Generated from route inventory" is implemented as data: `detailProbes` (14 path-id swaps), `listProbes` (12 endpoints), plus body/query, write, and RBAC spot probes — each entry names method + URL template, and a loop executes them all against a two-tenant seed graph (tenant A owns customer, payment, risk, case, decision, policy rule, message, human task, promise-to-pay, outcome, audit log, user, API key; tenant B owns a bare customer).
 

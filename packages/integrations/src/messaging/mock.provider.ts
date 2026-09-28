@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { DemoConfig } from "@repo/config";
 import type { MessagingProvider, SendResult, SendTemplateInput } from "./types";
 import { assertValidTemplateVariables, renderTemplate } from "./templates/registry";
 
@@ -7,6 +8,13 @@ export interface MockMessagingProviderOptions {
   failureErrorCode?: string;
   failureErrorMessage?: string;
   recordInHistory?: boolean;
+  /**
+   * Preferred typed-config injection (CONVENTIONS §1: only `@repo/config`
+   * reads `process.env`). The resolver (`resolveMessagingProvider`) already
+   * forwards `simulateMessageFailure` explicitly; this field covers direct
+   * construction with validated config.
+   */
+  demoConfig?: Partial<DemoConfig> | null;
 }
 
 export interface SentMessageRecord {
@@ -29,9 +37,15 @@ export class MockMessagingProvider implements MessagingProvider {
   private readonly failureErrorMessage: string;
 
   constructor(options: MockMessagingProviderOptions = {}) {
+    // CONVENTIONS §1: this package never reads `process.env` directly —
+    // failure injection arrives via the explicit option or the injected typed
+    // `demoConfig` (type-only `@repo/config` import, so no runtime cycle).
+    // `false` remains the default of last resort, preserving the
+    // grandfathered opt-in injection behavior without an env read here.
     this.simulateFailure =
       options.simulateFailure ??
-      process.env.SIMULATE_MESSAGE_FAILURE === "true";
+      options.demoConfig?.simulateMessageFailure ??
+      false;
     this.failureErrorCode = options.failureErrorCode || "MOCK_MESSAGE_DISPATCH_FAILED";
     this.failureErrorMessage = options.failureErrorMessage || "Simulated message dispatch failure";
   }

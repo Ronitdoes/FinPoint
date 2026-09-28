@@ -1,0 +1,6 @@
+# Windows dev machines check out CRLF by default; a CR in a shell-script
+# shebang (`#!/bin/sh\r`) breaks exec in ANY Linux image (Alpine or Debian —
+# the kernel fails to exec `/bin/sh\r`, reported as "no such file or
+# directory"). Force LF for shell entrypoints.
+*.sh text eol=lf
+infra/docker/backend-entrypoint.sh text eol=lf

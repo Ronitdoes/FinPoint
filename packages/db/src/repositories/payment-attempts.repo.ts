@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   paymentAttempts,
   type PaymentAttempt,
@@ -112,6 +112,18 @@ export async function findPaymentAttemptByIdempotencyKey(
   return attempt ?? null;
 }
 
+/**
+ * Guarded conditional resolve (CONVENTIONS §9): only a non-terminal attempt
+ * (`REQUESTED` or `UNKNOWN`) may transition. Terminal `SUCCEEDED`/`FAILED` rows
+ * are immutable — a concurrent winner's write sticks and late losers get `null`
+ * (no row matched) instead of overwriting history. Callers MUST treat `null` as
+ * "already resolved by a concurrent winner" (duplicate/already-resolved) and
+ * MUST NOT throw 500: execution.service.ts falls back to the pre-read `attempt`
+ * (`resolvedAttempt ?? attempt`), refresh.service.ts / executing-sweeper.ts ignore
+ * the return inside their atomic transaction (payment + action writes still commit).
+ * Returns the updated row, or `null` when the row is missing, tenant-mismatched,
+ * or already terminal (race lost).
+ */
 export async function resolvePaymentAttempt(
   ctx: RepoContext,
   input: ResolvePaymentAttemptInput,
@@ -131,6 +143,7 @@ export async function resolvePaymentAttempt(
       and(
         eq(paymentAttempts.tenantId, input.tenantId),
         eq(paymentAttempts.id, input.attemptId),
+        inArray(paymentAttempts.status, ["REQUESTED", "UNKNOWN"]),
       ),
     )
     .returning();

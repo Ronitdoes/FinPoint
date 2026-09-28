@@ -93,6 +93,13 @@ const EMAIL_TEMPLATES: Record<
 
 /**
  * Closed template definitions catalog.
+ *
+ * s-19 foundation: the 4 template ids below are explicitly CHANNEL-AGNOSTIC —
+ * every id renders for both WHATSAPP (via WHATSAPP_TEMPLATES JSON) and EMAIL
+ * (via EMAIL_TEMPLATES subjects/bodies); SMS reuses the WHATSAPP text rendering
+ * path in renderTemplate(). The `channel` field is retained as the canonical /
+ * primary channel for backward compatibility only and MUST NOT be used to
+ * filter send eligibility — use isTemplateSupportedForChannel() instead.
  */
 export const TEMPLATE_REGISTRY: Record<string, MessageTemplate> = {
   payment_retry_notice: {
@@ -165,12 +172,26 @@ export function getTemplate(templateId: string): MessageTemplate | undefined {
 }
 
 /**
+ * Returns true when a template id has a rendering for the requested channel.
+ * Foundation templates support WHATSAPP + EMAIL; SMS falls back to the
+ * WHATSAPP text rendering.
+ */
+export function isTemplateSupportedForChannel(templateId: string, channel: Channel): boolean {
+  if (channel === "WHATSAPP") return templateId in WHATSAPP_TEMPLATES;
+  if (channel === "EMAIL") return templateId in EMAIL_TEMPLATES;
+  return templateId in WHATSAPP_TEMPLATES;
+}
+
+/**
  * Lists all registered templates, optionally filtered by channel.
+ * Channel-aware: only templates renderable for the requested channel are
+ * returned (foundation ids are channel-agnostic, so WHATSAPP and EMAIL both
+ * return all 4).
  */
 export function listTemplates(channel?: Channel): MessageTemplate[] {
   const all = Object.values(TEMPLATE_REGISTRY);
   if (!channel) return all;
-  return all;
+  return all.filter((t) => t.channel === channel || isTemplateSupportedForChannel(t.id, channel));
 }
 
 /**
@@ -197,22 +218,32 @@ export function validateTemplateVariables(
   const missingVariables = template.variables.filter(
     (k) => variables[k] === undefined || variables[k] === null || variables[k] === "",
   );
-  const unexpectedVariables = provided.filter((k) => !declared.has(k));
+  // Non-primitive values (objects/arrays/functions) are treated as unexpected:
+  // only string | number | boolean primitives may be stringified into slots.
+  const nonPrimitiveKeys = provided.filter((k) => {
+    const v = variables[k];
+    return v !== null && v !== undefined && !["string", "number", "boolean"].includes(typeof v);
+  });
+  // Dedupe while preserving order.
+  const dedupedUnexpected = [...new Set([...provided.filter((k) => !declared.has(k)), ...nonPrimitiveKeys])];
 
-  const valid = missingVariables.length === 0 && unexpectedVariables.length === 0;
+  const valid = missingVariables.length === 0 && dedupedUnexpected.length === 0;
 
   return {
     valid,
     missingVariables,
-    unexpectedVariables,
+    unexpectedVariables: dedupedUnexpected,
     error: valid
       ? undefined
-      : `Variables do not match allowlist: missing=[${missingVariables.join(", ")}], unexpected=[${unexpectedVariables.join(", ")}]`,
+      : `Variables do not match allowlist: missing=[${missingVariables.join(", ")}], unexpected=[${dedupedUnexpected.join(", ")}]`,
   };
 }
 
 /**
  * Asserts that template variables match the registry allowlist; throws InvalidTemplateVariablesError on mismatch.
+ * Also enforces the runtime primitive guard (Spec 19 §Variable allowlist enforcement):
+ * values must be primitives (string | number | boolean) — objects/arrays/functions
+ * are rejected so AI/context objects can never inject nested payloads.
  */
 export function assertValidTemplateVariables(
   templateId: string,
@@ -230,6 +261,13 @@ export function assertValidTemplateVariables(
       validation.missingVariables,
       validation.unexpectedVariables,
     );
+  }
+
+  const nonPrimitive = Object.entries(variables)
+    .filter(([, v]) => v !== null && v !== undefined && !["string", "number", "boolean"].includes(typeof v))
+    .map(([k]) => k);
+  if (nonPrimitive.length > 0) {
+    throw new InvalidTemplateVariablesError(templateId, [], nonPrimitive);
   }
 }
 

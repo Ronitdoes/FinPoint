@@ -71,6 +71,20 @@
       "when": 1787951331947,
       "tag": "0009_wild_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789046400000,
+      "tag": "0010_audit_reset_hatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789534249174,
+      "tag": "0011_magical_pepper_potts",
+      "breakpoints": true
     }
   ]
 }

@@ -405,7 +405,9 @@ describe("cross-tenant probe matrix", () => {
           tenant_id: seed.tenantA,
           entity_type: "PAYMENT",
           entity_id: seed.paymentA,
-          payload: {},
+          // s-11 gaps: schema-valid payload so the probe reaches the
+          // tenant-isolation check (403), not per-type validation (422).
+          payload: { amount: 5000 },
         },
       });
       expect(res.statusCode).toBe(403);

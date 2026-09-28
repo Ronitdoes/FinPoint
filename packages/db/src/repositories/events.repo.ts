@@ -164,6 +164,12 @@ export async function markEventFailed(
   return updated ?? null;
 }
 
+/**
+ * Lists unprocessed (non-PROCESSED) events, oldest first.
+ *
+ * @allowCrossTenant - sweeper/admin read (optional tenantId lets the
+ *   unprocessed-event sweeper poll across tenants; follow-up writes stay tenant-scoped)
+ */
 export async function listUnprocessedEvents(
   ctx: RepoContext,
   { tenantId, limit = 50 }: { tenantId?: string; limit?: number } = {},
@@ -193,6 +199,9 @@ export interface EventFilterInput {
 
 /**
  * Lists events matching filter parameters with strict pagination (max 1000).
+ *
+ * @allowCrossTenant - sweeper/admin read (optional tenantId for admin/support
+ *   search; follow-up writes stay tenant-scoped)
  */
 export async function findEventsByFilter(
   ctx: RepoContext,

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "revenue_risks_tenant_subject_open_unique" ON "revenue_risks" USING btree ("tenant_id","subject_type","subject_id") WHERE "revenue_risks"."status" = 'OPEN';

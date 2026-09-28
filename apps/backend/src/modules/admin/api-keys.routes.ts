@@ -14,8 +14,14 @@ import { ValidationError } from "../../lib/errors";
 export const adminApiKeysRoutes: FastifyPluginAsync = async (
   fastify: FastifyInstance,
 ) => {
-  // All admin API key routes require authenticated session/key and ADMIN role
-  const adminGuards = [fastify.requireAuth, fastify.requireRole("ADMIN")];
+  // Admin API key routes: session ADMIN or machine key with `admin:manage`.
+  // Least-privilege fix (s-09 audit): keys with only `events:write` etc.
+  // must NOT manage users/keys.
+  const adminGuards = [
+    fastify.requireAuth,
+    fastify.requireRole("ADMIN"),
+    fastify.requireScope("admin:manage"),
+  ];
 
   /**
    * POST /admin/api-keys — Issue a new machine API key for current tenant.

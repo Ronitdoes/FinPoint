@@ -44,6 +44,65 @@ export interface ExecuteRetryPaymentResult {
 }
 
 /**
+ * Narrow retry classifier (s-18 audit, Spec 18 §Requirements 4:
+ * "retries ONLY for network-class errors ×2").
+ *
+ * Retryable: transport/network failures, timeouts/aborts, and provider 5xx
+ * surfaced as thrown errors. NOT retryable: programming errors (TypeError,
+ * RangeError, JSON bugs), validation errors, and definitive HTTP 4xx outcomes
+ * (adapters already map 4xx to FAILED results instead of throwing).
+ */
+export function isRetryableProviderError(error: any): boolean {
+  if (error === null || error === undefined) {
+    return false;
+  }
+  if (typeof error === "string") {
+    return /timeout|timed out|deadline|fetch failed|network|socket|ECONN|EAI_AGAIN|ETIMEDOUT/i.test(
+      error,
+    );
+  }
+  if (typeof error !== "object") {
+    return false;
+  }
+
+  const message = String((error as any).message ?? "");
+  const code = String(
+    (error as any).code ?? (error as any)?.cause?.code ?? "",
+  );
+  const status =
+    (error as any).status ?? (error as any).statusCode ?? (error as any)?.response?.status;
+  const haystack = `${message} ${code}`;
+
+  // Explicit transient markers set by adapters/tests.
+  if ((error as any).retryable === true || (error as any).transient === true) {
+    return true;
+  }
+  // Abort / timeout: adapter AbortController, 15s execution budget.
+  if (
+    (error as any).name === "AbortError" ||
+    /abort|timeout|timed out|deadline exceeded|exceeded/i.test(haystack)
+  ) {
+    return true;
+  }
+  // Transport-level network failures (fetch TypeError, ECONN*, DNS, sockets).
+  if (
+    /fetch failed|network|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|EPIPE|EHOST|socket hang up|connection reset|TLS|temporarily unavailable/i.test(
+      haystack,
+    )
+  ) {
+    return true;
+  }
+  // Provider 5xx thrown by adapters ("…returned 5xx status: 502", HTTP 5xx).
+  if (typeof status === "number" && status >= 500 && status <= 599) {
+    return true;
+  }
+  if (/\b5\d{2}\b/.test(message) && /5xx|HTTP|status/i.test(message)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Payment Execution Service (Spec 01 §14, §21, Spec 18 §Requirements 3).
  * Wraps payment provider adapter calls with idempotency verification,
  * guarded state updates, network retry policies, fee capture, and status polling.
@@ -75,6 +134,27 @@ export class PaymentExecutionService {
     attemptNumber: number,
   ): string {
     return `${tenantId}:${caseId}:RETRY_PAYMENT:${attemptNumber}`;
+  }
+
+  /**
+   * Waits for another execution's in-flight REQUESTED attempt to reach a
+   * terminal state (s-18 double-charge fix). Polls 30×100ms; returns the
+   * latest row (possibly still REQUESTED on timeout — callers must NOT
+   * charge in that case, just report duplicate).
+   */
+  private async waitForAttemptResolution(tenantId: string, idempotencyKey: string) {
+    let attempt = await this.repos.findPaymentAttemptByIdempotencyKey(
+      { db: this.db },
+      { tenantId, idempotencyKey },
+    );
+    for (let i = 0; i < 30 && (!attempt || attempt.status === "REQUESTED"); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      attempt = await this.repos.findPaymentAttemptByIdempotencyKey(
+        { db: this.db },
+        { tenantId, idempotencyKey },
+      );
+    }
+    return attempt;
   }
 
   /**
@@ -130,6 +210,34 @@ export class PaymentExecutionService {
           };
         }
 
+        if (attempt && attempt.status === "REQUESTED") {
+          // Two distinct situations share this observable state:
+          // (a) Crash-resume adoption (actionId present): the previous
+          //     execution died after inserting REQUESTED (e.g. SIGKILL in the
+          //     claim→provider window) without charging. The resume must
+          //     ADOPT the orphan and execute — exactly once, since the dead
+          //     run never reached the provider. Fall through to claim+charge
+          //     below (provider-level idempotency keys backstop the
+          //     dead-after-charge window).
+          // (b) Concurrent live race WITHOUT action context (s-18 fix): the
+          //     winner is actively charging right now. Falling through would
+          //     double-charge, so wait for the winner to resolve and report
+          //     duplicate without touching the provider.
+          if (!actionId) {
+            attempt = await this.waitForAttemptResolution(tenantId, idempotencyKey);
+            const payment = await this.repos.findPaymentById(
+              { db: this.db },
+              { tenantId, paymentId },
+            );
+            return {
+              attempt: attempt!,
+              payment: payment!,
+              outcome: (attempt?.status || "UNKNOWN") as any,
+              duplicate: true,
+            };
+          }
+        }
+
         // 2. Insert payment_attempts row REQUESTED if not existing
         if (!attempt) {
           try {
@@ -149,25 +257,7 @@ export class PaymentExecutionService {
             if (isUniqueViolation(error)) {
               // Concurrency race: another worker created this attempt row and is executing the charge
               // Wait for the winning execution to resolve the attempt row
-              for (let i = 0; i < 30; i++) {
-                await new Promise((resolve) => setTimeout(resolve, 100));
-                attempt = await this.repos.findPaymentAttemptByIdempotencyKey(
-                  { db: this.db },
-                  { tenantId, idempotencyKey },
-                );
-                if (attempt && attempt.status !== "REQUESTED") {
-                  const payment = await this.repos.findPaymentById(
-                    { db: this.db },
-                    { tenantId, paymentId },
-                  );
-                  return {
-                    attempt,
-                    payment: payment!,
-                    outcome: attempt.status as any,
-                    duplicate: true,
-                  };
-                }
-              }
+              attempt = await this.waitForAttemptResolution(tenantId, idempotencyKey);
 
               // If still in-flight after poll limit, return existing attempt without double execution
               const payment = await this.repos.findPaymentById(
@@ -488,6 +578,9 @@ export class PaymentExecutionService {
   /**
    * Helper that executes the adapter call with bounded network-only retries (2 retries max).
    * HTTP 4xx errors from provider are definitive outcomes and NOT retried.
+   * s-18 audit: ONLY network/timeout/5xx errors (isRetryableProviderError)
+   * are retried — programming errors surface immediately so bugs are loud
+   * instead of burning retries and masking as UNKNOWN.
    */
   private async callAdapterWithNetworkRetries(
     adapter: PaymentProvider,
@@ -508,6 +601,9 @@ export class PaymentExecutionService {
           timeoutPromise,
         ]);
       } catch (error: any) {
+        if (!isRetryableProviderError(error)) {
+          throw error;
+        }
         attempt++;
         if (attempt > maxRetries) {
           throw error;

@@ -41,6 +41,10 @@ export class InProcessEventBus implements EventBus {
   private readonly inFlightPromises: Set<Promise<void>> = new Set();
   private readonly tenantChains: Map<string, Promise<void>> = new Map();
   private isClosed = false;
+  // Set at close() start: stops scheduling NEW delayed retries (they would
+  // stall drain on backoff timers) while in-flight work finishes. DLQ writes
+  // are immediate and always allowed through.
+  private isClosing = false;
 
   async publish(event: DomainEvent, opts?: PublishOptions): Promise<void> {
     if (this.isClosed) {
@@ -109,7 +113,12 @@ export class InProcessEventBus implements EventBus {
 
     for (const sub of subs) {
       if (item.topic === TOPIC_RETRY && item.headers["x-delay-until"]) {
-        // Delayed processing for retry queue
+        // Delayed processing for retry queue. Dropped once closing: close()
+        // already cleared pending retry timers, and scheduling new backoff
+        // timers during drain would stall teardown (same drop semantics).
+        if (this.isClosing || this.isClosed) {
+          return;
+        }
         const delayUntilMs = new Date(item.headers["x-delay-until"]).getTime();
         const delayMs = Math.max(0, delayUntilMs - Date.now());
 
@@ -164,21 +173,35 @@ export class InProcessEventBus implements EventBus {
       value: item.value,
       headers: item.headers,
       handler: sub.handler,
+      handlerTimeoutMs: sub.opts?.handlerTimeoutMs,
       publishToRetry: async (event, retryHeaders) => {
-        await this.publish(event, {
-          topic: TOPIC_RETRY,
-          key: item.key,
-          headers: retryHeaders,
-        });
+        try {
+          await this.publish(event, {
+            topic: TOPIC_RETRY,
+            key: item.key,
+            headers: retryHeaders,
+          });
+        } catch (err) {
+          // Teardown race: close() landed mid-flight. The retry is dropped
+          // (same as a cleared retry timer); anything else still throws.
+          if (!this.isClosed) throw err;
+        }
       },
       publishToDlq: async (dlqMsg, dlqHeaders) => {
+        // Authoritative record is the in-memory DLQ; the DLQ-topic fan-out
+        // below is best-effort observability.
         this.dlq.push(dlqMsg);
-        await this.publishRaw(
-          TOPIC_DLQ,
-          item.key,
-          JSON.stringify(dlqMsg),
-          dlqHeaders,
-        );
+        try {
+          await this.publishRaw(
+            TOPIC_DLQ,
+            item.key,
+            JSON.stringify(dlqMsg),
+            dlqHeaders,
+          );
+        } catch (err) {
+          // Teardown race: record above is kept, fan-out dropped.
+          if (!this.isClosed) throw err;
+        }
       },
       commit: async () => {
         // In-process manual offset commit acknowledged
@@ -224,14 +247,23 @@ export class InProcessEventBus implements EventBus {
     this.subscriptions.clear();
     this.tenantChains.clear();
     this.inFlightPromises.clear();
+    this.isClosing = false;
   }
 
   async close(): Promise<void> {
-    this.isClosed = true;
+    // Clear delayed-retry timers first (their retries are dropped, same as
+    // before), then let in-flight consumers finish their retry/DLQ fan-out
+    // BEFORE marking closed — otherwise an in-flight DLQ/retry publish throws
+    // "Cannot publish to closed InProcessEventBus" as an unhandled rejection
+    // during teardown (e2e checkout suite). isClosing stops NEW backoff
+    // timers from being scheduled mid-drain so close() can't stall.
+    // External publishes after this point still throw via the isClosed gate.
+    this.isClosing = true;
     for (const timer of this.activeTimers) {
       clearTimeout(timer);
     }
     this.activeTimers.clear();
     await this.drain();
+    this.isClosed = true;
   }
 }

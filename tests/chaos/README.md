@@ -67,6 +67,36 @@ pause, worker SIGKILL, Redpanda stop/start. Without the flag each drill
 returns a `skipped` report (asserted by the suites) so CI stays green while
 the same degraded behaviors are proven via fakes.
 
+## Nightly schedule
+
+There is no dedicated `chaos-nightly.yml` workflow. The nightly
+infra-kill matrix is the same command run against the composed stack:
+
+```bash
+CHAOS_INFRA=1 bun run test:chaos
+```
+
+Recommended fold-in (not a duplicate workflow): add it as a job to the
+existing nightly `.github/workflows/perf-gate.yml` (03:00 UTC schedule),
+gated on composed-stack readiness the same way the staging-load job is
+gated on staging secrets. Until that fold-in lands, the nightly run is an
+operator/cron invocation of the command above.
+
+## Hygiene: chaos tenants left in the DB
+
+Chaos scenarios create isolated tenants per run (`slug LIKE 'chaos-%'`,
+same convention as the integration suites) and leave them in the database
+for post-run evidence — this is intentional, not a leak. To clean up
+hygiene rows on a dev database after a verification session:
+
+```sql
+DELETE FROM tenants WHERE slug LIKE 'chaos-%';
+```
+
+(Orphaned financial rows are tenant-scoped and go with the tenant via
+`ON DELETE CASCADE`; never run this against staging/prod — chaos drills
+refuse prod-shaped envs by design.)
+
 ## Reports
 
 Kill drills write JSON artifacts (`artifacts/chaos/chaos-drills-*.json`) for

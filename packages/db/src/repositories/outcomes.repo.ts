@@ -9,6 +9,8 @@ import {
 } from "../schema/outcomes";
 import { recoveryCases, type RecoveryCase } from "../schema/cases";
 import { payments, type Payment } from "../schema/payments";
+import { invoices, type Invoice } from "../schema/invoices";
+import { checkouts, type Checkout } from "../schema/checkouts";
 import { recoveryActions, type RecoveryAction } from "../schema/actions";
 import { type RepoContext, getExecutor } from "./types";
 import type { Tx } from "./tx";
@@ -254,6 +256,17 @@ export async function findOutcomesByCaseIds(
 
 /**
  * Finds candidate closed/stopped cases without an outcome for the attribution sweeper (Spec 02 §9).
+ *
+ * CLOSED vs STOPPED/FAILED reconciliation (hygiene note, no semantic change):
+ * older spec prose (s-26) says "STOPPED/CLOSED", but the domain state machine
+ * (packages/domain/src/state-machines/recovery-case.ts) defines terminal states
+ * as RECOVERED/STOPPED/FAILED — there is no CLOSED case status. Here CLOSED maps
+ * to operator-closed STOPPED, and FAILED covers exhausted/terminal-failure cases;
+ * RECOVERED is excluded (already has an outcome by invariant). Do NOT extend or
+ * narrow this candidate set without spec sign-off.
+ *
+ * @allowCrossTenant - sweeper/admin read (optional tenantId lets the attribution
+ *   sweeper scan across tenants; follow-up writes stay tenant-scoped)
  */
 export async function findCandidateCasesForAttributionSweep(
   ctx: RepoContext,
@@ -274,6 +287,120 @@ export async function findCandidateCasesForAttributionSweep(
     .where(and(...conditions))
     .orderBy(desc(recoveryCases.openedAt))
     .limit(limit);
+}
+
+/**
+ * Link-evidence helpers for strict INVOICE/CHECKOUT attribution (P1 fix).
+ * Payments carry no dedicated invoice_id/checkout_id column, so obligation
+ * linkage must come from methodMetadata keys or provider-reference equality.
+ * All comparisons are string-normalized; tenant scoping is enforced by the
+ * caller's baseConditions, amounts stay bigint minor units (CONVENTIONS §3).
+ */
+function metadataStringValues(methodMetadata: unknown): string[] {
+  if (!methodMetadata || typeof methodMetadata !== "object") return [];
+  return Object.values(methodMetadata as Record<string, unknown>).map((v) =>
+    String(v ?? ""),
+  );
+}
+
+function metadataHasAnyKey(
+  methodMetadata: unknown,
+  keys: string[],
+  targets: Array<string | null | undefined>,
+): boolean {
+  if (!methodMetadata || typeof methodMetadata !== "object") return false;
+  const mm = methodMetadata as Record<string, unknown>;
+  const targetSet = new Set(
+    targets.filter((t): t is string => typeof t === "string" && t.length > 0),
+  );
+  if (targetSet.size === 0) return false;
+  for (const key of keys) {
+    const raw = mm[key];
+    if (raw === undefined || raw === null) continue;
+    if (targetSet.has(String(raw))) return true;
+  }
+  return false;
+}
+
+const INVOICE_METADATA_KEYS = [
+  "invoice_id",
+  "invoiceId",
+  "invoiceID",
+  "provider_invoice_id",
+  "providerInvoiceId",
+  "invoice_number",
+  "invoiceNumber",
+  "number",
+];
+
+const CHECKOUT_METADATA_KEYS = [
+  "checkout_id",
+  "checkoutId",
+  "source_ref",
+  "sourceRef",
+  "checkout_source_ref",
+  "provider_reference",
+  "providerReference",
+];
+
+export function isPaymentLinkedToInvoice(
+  payment: Payment,
+  invoice: Invoice,
+  sourceEntityId: string,
+): boolean {
+  // Explicit payment-id equality (defensive: source holds an invoice UUID, so
+  // this only fires if the obligation actually is the payment row).
+  if (payment.id === sourceEntityId) return true;
+  // Provider-reference equality: invoice's provider id paid via that provider payment.
+  if (
+    invoice.providerInvoiceId &&
+    payment.providerPaymentId === invoice.providerInvoiceId
+  ) {
+    return true;
+  }
+  // methodMetadata linkage (invoice_id / provider_invoice_id / number, ...).
+  if (
+    metadataHasAnyKey(payment.methodMetadata, INVOICE_METADATA_KEYS, [
+      invoice.id,
+      invoice.providerInvoiceId,
+      invoice.number,
+    ])
+  ) {
+    return true;
+  }
+  // Fallback: any metadata value echoing the obligation identifiers.
+  const values = new Set(metadataStringValues(payment.methodMetadata));
+  if (values.has(invoice.id)) return true;
+  if (invoice.providerInvoiceId && values.has(invoice.providerInvoiceId))
+    return true;
+  if (invoice.number && values.has(invoice.number)) return true;
+  return false;
+}
+
+export function isPaymentLinkedToCheckout(
+  payment: Payment,
+  checkout: Checkout,
+  sourceEntityId: string,
+): boolean {
+  if (payment.id === sourceEntityId) return true;
+  if (
+    checkout.sourceRef &&
+    payment.providerPaymentId === checkout.sourceRef
+  ) {
+    return true;
+  }
+  if (
+    metadataHasAnyKey(payment.methodMetadata, CHECKOUT_METADATA_KEYS, [
+      checkout.id,
+      checkout.sourceRef,
+    ])
+  ) {
+    return true;
+  }
+  const values = new Set(metadataStringValues(payment.methodMetadata));
+  if (values.has(checkout.id)) return true;
+  if (checkout.sourceRef && values.has(checkout.sourceRef)) return true;
+  return false;
 }
 
 /**
@@ -356,15 +483,80 @@ export async function findMatchingPaymentForAttribution(
     return candidatePayments[0] ?? null;
   }
 
-  // For INVOICE or CHECKOUT or other source types, matching payment for same customer
-  const candidatePayments = await executor
-    .select()
-    .from(payments)
-    .where(and(...baseConditions))
-    .orderBy(desc(payments.occurredAt))
-    .limit(1);
+  // For INVOICE obligations, require an explicit obligation link. The prior
+  // fallthrough matched ANY same-customer SUCCEEDED payment in-window, which
+  // over-attributes unrelated payments. Link evidence (in order): explicit
+  // payment-id equality, provider-reference equality
+  // (invoice.providerInvoiceId === payment.providerPaymentId), or
+  // methodMetadata invoice keys. Without a link, return null (no attribution).
+  if (caseRecord.sourceEntityType === "INVOICE") {
+    const [invoice] = await executor
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenantId),
+          eq(invoices.id, caseRecord.sourceEntityId),
+        ),
+      )
+      .limit(1);
+    if (!invoice) return null;
 
-  return candidatePayments[0] ?? null;
+    const candidates = await executor
+      .select()
+      .from(payments)
+      .where(and(...baseConditions))
+      .orderBy(desc(payments.occurredAt))
+      .limit(50);
+
+    for (const candidate of candidates) {
+      if (
+        isPaymentLinkedToInvoice(candidate, invoice, caseRecord.sourceEntityId)
+      ) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  if (caseRecord.sourceEntityType === "CHECKOUT") {
+    const [checkout] = await executor
+      .select()
+      .from(checkouts)
+      .where(
+        and(
+          eq(checkouts.tenantId, tenantId),
+          eq(checkouts.id, caseRecord.sourceEntityId),
+        ),
+      )
+      .limit(1);
+    if (!checkout) return null;
+
+    const candidates = await executor
+      .select()
+      .from(payments)
+      .where(and(...baseConditions))
+      .orderBy(desc(payments.occurredAt))
+      .limit(50);
+
+    for (const candidate of candidates) {
+      if (
+        isPaymentLinkedToCheckout(
+          candidate,
+          checkout,
+          caseRecord.sourceEntityId,
+        )
+      ) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  // Unknown/other source types: strict no-attribution. There is no defined
+  // obligation-link semantics for these types, so matching any same-customer
+  // payment would repeat the INVOICE/CHECKOUT over-attribution bug.
+  return null;
 }
 
 /**

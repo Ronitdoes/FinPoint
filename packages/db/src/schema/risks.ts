@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -56,6 +57,11 @@ export const revenueRisks = pgTable(
       "revenue_risks_score_check",
       sql`${table.score} >= 0 AND ${table.score} <= 100`,
     ),
+    // Anti-duplication (s-12 fix): exactly one OPEN risk per subject.
+    // Closes the SELECT-then-INSERT race under concurrent redelivery.
+    uniqueIndex("revenue_risks_tenant_subject_open_unique")
+      .on(table.tenantId, table.subjectType, table.subjectId)
+      .where(sql`${table.status} = 'OPEN'`),
     index("revenue_risks_status_score_idx").on(
       table.status,
       table.score.desc(),

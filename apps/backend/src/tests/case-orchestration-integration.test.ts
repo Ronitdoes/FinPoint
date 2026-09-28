@@ -277,6 +277,29 @@ describe("Step 17 Integration: Recovery Case Orchestration Pipeline", { timeout:
   // 2. HAPPY PATH PIPELINE EXECUTION & LEDGER RESUMABILITY
   // ===========================================================================
   describe("2. Staged Recovery Pipeline Runner", () => {
+    // Converge helper (same race as the s-17 canonical-case hardening): the
+    // app's background orchestrator consumer shares this NullBus, so
+    // tryCreateCase schedules a background runPipeline via setImmediate that
+    // races the direct run below for the `${caseId}:decision:1` lease; the
+    // loser yields via IdempotencyInFlightError leaving QUALIFIED. Re-drive
+    // while non-terminal until the case settles.
+    const drivePipelineToSettled = async (tenantId: string, caseId: string) => {
+      const deadline = Date.now() + 20000;
+      let row = await findCaseById({ db }, { tenantId, caseId });
+      while (
+        row &&
+        !["IN_PROGRESS", "WAITING", "ESCALATED", "STOPPED", "FAILED", "RECOVERED"].includes(
+          row.status,
+        ) &&
+        Date.now() < deadline
+      ) {
+        await pipelineService.runPipeline({ tenantId, caseId });
+        await new Promise((r) => setTimeout(r, 500));
+        row = await findCaseById({ db }, { tenantId, caseId });
+      }
+      return row;
+    };
+
     it("runs complete happy path: QUALIFIED -> DECISION_PENDING -> POLICY_REVIEW -> IN_PROGRESS with APPROVED actions", async () => {
       const customer = await createCustomer(
         { db },
@@ -317,11 +340,9 @@ describe("Step 17 Integration: Recovery Case Orchestration Pipeline", { timeout:
       expect(created).toBe(true);
       expect(recoveryCase.status).toBe("QUALIFIED");
 
-      // Execute pipeline
-      await pipelineService.runPipeline({
-        tenantId: tenantA.id,
-        caseId: recoveryCase.id,
-      });
+      // Execute pipeline (converge: background consumer may hold the decide
+      // lease; re-drive until settled)
+      await drivePipelineToSettled(tenantA.id, recoveryCase.id);
 
       // Assert final case state
       const finalCase = await findCaseById(
@@ -380,11 +401,9 @@ describe("Step 17 Integration: Recovery Case Orchestration Pipeline", { timeout:
         riskScore: 55,
       });
 
-      // Run pipeline first time -> IN_PROGRESS
-      await pipelineService.runPipeline({
-        tenantId: tenantA.id,
-        caseId: recoveryCase.id,
-      });
+      // Run pipeline first time -> IN_PROGRESS (converge: same lease race
+      // as happy path; re-drive until settled)
+      await drivePipelineToSettled(tenantA.id, recoveryCase.id);
 
       const firstTimeline = await listCaseEvents(
         { db },
@@ -865,6 +884,50 @@ describe("Step 17 Integration: Recovery Case Orchestration Pipeline", { timeout:
         tenantId: tenantA.id,
         caseId: c.id,
       });
+
+      // Converge on WORKFLOW_STARTED (s-17 test hardening): the app's
+      // background orchestrator consumer shares this NullBus and races the
+      // direct run above for the decide idempotency lease; the loser yields
+      // via IdempotencyInFlightError. Re-drive while non-terminal — decide
+      // replays idempotently (no re-spend) — until the event lands.
+      {
+        const deadline = Date.now() + 20000;
+        let started = false;
+        let lastStatus: string | undefined;
+        while (Date.now() < deadline && !started) {
+          const tl = await app.inject({
+            method: "GET",
+            url: `/cases/${c.id}/timeline`,
+            cookies: { rr_session: viewerCookie },
+          });
+          const items = (tl.json() as { items?: unknown })?.items;
+          if (
+            Array.isArray(items) &&
+            items.some((e: unknown) => (e as { eventType?: string })?.eventType === "WORKFLOW_STARTED")
+          ) {
+            started = true;
+            break;
+          }
+          const row = await findCaseById(
+            { db },
+            { tenantId: tenantA.id, caseId: c.id },
+          );
+          lastStatus = row?.status;
+          if (row && ["RECOVERED", "STOPPED", "FAILED"].includes(row.status)) {
+            break;
+          }
+          await pipelineService.runPipeline({
+            tenantId: tenantA.id,
+            caseId: c.id,
+          });
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        if (!started) {
+          throw new Error(
+            `WORKFLOW_STARTED never landed (last case status: ${lastStatus})`,
+          );
+        }
+      }
 
       canonicalCaseId = c.id;
     }, 30000);

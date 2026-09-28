@@ -99,6 +99,19 @@ export async function findPaymentByProviderPaymentId(
   return payment ?? null;
 }
 
+/**
+ * App-guarded status write (NOT a DB-guarded transition — intentional).
+ *
+ * Payment rows mirror provider-side state (Stripe/Razorpay) where redelivered or
+ * reordered webhooks are normal: e.g. FAILED → PENDING → SUCCEEDED when a recovery
+ * retry later succeeds. The transition allowlist lives app-side in
+ * `apps/backend/src/modules/webhooks/core-upserts.ts` (PAYMENT_ALLOWED_TRANSITIONS),
+ * which skips regressions and records an order-regression metric instead of writing.
+ *
+ * Dedupe anchor: `payments_tenant_provider_payment_id_unique` — one row per provider
+ * payment, so concurrent ingests converge on the existing row before this write runs.
+ * See packages/db/README.md §4 for the DB-guarded vs app-guarded split.
+ */
 export async function updatePaymentStatus(
   ctx: RepoContext,
   input: UpdatePaymentStatusInput,

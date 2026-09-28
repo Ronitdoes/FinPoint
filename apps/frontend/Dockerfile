@@ -23,9 +23,14 @@ WORKDIR /app
 
 # Copy dependency manifests.
 # Every workspace in the root dependency graph must exist on disk or
-# `bun install --frozen-lockfile` fails on the pruned checkout (keep this
-# list in sync with root package.json workspace deps).
+# `bun install --frozen-lockfile` warns `skipped 1 workspace listed in
+# bun.lock but not on disk` and re-resolves (keep this list in sync with
+# root package.json workspace deps: apps/*, packages/*, services/*).
+# The bun tarball cache is BuildKit-mounted so rebuilds do not re-download
+# every package (cold install is minutes and silent under BuildKit until
+# the final summary — that silence is expected, not a hang).
 COPY package.json bun.lock turbo.json ./
+COPY apps/backend/package.json ./apps/backend/package.json
 COPY apps/frontend/package.json ./apps/frontend/package.json
 COPY packages/config/package.json ./packages/config/package.json
 COPY packages/db/package.json ./packages/db/package.json
@@ -40,7 +45,16 @@ COPY packages/eslint-config/package.json ./packages/eslint-config/package.json
 COPY services/eval/package.json ./services/eval/package.json
 COPY services/worker/package.json ./services/worker/package.json
 
-RUN bun install --frozen-lockfile
+# Full-workspace install (NOT filtered): `next build` type-checks the
+# co-located src/tests/*.test.ts files, which import `vitest` — a ROOT
+# devDependency resolved by walking up to /app/node_modules. A filtered
+# install (frontend + @repo/domain) was tried and breaks the build with
+# TS2307 on every test file, so the base stage keeps the complete tree.
+# Base node_modules is discarded in the runner anyway (standalone output),
+# so this costs build time only. The bun tarball cache is BuildKit-mounted
+# so rebuilds do not re-download every package.
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
 
 # Copy source code
 COPY . .
@@ -52,8 +66,7 @@ ENV NODE_ENV=production
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
-RUN mkdir -p /app/apps/frontend/public
-RUN bun run --cwd apps/frontend build
+RUN mkdir -p /app/apps/frontend/public && bun run --cwd apps/frontend build
 
 # Slim production runner
 FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS runner

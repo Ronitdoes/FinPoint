@@ -26,6 +26,13 @@ const MAX_RANGE_MS = MAX_RANGE_DAYS * 24 * 60 * 60 * 1000;
 
 /**
  * Validates and parses from/to date parameters with strict >370d rejection (Step 27 API Contracts).
+ *
+ * Single-sided hygiene cap: a missing side implies an unbounded scan in the
+ * underlying queries, so the present bound is measured against now() as the
+ * default-window anchor. `?from=X` alone covers [X, now]; `?to=Y` alone covers
+ * (-inf, Y] — both are rejected with 400 BAD_REQUEST when now()-bound exceeds
+ * 370d, consistent with the existing from>to handling. Both-missing (dashboard
+ * default) stays unbounded; future-only bounds pass (empty or small scan).
  */
 export function parseAndValidateDateRange(query: { from?: string; to?: string }): {
   from?: Date;
@@ -54,6 +61,25 @@ export function parseAndValidateDateRange(query: { from?: string; to?: string })
     }
 
     const diffMs = toDate.getTime() - fromDate.getTime();
+    if (diffMs > MAX_RANGE_MS) {
+      throw new BadRequestError(
+        `Date range exceeds maximum allowed window of ${MAX_RANGE_DAYS} days`,
+      );
+    }
+  } else if (fromDate && !toDate) {
+    // Default window [from, now]: cap unbounded `?from=X` alone.
+    const diffMs = Date.now() - fromDate.getTime();
+    if (diffMs > MAX_RANGE_MS) {
+      throw new BadRequestError(
+        `Date range exceeds maximum allowed window of ${MAX_RANGE_DAYS} days`,
+      );
+    }
+  } else if (!fromDate && toDate) {
+    // Lone `?to=Y` is unbounded backwards; enforce recency cap against now()
+    // as the default-window anchor. Recent `to` alone stays allowed (lenient)
+    // to preserve existing clients; full strictness (requiring explicit `from`)
+    // is deferred pending spec sign-off.
+    const diffMs = Date.now() - toDate.getTime();
     if (diffMs > MAX_RANGE_MS) {
       throw new BadRequestError(
         `Date range exceeds maximum allowed window of ${MAX_RANGE_DAYS} days`,

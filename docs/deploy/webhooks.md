@@ -43,7 +43,7 @@ No registration needed. Drive callbacks with the simulator
 `/webhooks/*` endpoints) or replay captured fixtures with
 `POST /events/replay` (role ≥ OPERATIONS, audited).
 
-### Staging (real TEST-mode providers, signed traffic)
+### Staging (real TEST-mode providers, signed traffic — operator step at first staging deploy)
 
 1. Create one TEST-mode webhook endpoint per provider pointing at the
    staging `<BASE>` paths above (Stripe Dashboard → Developers → Webhooks;

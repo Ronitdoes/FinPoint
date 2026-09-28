@@ -6,6 +6,18 @@ import { z } from "zod";
  * `packages/config` is the only place `process.env` is read in this monorepo
  * (CONVENTIONS §1). Everything else consumes the typed, frozen configs built
  * by the presets in api.ts / worker.ts / web.ts.
+ *
+ * Vetted edge-read allowlist (mirrors `scripts/audit-boundaries.ts` rule 6,
+ * reported as INFO not WARN): `scripts/**` (gates/ops CLIs), `tests/**`
+ * (harness wiring), `apps/backend/scripts/seed-admin.ts` (bootstrap CLI),
+ * `apps/frontend/src/lib/api.ts` (NEXT_PUBLIC_* public base URL),
+ * `packages/db/drizzle.config.ts` (drizzle-kit CLI, build-time only),
+ * `packages/db/src/client.ts` + `packages/db/src/migrate.ts` + seed tenant
+ * overrides (connection bootstrap). Gateway webhook *verification* secrets and
+ * demo loopback signers resolve through typed config first (`ServerConfig`
+ * payments/messaging/demo groups); see `audit-boundaries.ts` rule 2 for the
+ * vetted INFO paths. All other `process.env` reads are WARN (grandfathered,
+ * migrate to typed config).
  */
 
 export type EnvSource = Record<string, string | undefined>;
@@ -75,6 +87,13 @@ export const messagingSchema = z.object({
   EMAIL_API_KEY: z.string().min(1).optional(),
   EMAIL_FROM: z.string().min(1).optional(),
   EMAIL_WEBHOOK_SECRET: z.string().min(1).optional(),
+  /**
+   * Test/local-dev escape hatch for messaging webhooks (see
+   * `apps/backend/src/modules/messaging/webhooks/*`). Null when unset:
+   * WhatsApp defaults to non-prod bypass unless explicitly "false";
+   * email defaults to requiring a token unless explicitly "true".
+   */
+  ALLOW_UNSIGNED_WEBHOOKS: optionalBooleanFlag,
 });
 
 export const demoSchema = z.object({
@@ -122,6 +141,45 @@ export const authSchema = z.object({
 
 export const webPublicSchema = z.object({
   NEXT_PUBLIC_API_URL: z.string().url().default("http://localhost:8000"),
+});
+
+/**
+ * HTTP edge surface (s-02 audit fix). CORS allowlist and cookie-secure
+ * override were previously read via raw `process.env` in
+ * `apps/backend/src/plugins/cors.ts` and `modules/auth/routes.ts`.
+ * Centralized here so the backend consumes `config.http` instead.
+ *
+ * s-07 §Technical Implementation: `REQUEST_TIMEOUT_MS` bounds the default
+ * per-request budget (10s); `WEBHOOK_TIMEOUT_MS` gives provider webhooks a
+ * longer 25s budget for signature verification + idempotent ingest while
+ * still acking fast. Backend-only surface: never exposed via `webConfig`.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+export const DEFAULT_WEBHOOK_TIMEOUT_MS = 25_000;
+
+export const httpSchema = z.object({
+  CORS_ALLOWED_ORIGINS: z.string().min(1).optional(),
+  COOKIE_SECURE: optionalBooleanFlag,
+  REQUEST_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_REQUEST_TIMEOUT_MS),
+  WEBHOOK_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_WEBHOOK_TIMEOUT_MS),
+});
+
+/**
+ * Release metadata (s-02 audit fix). Non-secret build stamping consumed by
+ * `apps/backend/src/server.ts` boot log and `modules/meta` `/version`.
+ * Previously read via raw `process.env.APP_VERSION` / `GIT_SHA`.
+ */
+export const releaseSchema = z.object({
+  APP_VERSION: z.string().min(1).default("dev"),
+  GIT_SHA: z.string().min(1).default("dev"),
 });
 
 /**
@@ -183,7 +241,9 @@ const serverSchemaBase = appSchema
   .merge(otelSchema)
   .merge(monitoringSchema)
   .merge(authSchema)
-  .merge(cronSchema);
+  .merge(cronSchema)
+  .merge(httpSchema)
+  .merge(releaseSchema);
 
 export const serverEnvSchema = serverSchemaBase.superRefine((value, ctx) => {
   const mockProviders = value.MOCK_PROVIDERS ?? value.NODE_ENV !== "production";

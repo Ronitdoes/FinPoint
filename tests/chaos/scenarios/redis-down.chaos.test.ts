@@ -41,7 +41,9 @@ describe("chaos: Redis unavailable", { timeout: 60000 }, () => {
           tenant_id: tenant.id,
           entity_type: "PAYMENT",
           entity_id: `pay_chaos_${tenant.id.slice(0, 8)}`,
-          payload: { chaos: true },
+          // s-11 gaps: amount-like field required by per-type POST /events
+          // validation; the chaos marker rides along untouched.
+          payload: { chaos: true, amount: 5000 },
         },
       });
       expect([200, 202]).toContain(res.statusCode);

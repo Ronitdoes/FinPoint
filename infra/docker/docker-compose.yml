@@ -51,6 +51,11 @@ services:
     image: postgres:16-alpine
     container_name: arr-postgres
     restart: unless-stopped
+    # Local-dev capacity: vitest fans out (unit+chaos+e2e+security workers ×
+    # pools per test file). Default max_connections=100 exhausts under a full
+    # parallel run (PG 53300 "too many clients already"); 300 absorbs it.
+    # Production uses managed Postgres with its own sizing (docs/deploy).
+    command: ["postgres", "-c", "max_connections=300"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres # dev-only; production uses a secret manager
@@ -188,12 +193,16 @@ services:
       - "4317:4317" # OTLP gRPC receiver
       - "4318:4318" # OTLP HTTP receiver
       - "8888:8888" # Collector internal metrics
+    # No container healthcheck: otel/opentelemetry-collector-contrib:0.96.0 is
+    # shell-less (no sh/wget/curl/busybox), so any CMD-SHELL probe fails
+    # forever and blocks `compose --wait`. Liveness is evidenced by the OTLP
+    # receivers (:4317/:4318), :8888 self-metrics, and the debug exporter in
+    # `docker logs arr-otel-collector`; nothing gates on this service being
+    # "healthy" (backend/worker export to it fire-and-forget). If the image is
+    # ever swapped for one with a shell, restore a probe against the
+    # health_check extension at http://127.0.0.1:13133/.
     healthcheck:
-      test: ["CMD", "/otelcol-contrib", "components"]
-      interval: 5s
-      timeout: 5s
-      retries: 18
-      start_period: 5s
+      test: ["NONE"]
 
   backend:
     build:

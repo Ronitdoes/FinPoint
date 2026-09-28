@@ -1,6 +1,6 @@
 # s-06 — Migration Pipeline Hardening & Repository Layer: Implementation Explanation
 
-This document provides a comprehensive, architectural explanation of everything implemented in `specs/steps/s-06.md`. It covers migration pipeline hardening (advisory locks, transient retries, and CI check gate), transaction infrastructure (`withTransaction`, `Tx`, `RepoContext`), the complete suite of 23 aggregate repositories enforcing tenant scoping by signature, concurrency primitives (guarded state transitions, atomic per-tenant case number sequencing via `pg_advisory_xact_lock`), compile-time and runtime append-only table guarantees, connection pooling documentation, and integration test suites proving race-free execution against live PostgreSQL.
+This document provides a comprehensive, architectural explanation of everything implemented in `specs/steps/s-06.md`. It covers migration pipeline hardening (advisory locks, transient retries, and CI check gate), transaction infrastructure (`withTransaction`, `Tx`, `RepoContext`), the complete suite of 24 aggregate repositories enforcing tenant scoping by signature (audit fix: 24 files enumerated in §10; see progress.md:122 deferred row), concurrency primitives (guarded state transitions, atomic per-tenant case number sequencing via `pg_advisory_xact_lock`), compile-time and runtime append-only table guarantees, connection pooling documentation, and integration test suites proving race-free execution against live PostgreSQL.
 
 ---
 
@@ -15,7 +15,7 @@ This document provides a comprehensive, architectural explanation of everything 
 7. [Guarded state transitions & race prevention (`cases.repo.ts`, `actions.repo.ts`)](#7-guarded-state-transitions--race-prevention-casesrepots-actionsrepots)
 8. [Atomic per-tenant case sequencing (`nextCaseNumber`)](#8-atomic-per-tenant-case-sequencing-nextcasenumber)
 9. [Append-only guarantees & log repositories](#9-append-only-guarantees--log-repositories)
-10. [Comprehensive overview of all 23 aggregate repositories](#10-comprehensive-overview-of-all-23-aggregate-repositories)
+10. [Comprehensive overview of all 24 aggregate repositories](#10-comprehensive-overview-of-all-24-aggregate-repositories)
 11. [Connection pooling & pooler compatibility documentation (`README.md`)](#11-connection-pooling--pooler-compatibility-documentation-readmemd)
 12. [Testing strategy & parallel race condition verification](#12-testing-strategy--parallel-race-condition-verification)
 13. [Verification evidence (Definition of Done)](#13-verification-evidence-definition-of-done)
@@ -258,10 +258,10 @@ Compile-time type verification in `repositories.test.ts` asserts that no `update
 
 ---
 
-## 10. Comprehensive overview of all 23 aggregate repositories
+## 10. Comprehensive overview of all 24 aggregate repositories (audit fix: 24 enumerated below; see progress.md:122)
 
 1. **`tenants.repo.ts`**: CRUD for top-level tenancy partitions and settings JSONB.
-2. **`users.repo.ts`**: Tenant-scoped operators and role management (`OWNER`, `ADMIN`, `OPERATOR`, `VIEWER`).
+2. **`users.repo.ts`**: Tenant-scoped operators and role management (`ADMIN`, `FINANCE`, `OPERATIONS`, `SUPPORT`, `VIEWER`).
 3. **`api-keys.repo.ts`**: Scoped API token store with SHA-256 hash lookup and instant revocation.
 4. **`customers.repo.ts`**: Customer profile management and opt-out tracking (`setCustomerOptOut`).
 5. **`payments.repo.ts`**: Canonical payment ledger with provider deduplication lookups.
