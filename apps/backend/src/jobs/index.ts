@@ -110,14 +110,26 @@ export function registerJobs(
 
   if (opts.auditRetention?.enabled) {
     const job = new AuditRetentionJob({ db: app.db });
-    const intervalMs =
+    // Monthly-scale period exceeds the runtime timer limit (see
+    // MAX_INTERVAL_MS in ./scheduler.ts), so tick daily and run only when
+    // the full period has elapsed since the last pass. Watermark starts at
+    // registration: first archive runs one period after boot, not on boot.
+    const dueIntervalMs =
       opts.auditRetention.intervalMs ?? 30 * 24 * 60 * 60 * 1000;
+    const tickIntervalMs = Math.min(dueIntervalMs, 24 * 60 * 60 * 1000);
     const { retentionMonths, dryRun } = opts.auditRetention;
+    let lastRunAt = Date.now();
     stops.push(
       scheduleCronJob(app, {
         name: "audit-retention",
-        intervalMs,
-        runOnce: () => job.run({ retentionMonths, dryRun }),
+        intervalMs: tickIntervalMs,
+        runOnce: async () => {
+          if (Date.now() - lastRunAt < dueIntervalMs) {
+            return { skipped: "not-due" };
+          }
+          lastRunAt = Date.now();
+          return job.run({ retentionMonths, dryRun });
+        },
       }),
     );
   }

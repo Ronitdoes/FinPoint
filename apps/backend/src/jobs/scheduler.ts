@@ -9,6 +9,15 @@ import type { FastifyInstance } from "fastify";
  * Timers are `unref`'d so background passes never hold test runners or
  * graceful shutdown open. Returns a stop function; also wired to onClose.
  */
+/**
+ * Upper bound for a single timer delay. Runtimes store the delay as a
+ * signed 32-bit int — anything larger overflows and fires ~every millisecond
+ * (e.g. the 30-day audit-retention default of 2,592,000,000 ms). Jobs needing
+ * a longer period must tick more often and skip when not due (see
+ * audit-retention in ./index.ts), never pass a larger delay here.
+ */
+export const MAX_INTERVAL_MS = 2_147_483_647;
+
 export function scheduleCronJob(
   app: FastifyInstance,
   opts: {
@@ -17,7 +26,19 @@ export function scheduleCronJob(
     runOnce: () => Promise<unknown>;
   },
 ): () => void {
-  const { name, intervalMs, runOnce } = opts;
+  let { name, intervalMs, runOnce } = opts;
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    throw new Error(
+      `scheduleCronJob(${name}): intervalMs must be a positive finite number, got ${intervalMs}`,
+    );
+  }
+  if (intervalMs > MAX_INTERVAL_MS) {
+    app.log.warn(
+      { job: name, intervalMs, maxIntervalMs: MAX_INTERVAL_MS },
+      "cron interval exceeds runtime timer limit, clamping — use a shorter tick with a due-date guard instead",
+    );
+    intervalMs = MAX_INTERVAL_MS;
+  }
   let inFlight = false;
 
   const tick = async () => {

@@ -101,6 +101,40 @@ describe("scheduleCronJob (s-33)", () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(runOnce).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects non-positive/non-finite intervals instead of busy-looping", () => {
+    for (const bad of [0, -1000, NaN, Infinity]) {
+      expect(() =>
+        scheduleCronJob(fakeApp(), {
+          name: "bad-job",
+          intervalMs: bad,
+          runOnce: vi.fn(),
+        }),
+      ).toThrow(/positive finite number/);
+    }
+  });
+
+  it("clamps intervals above the runtime timer limit with a warning", async () => {
+    vi.useFakeTimers();
+    const runOnce = vi.fn().mockResolvedValue({ ok: true });
+    const app = fakeApp();
+    const stop = scheduleCronJob(app, {
+      name: "monthly-job",
+      intervalMs: 30 * 24 * 60 * 60 * 1000,
+      runOnce,
+    });
+    try {
+      expect(app.log.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ job: "monthly-job" }),
+        expect.stringContaining("clamping"),
+      );
+      // Clamped to MAX: advancing 1ms must NOT fire (the overflow busy-loop).
+      await vi.advanceTimersByTimeAsync(1);
+      expect(runOnce).not.toHaveBeenCalled();
+    } finally {
+      stop();
+    }
+  });
 });
 
 describe("registerJobs (s-33 inventory)", () => {
@@ -141,5 +175,40 @@ describe("registerJobs (s-33 inventory)", () => {
     expect(typeof stop).toBe("function");
     expect(typeof decorated["stopJobs"]).toBe("function");
     stop();
+  });
+
+  it("audit-retention ticks daily but runs only when the period is due (no 30-day timer)", async () => {
+    vi.useFakeTimers();
+    const decorated: Record<string, unknown> = {};
+    const app = {
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      decorate: vi.fn((key: string, value: unknown) => {
+        decorated[key] = value;
+      }),
+      addHook: vi.fn(),
+      db: {},
+    } as unknown as FastifyInstance;
+
+    const stop = registerJobs(app, {
+      auditRetention: { enabled: true, intervalMs: 30 * 24 * 60 * 60 * 1000 },
+    });
+    try {
+      const day = 24 * 60 * 60 * 1000;
+      // 29 daily ticks: archive must not run (not due), and no clamp warning.
+      await vi.advanceTimersByTimeAsync(29 * day);
+      expect(app.log.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ job: "audit-retention" }),
+        expect.stringContaining("clamping"),
+      );
+      // 30th daily tick: period elapsed → the archive path runs (may fail
+      // without a real db; the schedule must stay alive either way).
+      await vi.advanceTimersByTimeAsync(day);
+      expect(app.log.info).toHaveBeenCalledWith(
+        expect.objectContaining({ job: "audit-retention" }),
+        expect.stringMatching(/cron tick (completed|failed)/),
+      );
+    } finally {
+      stop();
+    }
   });
 });

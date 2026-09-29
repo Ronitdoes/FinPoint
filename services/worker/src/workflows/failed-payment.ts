@@ -619,3 +619,10 @@ export async function failedPaymentRecoveryWorkflow(
     throw error;
   }
 }
+
+// Workflow alias: the backend dispatches the PascalCase contract name
+// (pipeline.service.ts, @repo/orchestration types) and the Temporal SDK
+// registers types by bundle export name, so this alias must exist here
+// alongside the camelCase function — same convention as the other workflow
+// files (checkout-abandonment, invoice-overdue, promise-to-pay).
+export const FailedPaymentRecoveryWorkflow = failedPaymentRecoveryWorkflow;
